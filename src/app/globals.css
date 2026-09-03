@@ -129,13 +129,17 @@
 @media print {
   @page {
     margin: 0 !important;
-    size: 80mm auto !important;
+    size: auto !important;
   }
 
   html,
   body {
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
   }
 
   .ticket-container {
@@ -156,21 +160,20 @@
   }
   
   #printable-receipt, #ticket-print-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
+    position: static !important;
+    float: none !important;
+    left: auto !important;
+    top: auto !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
     min-height: 0 !important;
     height: auto !important;
-    margin: 0 !important;
-    padding: 0 2mm 5mm 2mm !important;
+    margin: 0 auto !important;
+    padding: 2mm 2mm 5mm 2mm !important;
     border: none !important;
     box-shadow: none !important;
     overflow: visible !important;
-    page-break-before: avoid !important;
-    page-break-after: avoid !important;
-    break-before: avoid !important;
-    break-after: avoid !important;
+    display: block !important;
   }
 
   [role="dialog"], [data-radix-portal], .radix-dialog-overlay, .radix-dialog-content {

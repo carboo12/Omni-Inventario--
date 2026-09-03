@@ -1,0 +1,1 @@
+import{a3 as c}from"./index-9xoa_jsE.js";async function u(...t){return c("products","getProducts",t)}async function o(...t){return c("products","createProduct",t)}async function a(...t){return c("products","updateProduct",t)}export{o as c,u as g,a as u};

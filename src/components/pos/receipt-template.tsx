@@ -83,10 +83,10 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
         <div 
             id={previewMode ? "receipt-preview" : "ticket-print-area"} 
             className={cn(
-                "p-2 text-[13px] w-[80mm] mx-auto text-black",
+                "p-2 text-[13px] w-[80mm] max-w-[80mm] mx-auto text-black",
                 previewMode 
                     ? "bg-white border text-left" 
-                    : "fixed left-0 top-0 w-[80mm] bg-white text-black z-[-9999] opacity-0 print:opacity-100 print:z-[9999] print:visible"
+                    : "fixed left-0 top-0 w-[80mm] max-w-[80mm] bg-white text-black z-[-9999] opacity-0 print:opacity-100 print:z-[9999] print:visible print:static print:m-0 print:p-0"
             )}
         >
             <div className="text-center">
@@ -193,7 +193,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 <style jsx global>{`
                     @media print {
                         @page {
-                            size: 80mm auto !important;
+                            size: auto !important;
                             margin: 0 !important;
                         }
                         html, body {
@@ -201,7 +201,9 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                             padding: 0 !important;
                             width: 100% !important;
                             height: auto !important;
+                            min-height: 0 !important;
                             overflow: visible !important;
+                            background: #ffffff !important;
                         }
                         [role="dialog"], [data-radix-portal], .radix-dialog-overlay, .radix-dialog-content {
                             display: none !important;
@@ -222,28 +224,24 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                         #ticket-print-area tbody,
                         #ticket-print-area tr,
                         #ticket-print-area td {
-                            page-break-inside: avoid !important;
-                            break-inside: avoid !important;
+                            page-break-inside: auto !important;
+                            break-inside: auto !important;
                             page-break-after: auto !important;
                             break-after: auto !important;
+                            page-break-before: auto !important;
+                            break-before: auto !important;
                         }
                         #ticket-print-area {
-                            position: absolute !important;
-                            left: 0 !important;
-                            top: 0 !important;
-                            width: 100% !important;
+                            position: static !important;
+                            float: none !important;
+                            width: 80mm !important;
                             max-width: 80mm !important;
                             min-height: 0 !important;
                             height: auto !important;
-                            padding: 0 2mm 5mm 2mm !important;
-                            margin: 0 !important;
+                            padding: 2mm 2mm 5mm 2mm !important;
+                            margin: 0 auto !important;
                             overflow: visible !important;
                             display: block !important;
-                            float: none !important;
-                            page-break-before: avoid !important;
-                            page-break-after: avoid !important;
-                            break-before: avoid !important;
-                            break-after: avoid !important;
                         }
                     }
                 `}</style>
