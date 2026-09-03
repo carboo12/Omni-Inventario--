@@ -1,0 +1,14 @@
+SUCCESS:
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": MySQL database "farmacia" at "localhost:3306"
+
+The database is already in sync with the Prisma schema.
+
+Running generate... (Use --skip-generate to skip the generators)
+[2K[1A[2K[GRunning generate... - Prisma Client
+[2K[1A[2K[GEPERM: operation not permitted, rename 'C:\Users\Rockero\Downloads\JoyeriaPlus\n
+ode_modules\.prisma\client\query_engine-windows.dll.node.tmp14532' -> 
+'C:\Users\Rockero\Downloads\JoyeriaPlus\node_modules\.prisma\client\query_engine
+-windows.dll.node'
+

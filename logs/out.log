@@ -1,0 +1,242 @@
+2026-08-27T11:13:57: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T13:26:04: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T13:26:31: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T13:27:36: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T13:40:21: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T14:23:21: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T15:29:58: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T16:00:19: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-27T20:13:40: Checking activation status. Settings found: true
+2026-08-27T20:13:40: Checking activation status. Settings found: true
+2026-08-29T17:32:33: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-29T21:29:07: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-30T10:28:47: Checking activation status. Settings found: true
+2026-08-30T10:28:47: Checking activation status. Settings found: true
+2026-08-30T10:29:25: Checking activation status. Settings found: true
+2026-08-30T10:29:25: Checking activation status. Settings found: true
+2026-08-30T10:29:41: --- DEBUG createSale ---
+2026-08-30T10:29:41: paymentMethod: Efectivo C$
+2026-08-30T10:29:41: customerId: null
+2026-08-30T10:29:41: prisma:error 
+2026-08-30T10:29:41: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:29:41: 
+2026-08-30T10:29:41: 
+2026-08-30T10:29:41: The column `subtotal` does not exist in the current database.
+2026-08-30T10:29:50: --- DEBUG createSale ---
+2026-08-30T10:29:50: paymentMethod: Efectivo C$
+2026-08-30T10:29:50: customerId: null
+2026-08-30T10:29:50: prisma:error 
+2026-08-30T10:29:50: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:29:50: 
+2026-08-30T10:29:50: 
+2026-08-30T10:29:50: The column `subtotal` does not exist in the current database.
+2026-08-30T10:41:17: --- DEBUG createSale ---
+2026-08-30T10:41:17: paymentMethod: Efectivo C$
+2026-08-30T10:41:17: customerId: null
+2026-08-30T10:41:17: prisma:error 
+2026-08-30T10:41:17: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:41:17: 
+2026-08-30T10:41:17: 
+2026-08-30T10:41:17: The column `subtotal` does not exist in the current database.
+2026-08-30T10:41:20: Checking activation status. Settings found: true
+2026-08-30T10:41:20: Checking activation status. Settings found: true
+2026-08-30T10:41:32: --- DEBUG createSale ---
+2026-08-30T10:41:32: paymentMethod: Efectivo C$
+2026-08-30T10:41:32: customerId: null
+2026-08-30T10:41:32: prisma:error 
+2026-08-30T10:41:32: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:41:32: 
+2026-08-30T10:41:32: 
+2026-08-30T10:41:32: The column `subtotal` does not exist in the current database.
+2026-08-30T10:44:16: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-30T10:45:17: [joyeriaplus-api] escuchando en http://localhost:9003
+2026-08-30T10:47:58: --- DEBUG createSale ---
+2026-08-30T10:47:58: paymentMethod: Efectivo C$
+2026-08-30T10:47:58: customerId: null
+2026-08-30T10:47:58: prisma:error 
+2026-08-30T10:47:58: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:47:58: 
+2026-08-30T10:47:58: 
+2026-08-30T10:47:58: The column `presentationFactor` does not exist in the current database.
+2026-08-30T10:48:01: Checking activation status. Settings found: true
+2026-08-30T10:48:01: Checking activation status. Settings found: true
+2026-08-30T10:48:01: prisma:error 
+2026-08-30T10:48:01: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:01: prisma:error 
+2026-08-30T10:48:01: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:02: prisma:error 
+2026-08-30T10:48:02: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:02: prisma:error 
+2026-08-30T10:48:02: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:08: --- DEBUG createSale ---
+2026-08-30T10:48:08: paymentMethod: Efectivo C$
+2026-08-30T10:48:08: customerId: null
+2026-08-30T10:48:08: prisma:error 
+2026-08-30T10:48:08: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:48:08: 
+2026-08-30T10:48:08: 
+2026-08-30T10:48:08: The column `presentationFactor` does not exist in the current database.
+2026-08-30T10:48:38: Checking activation status. Settings found: true
+2026-08-30T10:48:38: Checking activation status. Settings found: true
+2026-08-30T10:54:54: Checking activation status. Settings found: true
+2026-08-30T10:54:54: Checking activation status. Settings found: true
+2026-08-30T10:54:57: prisma:error 
+2026-08-30T10:54:57: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:57: prisma:error 
+2026-08-30T10:54:57: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:58: prisma:error 
+2026-08-30T10:54:58: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:58: prisma:error 
+2026-08-30T10:54:58: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48: Checking activation status. Settings found: true
+2026-08-30T10:58:48: Checking activation status. Settings found: true
+2026-08-30T10:58:48: prisma:error 
+2026-08-30T10:58:48: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48: prisma:error 
+2026-08-30T10:58:48: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48: prisma:error 
+2026-08-30T10:58:48: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48: prisma:error 
+2026-08-30T10:58:48: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:21: Checking activation status. Settings found: true
+2026-08-30T10:59:21: Checking activation status. Settings found: true
+2026-08-30T10:59:21: prisma:error 
+2026-08-30T10:59:21: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:21: prisma:error 
+2026-08-30T10:59:21: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:22: prisma:error 
+2026-08-30T10:59:22: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:22: prisma:error 
+2026-08-30T10:59:22: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05: prisma:error 
+2026-08-30T11:00:05: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05: prisma:error 
+2026-08-30T11:00:05: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05: prisma:error 
+2026-08-30T11:00:05: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05: prisma:error 
+2026-08-30T11:00:05: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20: prisma:error 
+2026-08-30T11:01:20: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20: prisma:error 
+2026-08-30T11:01:20: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20: prisma:error 
+2026-08-30T11:01:20: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20: prisma:error 
+2026-08-30T11:01:20: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:29: Checking activation status. Settings found: true
+2026-08-30T11:14:29: Checking activation status. Settings found: true
+2026-08-30T11:14:29: prisma:error 
+2026-08-30T11:14:29: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:29: prisma:error 
+2026-08-30T11:14:29: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:30: prisma:error 
+2026-08-30T11:14:30: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:30: prisma:error 
+2026-08-30T11:14:30: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07: Checking activation status. Settings found: true
+2026-08-30T11:19:07: Checking activation status. Settings found: true
+2026-08-30T11:19:07: prisma:error 
+2026-08-30T11:19:07: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07: prisma:error 
+2026-08-30T11:19:07: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07: prisma:error 
+2026-08-30T11:19:07: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07: prisma:error 
+2026-08-30T11:19:07: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.

@@ -1,0 +1,24 @@
+CORRECCIÓN DE ERROR DE VALIDACIÓN PRISMA EN recordAudit (src/lib/actions/audit.ts)
+
+** REGLA ESTRICTA DE EJECUCIÓN:**
+
+NO ejecutes npm run build ni npm run build:web. Verifica el código únicamente con npx tsc --noEmit.
+
+1. Diagnóstico del Error:
+Al ejecutar recordAudit, Prisma lanza PrismaClientValidationError:
+Argument metadata: Invalid value provided. Expected String or Null, provided Object.
+
+2. Corrección Requerida en src/lib/actions/audit.ts:
+
+Antes de pasar el campo metadata a db.auditLog.create(), serialízalo a JSON string si viene como objeto o si es distinto de undefined/null.
+
+Aplica la siguiente conversión en la carga útil (data):
+
+TypeScript
+metadata: params.metadata 
+  ? (typeof params.metadata === 'string' ? params.metadata : JSON.stringify(params.metadata))
+  : null,
+ipAddress: params.ipAddress ?? null
+Asegúrate de no enviar undefined a campos opcionales de Prisma; utiliza null para evitar advertencias de tipos.
+
+Entregable: Función recordAudit sanitizada guardando metadata como JSON string válido sin tumbar el flujo de Login ni de la API. Verificación con npx tsc --noEmit.

@@ -1,0 +1,1016 @@
+"use client";
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
+import type { CartItem, Product, InventoryMovement, PendingSale, InventoryItem } from '@/lib/types';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Plus, Minus, Search, X, ShoppingCart, ScanLine, User, User as UserIcon, Send, ListOrdered, Clock, Users, Trash2, CreditCard, FileText, UserPlus, Monitor } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { useRouter, usePathname } from 'next/navigation';
+import { useCashRegister } from '@/hooks/use-cash-register';
+import { useCashRegisterSessions } from '@/hooks/use-cash-register-sessions';
+import { useToast } from '@/hooks/use-toast';
+import { SidebarTrigger } from '@/components/ui/sidebar';
+import { UserNav } from '@/components/layout/user-nav';
+import { Numpad } from '@/components/cash-register/numpad';
+import Image from 'next/image';
+import placeholderImages from '@/lib/placeholder-images.json';
+import { useSettings } from '@/hooks/use-settings';
+import { cn, formatCurrency } from '@/lib/utils';
+import { usePendingSales } from '@/hooks/use-pending-sales';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { createSale } from '@/lib/actions/sales';
+import { searchOrCreateCustomer } from '@/lib/actions/customers';
+import { useBusinessMode } from '@/hooks/use-business-mode';
+import { CartTicket } from '@/components/pos/cart-ticket';
+import { ProductGrid } from '@/components/pos/product-grid';
+import { PaymentGrid } from '@/components/pos/payment-grid';
+
+const AssignClientDialog = dynamic(
+    () => import('@/components/pos/assign-client-dialog').then((mod) => mod.AssignClientDialog),
+    { ssr: false }
+);
+const HeldBillsDialog = dynamic(
+    () => import('@/components/pos/held-bills-dialog').then((mod) => mod.HeldBillsDialog),
+    { ssr: false }
+);
+const PaymentSummaryDialog = dynamic(
+    () => import('@/components/pos/payment-summary-dialog').then((mod) => mod.PaymentSummaryDialog),
+    { ssr: false }
+);
+const QuickSwitchModal = dynamic(
+    () => import('@/components/auth/quick-switch-modal').then((mod) => mod.QuickSwitchModal),
+    { ssr: false }
+);
+const ReceiptTemplate = dynamic(
+    () => import('@/components/pos/receipt-template').then((mod) => mod.ReceiptTemplate),
+    { ssr: false }
+);
+const JewelryPOS = dynamic(
+    () => import('@/components/jewelry/jewelry-pos').then((mod) => mod.JewelryPOS),
+    { ssr: false }
+);
+
+// Local formatCurrency removed in favor of unified lib/utils utility
+
+// Helper to prepare receipt data
+const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, tax: number, user: any, settings: any, customerName: string = 'Cliente General', paymentMethod: string = 'Efectivo', amountPaid: number = 0, change: number = 0, ticketIdOverride?: string) => {
+    return {
+        pharmacyName: settings.ticketHeader.name,
+        address: settings.ticketHeader.address,
+        phone: settings.ticketHeader.phone,
+        rfc: settings.ticketHeader.rfc,
+        ticketId: ticketIdOverride || `T-${Date.now().toString().slice(-6)}`,
+        date: new Date(),
+        cashierName: user?.name || 'Cajero',
+        items: items.map(item => ({
+            quantity: item.quantity,
+            description: item.product.name,
+            price: item.product.priceNIO,
+            total: item.product.priceNIO * item.quantity
+        })),
+        subtotal,
+        tax,
+        total,
+        paymentMethod,
+        amountPaid,
+        change,
+        footerMessage: settings.ticketFooter.message,
+        website: settings.ticketFooter.website,
+        logoSvg: settings.logoSvg
+    };
+};
+
+interface POSComponentProps {
+    products: Product[];
+    inventory: InventoryItem[];
+}
+
+// #region Dispatcher Component
+// #region Dispatcher Component
+const DispatcherPOS = ({ products, inventory }: POSComponentProps) => {
+    const { user } = useAuth();
+    const { toast } = useToast();
+    const { addPendingSale } = usePendingSales();
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [customerName, setCustomerName] = useState('');
+    const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
+
+    // Logic for product filtering and cart management
+    // Reusing logic from CashierOnlyPOS for consistency
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+    const { settings } = useSettings();
+
+    const userInventoryType = user?.inventoryType || 'general';
+
+    const availableProducts = useMemo(() => {
+        const productMap = new Map<string, Product>();
+        products.forEach(p => productMap.set(p.id, p));
+        const availableInventory = inventory.filter(item =>
+            item.inventoryType === userInventoryType && item.quantity > 0
+        );
+        const productsWithImages = availableInventory.reduce<Product[]>((acc, item) => {
+            const product = productMap.get(item.productId);
+            if (product) {
+                const categoryHint = product.category.toLowerCase().split(' ')[0];
+                const image = placeholderImages.placeholderImages.find(img => img.id === `product-${categoryHint}`)
+                    || placeholderImages.placeholderImages.find(img => img.id === 'product-default');
+                acc.push({ ...product, imageUrl: image?.imageUrl });
+            }
+            return acc;
+        }, []);
+        return Array.from(new Map(productsWithImages.map(p => [p.id, p])).values());
+    }, [userInventoryType, products, inventory]);
+
+    const addToCart = (product: Product) => {
+        setCart((prevCart) => {
+            const existingItem = prevCart.find((item) => item.product.id === product.id);
+            if (existingItem) {
+                return prevCart.map((item) =>
+                    item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                );
+            }
+            return [...prevCart, { id: product.id, product, quantity: 1 }];
+        });
+    };
+
+    const updateQuantity = (productId: string, change: number) => {
+        setCart((prevCart) =>
+            prevCart.map((item) =>
+                item.product.id === productId
+                    ? { ...item, quantity: Math.max(0, item.quantity + change) }
+                    : item
+            ).filter((item) => item.quantity > 0)
+        );
+    };
+
+    const removeFromCart = (productId: string) => {
+        setCart((prevCart) => prevCart.filter((item) => item.product.id !== productId));
+    };
+
+    const handleItemSelect = (itemId: string) => {
+        setSelectedItemId(itemId === selectedItemId ? null : itemId);
+    };
+
+    const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + item.product.priceNIO * item.quantity, 0), [cart]);
+    const taxAmount = useMemo(() => settings.applyIVA ? cartSubtotal * 0.15 : 0, [cartSubtotal, settings.applyIVA]);
+    const cartTotal = cartSubtotal + taxAmount;
+
+    const handleSendToCashier = () => {
+        if (cart.length === 0) {
+            toast({ title: 'Carrito Vacío', description: 'Agregue productos antes de enviar a caja.', variant: 'destructive' });
+            return;
+        }
+        if (!customerName.trim()) {
+            setIsAssignClientOpen(true);
+            toast({ title: 'Nombre requerido', description: 'Por favor asigne un cliente antes de enviar.' });
+            return;
+        }
+        addPendingSale(customerName, cart, cartTotal);
+        toast({ title: 'Orden Enviada a Caja', description: `La orden para ${customerName} está lista para ser cobrada.` });
+        setCart([]);
+        setCustomerName('');
+    };
+
+    const handleClearCart = () => {
+        if (cart.length > 0 && confirm('¿Está seguro de limpiar el carrito?')) {
+            setCart([]);
+            setCustomerName('');
+        }
+    };
+
+    return (
+        <div className="flex h-full bg-gray-100">
+            {/* Left Panel: Cart Ticket (35%) */}
+            <div className="w-[35%] h-full flex flex-col border-r border-gray-200">
+                <div className="bg-white p-2 border-b flex justify-between items-center">
+                    <SidebarTrigger />
+                    <span className="font-bold text-lg">Ticket de Venta</span>
+                </div>
+
+                <div className="flex-1 overflow-hidden">
+                    <CartTicket
+                        cart={cart}
+                        subtotal={cartSubtotal}
+                        tax={taxAmount}
+                        total={cartTotal}
+                        currency="NIO"
+                        selectedItemId={selectedItemId}
+                        onSelectItem={handleItemSelect}
+                    />
+                </div>
+
+                {/* Dispatcher Actions - Left Side */}
+                <div className="h-[auto] bg-white border-t p-2">
+                    <div className="grid grid-cols-2 gap-2">
+                        <Button
+                            className="h-16 flex flex-col gap-1 bg-[#FF5722] hover:bg-[#F4511E] text-white font-bold text-sm"
+                            onClick={handleClearCart}
+                        >
+                            <Trash2 className="w-6 h-6" />
+                            LIMPIAR
+                        </Button>
+                        <Button
+                            className="h-16 flex flex-col gap-1 bg-[#8BC34A] hover:bg-[#7CB342] text-white font-bold text-md"
+                            onClick={handleSendToCashier}
+                        >
+                            <Send className="w-6 h-6" />
+                            ENVIAR
+                        </Button>
+                    </div>
+                    <div className="mt-2 flex flex-col gap-2 justify-center items-center bg-gray-50 rounded-lg border p-2">
+                        <span className="text-sm font-medium text-muted-foreground">Cliente Asignado:</span>
+                        {customerName ? (
+                            <span className="text-lg font-bold text-primary truncate max-w-full px-2">{customerName}</span>
+                        ) : (
+                            <span className="text-lg font-bold text-gray-400 italic">ANONIM</span>
+                        )}
+                        <Button variant="outline" size="sm" onClick={() => setIsAssignClientOpen(true)} className="w-full">
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            {customerName ? 'Cambiar Cliente' : 'Asignar Cliente'}
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Panel: Product Grid (65%) */}
+            <div className="w-[65%] h-full flex flex-col">
+                <div className="flex-1 overflow-hidden">
+                    <ProductGrid
+                        products={availableProducts}
+                        onProductSelect={addToCart}
+                    />
+                </div>
+            </div>
+
+            <AssignClientDialog
+                isOpen={isAssignClientOpen}
+                onClose={() => setIsAssignClientOpen(false)}
+                onAssign={setCustomerName}
+                currentName={customerName}
+            />
+        </div>
+    );
+};
+// #endregion
+
+// #region Cashier Component
+const CashierPOS = ({ products, inventory }: POSComponentProps) => {
+    const { user } = useAuth();
+    const { mode } = useBusinessMode();
+    const { activeSession, refreshSessions } = useCashRegister();
+    const { addSaleToSession } = useCashRegisterSessions();
+    const { toast } = useToast();
+    const { settings } = useSettings();
+    const { pendingSales, removePendingSale } = usePendingSales();
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [activeSale, setActiveSale] = useState<PendingSale | null>(null);
+    const [viewMode, setViewMode] = useState<'products' | 'payment'>('products');
+    const [isPaymentSummaryOpen, setIsPaymentSummaryOpen] = useState(false);
+    const [paymentData, setPaymentData] = useState<{ paid: number, change: number, method: string } | null>(null);
+    const [lastSale, setLastSale] = useState<any>(null);
+
+    const handleSelectSale = (sale: PendingSale) => {
+        setActiveSale(sale);
+        setCart(sale.items);
+    }
+
+    const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + item.product.priceNIO * item.quantity, 0), [cart]);
+    const taxAmount = useMemo(() => settings.applyIVA ? cartSubtotal * 0.15 : 0, [cartSubtotal, settings.applyIVA]);
+    const cartTotal = cartSubtotal + taxAmount;
+
+    const handlePayment = () => {
+        if (cart.length === 0) {
+            toast({ title: 'Seleccione una venta', description: 'No hay una venta activa para procesar.', variant: 'destructive' });
+            return;
+        }
+        setViewMode('payment');
+    }
+
+    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string) => {
+        if (!user || !activeSession || !activeSale) return;
+
+        let customerId: string | undefined = undefined;
+        if (mode === 'JEWELRY') {
+            if (!activeSale.customerName || !activeSale.customerName.trim() || activeSale.customerName === 'Cliente General') {
+                toast({ title: 'Error', description: 'Es obligatorio asignar un nombre de cliente real en modo Joyería', variant: 'destructive' });
+                return;
+            }
+            try {
+                const customer = await searchOrCreateCustomer(activeSale.customerName.trim());
+                customerId = customer.id;
+            } catch (e) {
+                toast({ title: 'Error', description: 'No se pudo crear/validar el cliente en la BD', variant: 'destructive' });
+                return;
+            }
+        }
+
+        const result = await createSale(
+            cart,
+            activeSession.id,
+            user.id,
+            user.inventoryType || 'general',
+            cartTotal,
+            paymentMethod as any,
+            customerId
+        );
+
+        if (!result.success) {
+            toast({ title: 'Error', description: result.error, variant: 'destructive' });
+            return;
+        }
+
+        removePendingSale(activeSale.id);
+
+        // Prepare receipt data
+        const isJewelry = mode === 'JEWELRY';
+        const ticketLabel = isJewelry && result.invoiceNumber ? `Factura ${String(result.invoiceNumber).padStart(5, '0')}` : undefined;
+        const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, activeSale.customerName, paymentMethod, amountPaid, change, ticketLabel);
+        setLastSale(receiptData);
+
+        setCart([]);
+        setActiveSale(null);
+        setViewMode('products');
+        setPaymentData(null);
+        setIsPaymentSummaryOpen(false);
+        refreshSessions();
+        toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
+    }
+
+    const confirmPayment = () => {
+        if (paymentData) {
+            handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
+        }
+    };
+
+    const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+        setPaymentData({ paid: amountPaid, change, method });
+        setIsPaymentSummaryOpen(true);
+    };
+
+
+    const handleCancelSale = () => {
+        setActiveSale(null);
+        setCart([]);
+    }
+
+    if (activeSale) {
+        return (
+            <div className="flex h-full">
+                {/* Left Panel: Cart Ticket */}
+                <div className="w-[35%] h-full flex flex-col border-r border-gray-200">
+                    <div className="bg-white p-2 border-b flex justify-between items-center h-12 shrink-0">
+                        <div className="flex items-center gap-2">
+                            <SidebarTrigger />
+                            <span className="font-bold text-lg">Ticket de Venta</span>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-hidden">
+                        <CartTicket
+                            cart={cart}
+                            subtotal={cartSubtotal}
+                            tax={taxAmount}
+                            total={cartTotal}
+                            currency="NIO"
+                        />
+                    </div>
+
+                    <div className="bg-white border-t p-2 shrink-0">
+                        <div className="mb-2 bg-gray-100 p-2 rounded">
+                            <span className="text-xs text-muted-foreground uppercase">Cliente:</span>
+                            <span className="font-bold text-primary block truncate">{activeSale.customerName}</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 h-32">
+                            <Button
+                                className="h-full flex flex-col gap-2 bg-[#8BC34A] hover:bg-[#7CB342] text-white font-bold text-lg"
+                                onClick={handlePayment}
+                            >
+                                <CreditCard className="w-8 h-8" />
+                                COBRAR
+                            </Button>
+                            <Button
+                                className="h-full flex flex-col gap-2 bg-[#FF5722] hover:bg-[#F4511E] text-white font-bold text-lg"
+                                onClick={handleCancelSale}
+                            >
+                                <Trash2 className="w-8 h-8" />
+                                CANCELAR
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Panel: Content */}
+                <div className="w-[65%] h-full flex flex-col">
+                    <div className="flex-1 overflow-hidden">
+                        {viewMode === 'products' ? (
+                            <div className="flex h-full items-center justify-center bg-gray-50 text-muted-foreground">
+                                <p>Vista de productos deshabilitada en modo solo cobro.</p>
+                            </div>
+                        ) : (
+                            <PaymentGrid
+                                total={cartTotal}
+                                onCancel={() => setViewMode('products')}
+                                onComplete={handlePrePaymentComplete}
+                                customerName={activeSale.customerName}
+                            />
+                        )}
+                    </div>
+                </div>
+
+                <PaymentSummaryDialog
+                    isOpen={isPaymentSummaryOpen}
+                    onClose={() => setIsPaymentSummaryOpen(false)}
+                    total={cartTotal}
+                    amountPaid={paymentData?.paid || 0}
+                    change={paymentData?.change || 0}
+                    onConfirm={confirmPayment}
+                />
+                {lastSale && <ReceiptTemplate {...lastSale} />}
+            </div>
+        )
+    }
+
+    return (
+        <Card className="h-full rounded-none border-0">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><ListOrdered /> Ventas Pendientes de Cobro</CardTitle>
+                <CardDescription>Seleccione una pre-venta de la lista para proceder con el cobro.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ScrollArea className="h-full max-h-[calc(100vh-20rem)]">
+                    <div className="space-y-4">
+                        {pendingSales.length > 0 ? pendingSales.map(sale => (
+                            <div key={sale.id} onClick={() => handleSelectSale(sale)} className="p-4 rounded-lg border flex items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors">
+                                <div>
+                                    <p className="font-bold text-lg text-primary">{sale.customerName}</p>
+                                    <p className="text-sm text-muted-foreground">Despachador: {sale.dispatcherName}</p>
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> hace {formatDistanceToNow(new Date(sale.createdAt), { locale: es, addSuffix: false })}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="font-bold text-xl">{formatCurrency(sale.total)}</p>
+                                    <p className="text-sm text-muted-foreground">{sale.items.length} {sale.items.length === 1 ? 'artículo' : 'artículos'}</p>
+                                </div>
+                            </div>
+                        )) : (
+                            <div className="flex h-full min-h-[200px] flex-col items-center justify-center text-center text-muted-foreground">
+                                <ShoppingCart className="w-20 h-20 mb-4" />
+                                <p className="text-lg font-semibold">No hay ventas pendientes</p>
+                                <p className='text-sm'>Esperando que un despachador envíe una orden a caja.</p>
+                            </div>
+                        )}
+                    </div>
+                </ScrollArea>
+            </CardContent>
+            {lastSale && <ReceiptTemplate {...lastSale} />}
+            <Dialog open={!!lastSale} onOpenChange={(open: boolean) => { if (!open) setLastSale(null); }}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Vista Previa de Factura</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex justify-center p-4 max-h-[60vh] overflow-y-auto">
+                        {lastSale && <ReceiptTemplate {...lastSale} previewMode />}
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => {
+                            setTimeout(() => {
+                                window.print();
+                                setLastSale(null);
+                            }, 100);
+                        }}>Imprimir Ticket</Button>
+                        <Button variant="outline" onClick={() => setLastSale(null)}>Cerrar</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </Card>
+    );
+};
+// #endregion
+
+import { AdminAuthDialog } from '@/components/pos/admin-auth-dialog';
+import { CreditNoteDialog } from '@/components/pos/credit-note-dialog';
+import { HelpDialog } from '@/components/pos/help-dialog';
+import { HelpCircle, FolderOpen } from 'lucide-react';
+import { OpenDrawerTemplate } from '@/components/pos/open-drawer-template';
+
+// CashierOnlyPOS component - This is the main one to redesign as per screenshots
+const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
+    const { user } = useAuth();
+    const { mode } = useBusinessMode();
+    const { activeSession, refreshSessions } = useCashRegister();
+    const { addSaleToSession } = useCashRegisterSessions();
+    const { toast } = useToast();
+    const { settings } = useSettings();
+    const { addPendingSale, removePendingSale } = usePendingSales();
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'products' | 'payment'>('products');
+    const [isPaymentSummaryOpen, setIsPaymentSummaryOpen] = useState(false);
+
+    // Payment State
+    const [paymentData, setPaymentData] = useState<{ paid: number, change: number, method: string } | null>(null);
+
+    const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
+    const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
+    const [showQuickSwitch, setShowQuickSwitch] = useState(false);
+    const [isHelpOpen, setIsHelpOpen] = useState(false);
+    const [customerName, setCustomerName] = useState('');
+    const [lastSale, setLastSale] = useState<any>(null);
+    // Credit Note / Return States
+    const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
+    const [isCreditNoteOpen, setIsCreditNoteOpen] = useState(false);
+    const [isOpenDrawerReceiptActive, setIsOpenDrawerReceiptActive] = useState(false);
+
+    const userInventoryType = user?.inventoryType || 'general';
+
+    const availableProducts = useMemo(() => {
+        const productMap = new Map<string, Product>();
+        products.forEach(p => productMap.set(p.id, p));
+        const availableInventory = inventory.filter(item =>
+            item.inventoryType === userInventoryType && item.quantity > 0
+        );
+        const productsWithImages = availableInventory.reduce<Product[]>((acc, item) => {
+            const product = productMap.get(item.productId);
+            if (product) {
+                const categoryHint = product.category.toLowerCase().split(' ')[0];
+                const image = placeholderImages.placeholderImages.find(img => img.id === `product-${categoryHint}`)
+                    || placeholderImages.placeholderImages.find(img => img.id === 'product-default');
+                acc.push({ ...product, imageUrl: image?.imageUrl });
+            }
+            return acc;
+        }, []);
+        return Array.from(new Map(productsWithImages.map(p => [p.id, p])).values());
+    }, [userInventoryType, products, inventory]);
+
+    const addToCart = (product: Product) => {
+        setCart((prevCart) => {
+            const existingItem = prevCart.find((item) => item.product.id === product.id);
+            if (existingItem) {
+                return prevCart.map((item) =>
+                    item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                );
+            }
+            return [...prevCart, { id: product.id, product, quantity: 1 }];
+        });
+    };
+
+    const updateQuantity = (productId: string, change: number) => {
+        setCart((prevCart) =>
+            prevCart.map((item) =>
+                item.product.id === productId
+                    ? { ...item, quantity: Math.max(0, item.quantity + change) }
+                    : item
+            ).filter((item) => item.quantity > 0)
+        );
+    };
+
+    const removeFromCart = (productId: string) => {
+        setCart((prevCart) => prevCart.filter((item) => item.product.id !== productId));
+    };
+
+    const handleItemSelect = (itemId: string) => {
+        setSelectedItemId(itemId === selectedItemId ? null : itemId);
+    };
+
+    const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + item.product.priceNIO * item.quantity, 0), [cart]);
+    const taxAmount = useMemo(() => settings.applyIVA ? cartSubtotal * 0.15 : 0, [cartSubtotal, settings.applyIVA]);
+    const cartTotal = cartSubtotal + taxAmount;
+
+    const handlePayment = () => {
+        if (cart.length === 0) {
+            toast({ title: 'Carrito Vacío', description: 'Agregue productos antes de cobrar.', variant: 'destructive' });
+            return;
+        }
+        setViewMode('payment');
+    };
+
+    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string) => {
+        if (!user || !activeSession) return;
+
+        let customerId: string | undefined = undefined;
+        if (mode === 'JEWELRY') {
+            if (!customerName || !customerName.trim() || customerName === 'Cliente General') {
+                toast({ title: 'Error', description: 'Es obligatorio asignar un nombre de cliente real en modo Joyería', variant: 'destructive' });
+                return;
+            }
+            try {
+                const customer = await searchOrCreateCustomer(customerName.trim());
+                customerId = customer.id;
+            } catch (e) {
+                toast({ title: 'Error', description: 'No se pudo crear/validar el cliente en la BD', variant: 'destructive' });
+                return;
+            }
+        }
+
+        const roundedTotal = Math.round(cartTotal * 100) / 100;
+        const result = await createSale(
+            cart,
+            activeSession.id,
+            user.id,
+            user.inventoryType || 'general',
+            roundedTotal,
+            paymentMethod as any,
+            customerId
+        );
+
+        if (!result.success) {
+            toast({ title: 'Error', description: result.error, variant: 'destructive' });
+            return;
+        }
+
+        // Prepare receipt data
+        const isJewelry = mode === 'JEWELRY';
+        const ticketLabel = isJewelry && result.invoiceNumber ? `Factura ${String(result.invoiceNumber).padStart(5, '0')}` : undefined;
+        const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, 'Cliente General', paymentMethod, amountPaid, change, ticketLabel);
+        setLastSale(receiptData);
+
+        setCart([]);
+        setViewMode('products');
+        setPaymentData(null);
+        setIsPaymentSummaryOpen(false);
+        refreshSessions();
+        toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
+    };
+
+    const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+        setPaymentData({ paid: amountPaid, change, method });
+        setIsPaymentSummaryOpen(true);
+    };
+
+    const confirmPayment = () => {
+        if (paymentData) {
+            handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
+        }
+    };
+
+
+    const handleClearCart = () => {
+        if (cart.length > 0 && confirm('¿Está seguro de limpiar el carrito?')) {
+            setCart([]);
+            setCustomerName('');
+        }
+    };
+
+    const handleHoldBill = () => {
+        if (cart.length === 0) {
+            toast({ title: 'Carrito Vacío', description: 'No hay productos para poner en espera.', variant: 'destructive' });
+            return;
+        }
+
+        // Use customer name if set, otherwise default
+        const nameToSave = customerName.trim() || `Cliente - ${new Date().toLocaleTimeString()}`;
+
+        addPendingSale(nameToSave, cart, cartTotal);
+        toast({ title: 'Factura en Espera', description: 'La factura se ha guardado temporalmente.' });
+        setCart([]);
+        setCustomerName('');
+    };
+
+    const handleResumeBill = (sale: PendingSale) => {
+        setCart(sale.items);
+        setCustomerName(sale.customerName);
+        removePendingSale(sale.id); // Remove from pending list when resumed
+        toast({ title: 'Factura Recuperada', description: 'La factura se ha cargado al carrito.' });
+    };
+
+    // Handler for Credit Note Button
+    const handleCreditNoteClick = () => {
+        setIsAdminAuthOpen(true);
+    };
+
+    const handleAdminAuthSuccess = () => {
+        setIsAdminAuthOpen(false);
+        setIsCreditNoteOpen(true);
+    };
+
+    const handleOpenDrawer = () => {
+        setIsOpenDrawerReceiptActive(true);
+        setTimeout(() => {
+            window.print();
+            setIsOpenDrawerReceiptActive(false);
+        }, 100);
+    };
+
+    // Keyboard shortcuts - MUST be after function declarations
+    useEffect(() => {
+        const handleKeyPress = (e: KeyboardEvent) => {
+            // Only trigger if not typing in an input/textarea
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+
+            switch (e.key) {
+                case 'F1':
+                    e.preventDefault();
+                    handlePayment();
+                    break;
+                case 'F2':
+                    e.preventDefault();
+                    handleHoldBill();
+                    break;
+                case 'F3':
+                    e.preventDefault();
+                    handleCreditNoteClick();
+                    break;
+                case 'F4':
+                    e.preventDefault();
+                    toast({ title: 'Más Opciones', description: 'Función en desarrollo' });
+                    break;
+                case 'F10':
+                    e.preventDefault();
+                    setIsHeldBillsOpen(true);
+                    break;
+                case 'F6':
+                    e.preventDefault();
+                    toast({ title: 'Afiliados', description: 'Función en desarrollo' });
+                    break;
+                case 'F7':
+                    e.preventDefault();
+                    toast({ title: 'Consulta Saldo', description: 'Función en desarrollo' });
+                    break;
+                case 'F8':
+                    e.preventDefault();
+                    toast({ title: 'Visor de Precio', description: 'Función en desarrollo' });
+                    break;
+                case 'F9':
+                    e.preventDefault();
+                    toast({ title: 'Recarga Saldo', description: 'Función en desarrollo' });
+                    break;
+                case 'Delete':
+                    e.preventDefault();
+                    handleClearCart();
+                    break;
+                case 'F2':
+                    if (viewMode === 'payment') {
+                        e.preventDefault();
+                        // Trigger credit payment if possible
+                        if (customerName && customerName !== 'ANONIM') {
+                             handlePrePaymentComplete(cartTotal, 0, 'Credito');
+                        }
+                    }
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+    }, [handlePayment, handleHoldBill, handleClearCart, toast]);
+
+
+    return (
+        <div className="flex h-full bg-gray-100">
+            {/* Left Panel: Cart Ticket (35%) */}
+            <div className="w-[35%] h-full flex flex-col border-r border-gray-200 shadow-sm bg-white">
+                {/* Sidebar Trigger Header */}
+                <div className="bg-white p-3 border-b flex justify-between items-center h-16 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <SidebarTrigger className="h-8 w-8" />
+                        <span className="font-bold text-xl">Punto de Venta</span>
+                    </div>
+                </div>
+
+                {/* Cart Area */}
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <CartTicket
+                        cart={cart}
+                        subtotal={cartSubtotal}
+                        tax={taxAmount}
+                        total={cartTotal}
+                        currency="NIO"
+                        selectedItemId={selectedItemId}
+                        onSelectItem={handleItemSelect}
+                    />
+                </div>
+
+                {/* Action Buttons Area - Compact Grid */}
+                <div className="bg-white border-t p-2 shrink-0">
+                    {/* Customer Display */}
+                    <div className="mb-3 flex items-center justify-between bg-gray-50 p-2.5 rounded-lg border border-gray-100 shadow-sm">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Cliente:</span>
+                            <span className="font-black text-base text-[#673AB7] truncate max-w-[180px]">
+                                {customerName || 'ANONIM'}
+                            </span>
+                        </div>
+                        <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            className="h-10 w-10 p-0 rounded-full bg-white border shadow-sm hover:bg-gray-100" 
+                            onClick={() => setIsAssignClientOpen(true)}
+                        >
+                            <UserPlus className="w-5 h-5 text-[#673AB7]" />
+                        </Button>
+                    </div>
+
+                    {/* Compact Action Grid - Essential buttons */}
+                    <div className="grid grid-cols-3 gap-2">
+                        {/* Row 1 */}
+                        <Button
+                            className="h-16 flex flex-col gap-1.5 bg-[#FF5722] hover:bg-[#F4511E] text-white font-black text-[10px] p-2 transition-all active:scale-95"
+                            onClick={handleClearCart}
+                            title="Limpiar (Delete)"
+                        >
+                            <Trash2 className="w-5 h-5" />
+                            LIMPIAR
+                        </Button>
+
+                        <Button
+                            className="h-16 flex flex-col gap-1.5 bg-[#673AB7] hover:bg-[#5E35B1] text-white font-black text-[10px] p-2 transition-all active:scale-95"
+                            onClick={() => handleHoldBill()}
+                            title="Poner en Espera (F2)"
+                        >
+                            <FileText className="w-5 h-5" />
+                            <span className="text-center leading-none uppercase">PONER EN<br />ESPERA</span>
+                        </Button>
+
+                        <Button
+                            className="h-16 flex flex-col gap-1.5 bg-[#673AB7] hover:bg-[#5E35B1] text-white font-black text-[10px] p-2 transition-all active:scale-95"
+                            onClick={handleCreditNoteClick}
+                            title="Nota de Crédito (F3)"
+                        >
+                            <CreditCard className="w-5 h-5" />
+                            <span className="text-center leading-none uppercase">NOTA DE<br />CRÉDITO</span>
+                        </Button>
+
+                        {/* Row 2 */}
+                        <Button
+                            className="h-16 flex flex-col gap-1.5 bg-[#673AB7] hover:bg-[#5E35B1] text-white font-black text-[10px] p-2 transition-all active:scale-95"
+                            onClick={() => setIsHeldBillsOpen(true)}
+                            title="Ver Facturas en Espera (F10)"
+                        >
+                            <ListOrdered className="w-5 h-5" />
+                            <span className="text-center leading-none uppercase">VER FACS<br />EN ESPERA</span>
+                        </Button>
+
+                        <Button
+                            className="h-16 flex flex-col gap-1.5 bg-[#2196F3] hover:bg-[#1976D2] text-white font-black text-[10px] p-2 transition-all active:scale-95"
+                            onClick={() => setShowQuickSwitch(true)}
+                            title="Cambio de Usuario"
+                        >
+                            <UserIcon className="w-5 h-5" />
+                            <span className="text-center leading-none uppercase">CAMBIO<br />USUARIO</span>
+                        </Button>
+
+                        <Button
+                            className="h-16 flex flex-col gap-1.5 bg-[#607D8B] hover:bg-[#546E7A] text-white font-black text-[10px] p-2 transition-all active:scale-95"
+                            onClick={handleOpenDrawer}
+                            title="Abrir Gaveta"
+                        >
+                            <FolderOpen className="w-5 h-5" />
+                            <span className="text-center leading-none uppercase">ABRIR<br />GAVETA</span>
+                        </Button>
+                    </div>
+
+                    <div className="mt-2">
+                        {/* COBRAR button spans full width */}
+                        <Button
+                            className="h-20 w-full flex items-center justify-center gap-3 bg-[#8BC34A] hover:bg-[#7CB342] text-white font-black text-xl shadow-lg transition-all active:scale-[0.98]"
+                            onClick={handlePayment}
+                            title="Cobrar (F1)"
+                        >
+                            <CreditCard className="w-8 h-8" />
+                            COBRAR
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Panel: Product Grid & Actions (65%) */}
+            <div className="w-[65%] h-full flex flex-col">
+                {/* Content Area: Products OR Payment Grid */}
+                <div className="flex-1 overflow-hidden">
+                    {viewMode === 'products' ? (
+                        <ProductGrid
+                            products={availableProducts}
+                            onProductSelect={addToCart}
+                        />
+                    ) : (
+                        <PaymentGrid
+                            total={cartTotal}
+                            onCancel={() => setViewMode('products')}
+                            onComplete={handlePrePaymentComplete}
+                            customerName={customerName}
+                        />
+                    )}
+                </div>
+            </div>
+
+            <AssignClientDialog
+                isOpen={isAssignClientOpen}
+                onClose={() => setIsAssignClientOpen(false)}
+                onAssign={setCustomerName}
+                currentName={customerName}
+            />
+
+            <HeldBillsDialog
+                isOpen={isHeldBillsOpen}
+                onClose={() => setIsHeldBillsOpen(false)}
+                onSelectSale={handleResumeBill}
+            />
+
+
+            <PaymentSummaryDialog
+                isOpen={isPaymentSummaryOpen}
+                onClose={() => setIsPaymentSummaryOpen(false)}
+                total={cartTotal}
+                amountPaid={paymentData?.paid || 0}
+                change={paymentData?.change || 0}
+                onConfirm={confirmPayment}
+            />
+            <QuickSwitchModal
+                open={showQuickSwitch}
+                onOpenChange={setShowQuickSwitch}
+            />
+
+            <AdminAuthDialog
+                isOpen={isAdminAuthOpen}
+                onClose={() => setIsAdminAuthOpen(false)}
+                onSuccess={handleAdminAuthSuccess}
+            />
+
+            <CreditNoteDialog
+                isOpen={isCreditNoteOpen}
+                onClose={() => setIsCreditNoteOpen(false)}
+                onSuccess={() => { /* maybe refresh dash stats or show success summary */ }}
+            />
+
+            {isOpenDrawerReceiptActive && <OpenDrawerTemplate />}
+
+            {lastSale && <ReceiptTemplate {...lastSale} />}
+        </div>
+    );
+};
+
+
+interface POSClientProps {
+    initialProducts: Product[];
+    initialInventory: InventoryItem[];
+    initialJewelryPieces?: any[];
+}
+
+export default function POSClient({ initialProducts, initialInventory, initialJewelryPieces = [] }: POSClientProps) {
+    const { user } = useAuth();
+    const router = useRouter();
+    const pathname = usePathname();
+    const { isCashRegisterOpen } = useCashRegister();
+    const { settings, loading: settingsLoading } = useSettings();
+    const { mode } = useBusinessMode();
+    const isDispatcherCashierFlow = settings.workflow === 'dispatcher-cashier';
+    const [showQuickSwitch, setShowQuickSwitch] = useState(false);
+
+    useEffect(() => {
+        if (!user || settingsLoading) return;
+
+        if (['cashier', 'admin', 'master-admin'].includes(user.role)) {
+            if (!isCashRegisterOpen && pathname === '/pos') {
+                router.replace('/cash-register/open');
+            }
+        } else if (user.role === 'dispatcher') {
+            if (!isDispatcherCashierFlow) {
+                router.replace('/dashboard');
+            }
+        }
+    }, [user, isCashRegisterOpen, router, settingsLoading, isDispatcherCashierFlow]);
+
+    if (!user || settingsLoading || (user.role === 'cashier' && !isCashRegisterOpen)) {
+        return null;
+    }
+
+    const renderContent = () => {
+        if (mode === 'JEWELRY') {
+            return <JewelryPOS availablePieces={initialJewelryPieces} />;
+        }
+
+        if (isDispatcherCashierFlow) {
+            if (user.role === 'dispatcher') return <DispatcherPOS products={initialProducts} inventory={initialInventory} />;
+            if (user.role === 'cashier') return <CashierPOS products={initialProducts} inventory={initialInventory} />;
+        }
+
+        if (!isDispatcherCashierFlow && (user.role === 'cashier' || user.role === 'admin' || user.role === 'master-admin')) {
+            return <CashierOnlyPOS products={initialProducts} inventory={initialInventory} />;
+        }
+
+        return null;
+    }
+
+    return (
+        <div className="flex h-screen w-full flex-col bg-muted p-0">
+            <main className="flex-1 overflow-hidden p-0 h-full">
+                {renderContent()}
+            </main>
+            <QuickSwitchModal
+                open={showQuickSwitch}
+                onOpenChange={setShowQuickSwitch}
+            />
+        </div>
+    );
+}
+

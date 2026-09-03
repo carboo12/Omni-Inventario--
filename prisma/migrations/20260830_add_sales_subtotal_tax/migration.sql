@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `salesinvoice` ADD COLUMN `subtotal` DOUBLE NOT NULL DEFAULT 0,
+    ADD COLUMN `tax` DOUBLE NOT NULL DEFAULT 0;

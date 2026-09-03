@@ -1,0 +1,970 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model AppSettings {
+  id           String       @id @default(uuid())
+  businessMode BusinessMode @default(PHARMACY)
+  createdAt    DateTime     @default(now())
+
+  @@map("appsettings")
+}
+
+model AuditLog {
+  id          String   @id
+  userId      String
+  action      String
+  entity      String
+  entityId    String?
+  timestamp   DateTime @default(now())
+  description String
+  ipAddress   String?
+  metadata    String?  @db.LongText
+  userName    String
+
+  @@map("auditlog")
+}
+
+model CashOutflow {
+  id                  String              @id
+  sessionId           String
+  amount              Float
+  reason              String
+  receiptNumber       Int                 @unique(map: "CashOutflow_receiptNumber_key") @default(autoincrement())
+  createdAt           DateTime            @default(now())
+  cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "CashOutflow_sessionId_fkey")
+
+  @@index([sessionId], map: "CashOutflow_sessionId_fkey")
+  @@map("cashoutflow")
+}
+
+model CashRegisterSession {
+  id               String           @id
+  cashierId        String
+  cashierName      String
+  openingTime      String
+  closingTime      String?
+  initialAmount    Float
+  finalAmount      Float?
+  totalSales       Float?
+  salesCash        Float            @default(0)
+  salesCard        Float            @default(0)
+  salesUSD         Float            @default(0)
+  actualCash       Float?
+  actualUSD        Float?
+  difference       Float?
+  differenceUSD    Float?
+  status           String
+  totalReturns     Float            @default(0)
+  salesServices    Float            @default(0)
+  salesAbonos      Float            @default(0)
+  salesCredit      Float            @default(0)
+  initialAmountUSD Float            @default(0)
+  cashOutflow      CashOutflow[]
+  user             User             @relation(fields: [cashierId], references: [id], map: "CashRegisterSession_cashierId_fkey")
+  creditNote       CreditNote[]
+  jewelryService   JewelryService[]
+  salesInvoice     SalesInvoice[]
+
+  @@index([cashierId], map: "CashRegisterSession_cashierId_fkey")
+  @@map("cashregistersession")
+}
+
+model Category {
+  id             String     @id
+  name           String
+  description    String?
+  inventoryType  String
+  parentId       String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime
+  category       Category?  @relation("categoryTocategory", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Category_parentId_fkey")
+  other_category Category[] @relation("categoryTocategory")
+  product        Product[]
+
+  @@index([inventoryType], map: "Category_inventoryType_idx")
+  @@index([parentId], map: "Category_parentId_fkey")
+  @@map("category")
+}
+
+model CreditNote {
+  id                  String              @id
+  noteNumber          Int                 @unique(map: "CreditNote_noteNumber_key") @default(autoincrement())
+  invoiceId           String              @unique(map: "CreditNote_invoiceId_key")
+  date                DateTime            @default(now())
+  reason              String
+  totalAmount         Float
+  sessionId           String
+  userId              String
+  salesInvoice        SalesInvoice        @relation(fields: [invoiceId], references: [id], map: "CreditNote_invoiceId_fkey")
+  cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "CreditNote_sessionId_fkey")
+  user                User                @relation(fields: [userId], references: [id], map: "CreditNote_userId_fkey")
+
+  @@index([sessionId], map: "CreditNote_sessionId_fkey")
+  @@index([userId], map: "CreditNote_userId_fkey")
+  @@map("creditnote")
+}
+
+model CreditPayment {
+  id            String   @id
+  customerId    String
+  amount        Float
+  paymentMethod String
+  timestamp     DateTime @default(now())
+  userId        String
+  notes         String?
+  receiptNumber Int      @unique(map: "CreditPayment_receiptNumber_key") @default(autoincrement())
+  customer      Customer @relation(fields: [customerId], references: [id], map: "CreditPayment_customerId_fkey")
+  user          User     @relation(fields: [userId], references: [id], map: "CreditPayment_userId_fkey")
+
+  @@index([customerId], map: "CreditPayment_customerId_fkey")
+  @@index([userId], map: "CreditPayment_userId_fkey")
+  @@map("creditpayment")
+}
+
+model Customer {
+  id             String              @id
+  fullName       String
+  documentId     String?
+  phone          String?
+  address        String?
+  createdAt      DateTime            @default(now())
+  creditLimit    Float               @default(0)
+  currentBalance Float               @default(0)
+  hasCredit      Boolean             @default(false)
+  priceLevel     Int                 @default(1)
+  creditPayment  CreditPayment[]
+  goldPurchase   GoldPurchase[]
+  layaway        Layaway[]
+  repairOrder    RepairOrder[]
+  salesInvoice   SalesInvoice[]
+  customerOrder  CustomerOrder[]
+  routeStops     DeliveryRouteStop[]
+
+  @@map("customer")
+}
+
+model FinancialTransaction {
+  id          String                   @id
+  type        FinancialTransactionType
+  amount      Float
+  referenceId String
+  description String?
+  createdAt   DateTime                 @default(now())
+
+  @@map("financialtransaction")
+}
+
+model GoldMarketPrice {
+  id               String   @id
+  pricePerOunceUSD Float
+  createdAt        DateTime @default(now())
+
+  @@map("goldmarketprice")
+}
+
+model GoldMovement {
+  id          String           @id
+  type        GoldMovementType
+  referenceId String
+  karat       Int
+  grams       Float
+  createdAt   DateTime         @default(now())
+  goldStock   GoldStock        @relation(fields: [karat], references: [karat], map: "GoldMovement_karat_fkey")
+
+  @@index([karat], map: "GoldMovement_karat_fkey")
+  @@map("goldmovement")
+}
+
+model GoldPurchase {
+  id                    String             @id
+  purchaseNumber        Int                @unique(map: "GoldPurchase_purchaseNumber_key") @default(autoincrement())
+  customerId            String
+  grossWeightGrams      Float
+  purityPercent         Float
+  fineGoldGrams         Float
+  fineGoldOunces        Float
+  karatEquivalent       Float
+  marketPriceUsed       Float
+  valueUSD              Float
+  exchangeRate          Float?
+  valueLocalCurrency    Float?
+  marginPercent         Float?
+  finalPaidAmount       Float?
+  troyOunceGrams        Float?
+  shrinkageFactor       Float?
+  refiningFactorPercent Float?
+  status                GoldPurchaseStatus @default(IN_STOCK)
+  createdAt             DateTime           @default(now())
+  customer              Customer           @relation(fields: [customerId], references: [id], map: "GoldPurchase_customerId_fkey")
+
+  @@index([customerId], map: "GoldPurchase_customerId_fkey")
+  @@map("goldpurchase")
+}
+
+model GoldStock {
+  id             String         @id
+  karat          Int            @unique(map: "GoldStock_karat_key")
+  gramsAvailable Float          @default(0)
+  updatedAt      DateTime
+  goldMovement   GoldMovement[]
+
+  @@map("goldstock")
+}
+
+model GoldTransformation {
+  id               String       @id
+  karat            Int
+  gramsUsed        Float
+  resultingPieceId String
+  createdAt        DateTime     @default(now())
+  jewelryPiece     JewelryPiece @relation(fields: [resultingPieceId], references: [id], map: "GoldTransformation_resultingPieceId_fkey")
+
+  @@index([resultingPieceId], map: "GoldTransformation_resultingPieceId_fkey")
+  @@map("goldtransformation")
+}
+
+model ImportHistory {
+  id                    String   @id
+  fileName              String
+  importedBy            String
+  importedAt            DateTime @default(now())
+  mode                  String
+  totalRows             Int
+  successfulRows        Int
+  failedRows            Int
+  productsCreated       Int      @default(0)
+  productsUpdated       Int      @default(0)
+  inventoryItemsCreated Int      @default(0)
+  errors                String?  @db.LongText
+  summary               String?  @db.LongText
+  user                  User     @relation(fields: [importedBy], references: [id], map: "ImportHistory_importedBy_fkey")
+
+  @@index([importedAt], map: "ImportHistory_importedAt_idx")
+  @@index([importedBy], map: "ImportHistory_importedBy_idx")
+  @@map("importhistory")
+}
+
+model InventoryItem {
+  id            String  @id
+  productId     String
+  productName   String
+  inventoryType String
+  barcode       String?
+  batch         String
+  quantity      Int
+  expiryDate    String
+  status        String
+  product       Product @relation(fields: [productId], references: [id], map: "InventoryItem_productId_fkey")
+
+  @@index([productId], map: "InventoryItem_productId_fkey")
+  @@map("inventoryitem")
+}
+
+model InventoryMovement {
+  id               String @id
+  timestamp        String
+  productName      String
+  movementType     String
+  movementId       String
+  quantityChange   Float
+  previousQuantity Float
+  newQuantity      Float
+  userId           String
+  inventoryType    String
+  user             User   @relation(fields: [userId], references: [id], map: "InventoryMovement_userId_fkey")
+
+  @@index([userId], map: "InventoryMovement_userId_fkey")
+  @@map("inventorymovement")
+}
+
+model JewelryMaterial {
+  id           String         @id
+  name         String         @unique(map: "JewelryMaterial_name_key")
+  createdAt    DateTime       @default(now())
+  jewelryPiece JewelryPiece[]
+
+  @@map("jewelrymaterial")
+}
+
+model JewelryPiece {
+  id                 String               @id
+  code               String?              @unique(map: "JewelryPiece_code_key")
+  name               String
+  weight             Float
+  karat              Int
+  laborCost          Float
+  marginPercent      Float
+  calculatedPrice    Float
+  profitAmount       Float                @default(0)
+  marketPriceUsed    Float
+  photoUrl           String?              @db.LongText
+  status             JewelryPieceStatus   @default(AVAILABLE)
+  location           String               @default("A")
+  createdAt          DateTime             @default(now())
+  materialId         String?
+  goldTransformation GoldTransformation[]
+  jewelryMaterial    JewelryMaterial?     @relation(fields: [materialId], references: [id], map: "JewelryPiece_materialId_fkey")
+  layaway            Layaway[]
+
+  @@index([materialId], map: "JewelryPiece_materialId_fkey")
+  @@map("jewelrypiece")
+}
+
+model JewelryService {
+  id                  String              @id
+  sessionId           String
+  userId              String
+  description         String
+  amount              Float
+  createdAt           DateTime            @default(now())
+  cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "JewelryService_sessionId_fkey")
+
+  @@index([sessionId], map: "JewelryService_sessionId_fkey")
+  @@map("jewelryservice")
+}
+
+model Layaway {
+  id              String        @id
+  jewelryPieceId  String
+  customerId      String
+  totalPrice      Float
+  downPayment     Float
+  remainingAmount Float
+  dueDate         DateTime
+  status          LayawayStatus @default(ACTIVE)
+  customer        Customer      @relation(fields: [customerId], references: [id], map: "Layaway_customerId_fkey")
+  jewelryPiece    JewelryPiece  @relation(fields: [jewelryPieceId], references: [id], map: "Layaway_jewelryPieceId_fkey")
+
+  @@index([customerId], map: "Layaway_customerId_fkey")
+  @@index([jewelryPieceId], map: "Layaway_jewelryPieceId_fkey")
+  @@map("layaway")
+}
+
+model Notification {
+  id        String   @id
+  type      String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], map: "Notification_userId_fkey")
+
+  @@index([userId], map: "Notification_userId_fkey")
+  @@map("notification")
+}
+
+model Product {
+  id                String              @id
+  name              String
+  priceNIO          Float
+  price2            Float?
+  price3            Float?
+  price4            Float?
+  costPriceNIO      Float?
+  category          String
+  inventoryType     String
+  unitOfMeasure     String
+  minStock          Int?
+  barcode           String?
+  imageUrl          String?
+  imageHint         String?
+  brand             String?
+  size              String?
+  color             String?
+  gender            String?
+  categoryId        String?
+  originalPrice     Float               @default(0)
+  purchaseCurrency  String              @default("NIO")
+  hasVariants       Boolean             @default(false)
+  hasBoxOption      Boolean             @default(false)
+  unitsPerBox       Int?                @default(1)
+  boxPrice          Float?
+isFractional      Boolean             @default(false)
+    trackInventory    Boolean             @default(true)
+    bulkUnit          String?
+    baseUnit          String?
+    /// Presentación 1 (Venta Fraccionada / Al Mayor): nombre y factor de equivalencia.
+    unitsPerBulk      Float?
+    /// Presentación 2 (opcional).
+    bulkUnit2         String?
+    unitsPerBulk2     Float?
+    /// Presentación 3 (opcional).
+    bulkUnit3         String?
+    unitsPerBulk3     Float?
+  inventoryItem     InventoryItem[]
+  categoryRelation  Category?           @relation(fields: [categoryId], references: [id], map: "Product_categoryId_fkey")
+  purchaseOrderItem PurchaseOrderItem[]
+  productVariant    ProductVariant[]
+  customerOrderItem CustomerOrderItem[]
+  purchaseInvoiceItem PurchaseInvoiceItem[]
+  quoteItem           QuoteItem[]
+
+  @@index([categoryId], map: "Product_categoryId_fkey")
+  @@map("product")
+}
+
+model PurchaseInvoice {
+  id            String   @id
+  invoiceNumber String
+  supplierId    String
+  supplierName  String
+  date          String
+  dueDate       String
+  totalAmount   Float
+  paidAmount    Float
+  status        String
+  details       String?
+  paymentType   String   @default("CASH")
+  issueDate     String?
+  subtotal      Float?
+  tax           Float?
+  discount      Float?
+  supplier      Supplier              @relation(fields: [supplierId], references: [id], map: "PurchaseInvoice_supplierId_fkey")
+  items         PurchaseInvoiceItem[]
+  accountsPayable AccountsPayable[]
+
+  @@index([supplierId], map: "PurchaseInvoice_supplierId_fkey")
+  @@map("purchaseinvoice")
+}
+
+model PurchaseInvoiceItem {
+  id                String          @id
+  purchaseInvoiceId String
+  productId         String?
+  productName       String
+  presentation      String?         @default("UNIT")
+  quantity          Float
+  unitCost          Float
+  subtotal          Float
+  unitsConverted    Float
+  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], map: "PurchaseInvoiceItem_purchaseInvoiceId_fkey")
+  product           Product?        @relation(fields: [productId], references: [id], map: "PurchaseInvoiceItem_productId_fkey")
+
+  @@index([purchaseInvoiceId], map: "PurchaseInvoiceItem_purchaseInvoiceId_fkey")
+  @@index([productId], map: "PurchaseInvoiceItem_productId_fkey")
+  @@map("purchaseinvoiceitem")
+}
+
+model AccountsPayable {
+  id         String   @id
+  invoiceId  String
+  supplierId String
+  amount     Float
+  paidAmount Float    @default(0)
+  status     String   @default("PENDING")
+  dueDate    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  purchaseInvoice PurchaseInvoice @relation(fields: [invoiceId], references: [id], map: "AccountsPayable_invoiceId_fkey")
+  supplier        Supplier        @relation(fields: [supplierId], references: [id], map: "AccountsPayable_supplierId_fkey")
+
+  @@unique([invoiceId], map: "AccountsPayable_invoiceId_key")
+  @@index([supplierId], map: "AccountsPayable_supplierId_idx")
+  @@map("accountspayable")
+}
+
+model PurchaseOrder {
+  id                String              @id
+  orderNumber       String
+  supplierId        String
+  status            String
+  date              DateTime            @default(now())
+  expectedDate      DateTime?
+  totalAmount       Float
+  notes             String?
+  paymentType       String              @default("CASH")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  supplier          Supplier            @relation(fields: [supplierId], references: [id], map: "PurchaseOrder_supplierId_fkey")
+  purchaseOrderItem PurchaseOrderItem[]
+
+  @@index([supplierId], map: "PurchaseOrder_supplierId_fkey")
+  @@map("purchaseorder")
+}
+
+model PurchaseOrderItem {
+  id              String          @id
+  purchaseOrderId String
+  productId       String?
+  productName     String
+  quantity        Int
+  unitCost        Float
+  totalCost       Float
+  variantId       String?
+  product         Product?        @relation(fields: [productId], references: [id], map: "PurchaseOrderItem_productId_fkey")
+  productVariant  ProductVariant? @relation(fields: [variantId], references: [id], map: "PurchaseOrderItem_variantId_fkey")
+  purchaseOrder   PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], map: "PurchaseOrderItem_purchaseOrderId_fkey")
+
+  @@index([productId], map: "PurchaseOrderItem_productId_fkey")
+  @@index([variantId], map: "PurchaseOrderItem_variantId_fkey")
+  @@index([purchaseOrderId], map: "PurchaseOrderItem_purchaseOrderId_fkey")
+  @@map("purchaseorderitem")
+}
+
+model RepairOrder {
+  id                    String            @id
+  customerId            String
+  description           String
+  receivedWeight        Float?
+  advancePayment        Float
+  estimatedDeliveryDate DateTime
+  finalPrice            Float?
+  status                RepairOrderStatus @default(RECEIVED)
+  createdAt             DateTime          @default(now())
+  customer              Customer          @relation(fields: [customerId], references: [id], map: "RepairOrder_customerId_fkey")
+
+  @@index([customerId], map: "RepairOrder_customerId_fkey")
+  @@map("repairorder")
+}
+
+model SalesInvoice {
+  id                  String              @id
+  invoiceNumber       Int                 @unique(map: "SalesInvoice_invoiceNumber_key") @default(autoincrement())
+  date                DateTime            @default(now())
+  totalAmount         Float
+  /// Subtotal de la venta (sin impuestos) para reproducir el ticket exacto en reimpresión.
+  subtotal            Float               @default(0)
+  /// Impuesto (IVA) aplicado sobre el subtotal para reproducir el ticket exacto.
+  tax                 Float               @default(0)
+  paymentMethod       String
+  status              String              @default("COMPLETED")
+  sessionId           String
+  userId              String
+  customerId          String?
+  creditNote          CreditNote?
+  customer            Customer?           @relation(fields: [customerId], references: [id], map: "SalesInvoice_customerId_fkey")
+  cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "SalesInvoice_sessionId_fkey")
+  user                User                @relation(fields: [userId], references: [id], map: "SalesInvoice_userId_fkey")
+  salesInvoiceItem    SalesInvoiceItem[]
+
+  @@index([customerId], map: "SalesInvoice_customerId_fkey")
+  @@index([sessionId], map: "SalesInvoice_sessionId_fkey")
+  @@index([userId], map: "SalesInvoice_userId_fkey")
+  @@map("salesinvoice")
+}
+
+model SalesInvoiceItem {
+  id             String          @id
+  invoiceId      String
+  productId      String
+  productName    String
+  quantity       Int
+  unitPrice      Float
+  totalPrice     Float
+  variantId      String?
+  priceLevel     Int             @default(1)
+  /// Nombre de la presentación vendida (ej: Ristra, Caja) si aplica.
+  presentationName String?
+  /// Factor de conversión a la unidad base (presentación dinámica o legado caja).
+  presentationFactor Float        @default(1)
+  /// Unidad base del producto (para equivalencia en el ticket).
+  baseUnit        String?
+  /// Unidad de venta en bulto / caja (legado).
+  bulkUnit        String?
+  /// Venta bajo encargo (entrega pendiente) marcada al momento del cobro.
+  isEncargo       Boolean         @default(false)
+  salesInvoice   SalesInvoice    @relation(fields: [invoiceId], references: [id], map: "SalesInvoiceItem_invoiceId_fkey")
+  productVariant ProductVariant? @relation(fields: [variantId], references: [id], map: "SalesInvoiceItem_variantId_fkey")
+
+  @@index([invoiceId], map: "SalesInvoiceItem_invoiceId_fkey")
+  @@index([variantId], map: "SalesInvoiceItem_variantId_fkey")
+  @@map("salesinvoiceitem")
+}
+
+model Quote {
+  id             String      @id
+  quoteNumber    Int         @unique @default(autoincrement())
+  customerName   String      @default("Cliente General")
+  customerPhone  String?
+  expirationDays Int         @default(30)
+  subtotal       Float
+  tax            Float       @default(0)
+  total          Float
+  status         String      @default("PENDING")
+  notes          String?     @db.Text
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  userId         String?
+  convertedInvoiceId String?
+  user           User?       @relation(fields: [userId], references: [id])
+  items          QuoteItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("quote")
+}
+
+model QuoteItem {
+  id             String   @id
+  quoteId        String
+  productId      String?
+  productName    String
+  quantity       Int
+  unitPrice      Float
+  totalPrice     Float
+  variantId      String?
+  priceLevel     Int      @default(1)
+  quote          Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product        Product? @relation(fields: [productId], references: [id])
+
+  @@index([quoteId])
+  @@map("quote_item")
+}
+
+model Supplier {
+  id              String            @id
+  name            String
+  nit             String
+  phone           String
+  email           String?
+  address         String?
+  city            String?
+  status          String            @default("Active")
+  purchaseInvoice PurchaseInvoice[]
+  purchaseOrder   PurchaseOrder[]
+  accountsPayable AccountsPayable[]
+
+  @@map("supplier")
+}
+
+model SystemSettings {
+  id                        String       @id @default(uuid())
+  businessMode              BusinessMode @default(PHARMACY)
+  pharmacyName              String       @default("PharmaSync")
+  currency                  String       @default("NIO")
+  taxRate                   Float        @default(0.15)
+  applyTax                  Boolean      @default(true)
+  recoveryKey               String?
+  workflow                  String       @default("dispatcher-cashier")
+  quickSwitchEnabled        Boolean      @default(false)
+  isActivated               Boolean      @default(false)
+  activationDate            DateTime?
+  exchangeRate              String       @default("36.5")
+  allowCash                 Boolean      @default(true)
+  blockInsufficientCash     Boolean      @default(true)
+  allowDollars              Boolean      @default(false)
+  allowCard                 Boolean      @default(true)
+  troyOunceGrams            Float        @default(31.1035)
+  shrinkageFactor           Float        @default(100)
+  refiningFactorPercent     Float        @default(100)
+  address                   String?      @db.Text
+  phone                     String?
+  rfc                       String?
+  footerMessage             String?      @db.Text
+  website                   String?
+  includeUnitPrice          Boolean      @default(false)
+  printFullDescription      Boolean      @default(false)
+  isPremium                 Boolean      @default(false)
+  logoSvg                   String?      @db.Text
+  jewelryLocationMode       String       @default("HOME")
+  adminEmail                String       @default("")
+  smtpEmail                 String       @default("")
+  smtpPassword              String       @default("")
+  emailNotificationsEnabled Boolean      @default(false)
+  updatedAt                 DateTime
+  licenseExpirationDate     DateTime?
+  licenseStartDate          DateTime?
+  licenseStatus             String       @default("unregistered")
+  invoiceAlertDays          Int          @default(5)
+  importProductsInDollars   Boolean      @default(false)
+
+  @@map("systemsettings")
+}
+
+model User {
+  id                  String                @id
+  name                String
+  role                String
+  password            String?
+  status              String?
+  inventoryType       String?
+  failedAttempts      Int                   @default(0)
+  isEnabled           Boolean               @default(true)
+  assignedLocation    String                @default("ALL")
+  cashRegisterSession CashRegisterSession[]
+  creditNote          CreditNote[]
+  creditPayment       CreditPayment[]
+  importHistory       ImportHistory[]
+  inventoryMovement   InventoryMovement[]
+  notification        Notification[]
+  salesInvoice        SalesInvoice[]
+  customerOrder       CustomerOrder[]
+  deliveryRoute       DeliveryRoute[]
+  collectionPayment   CollectionPayment[]
+  quote               Quote[]
+
+  @@map("user")
+}
+
+enum BusinessMode {
+  PHARMACY
+  JEWELRY
+  BOUTIQUE
+  DISTRIBUIDORA
+
+  @@map("business_mode")
+}
+
+enum FinancialTransactionType {
+  EXPENSE
+  INCOME
+
+  @@map("financialtransaction_type")
+}
+
+enum GoldMovementType {
+  PURCHASE
+  MELT
+  TRANSFORMATION
+  SALE
+  ADJUSTMENT
+
+  @@map("goldmovement_type")
+}
+
+enum LayawayStatus {
+  ACTIVE
+  COMPLETED
+  CANCELED
+  EXPIRED
+
+  @@map("layaway_status")
+}
+
+enum RepairOrderStatus {
+  RECEIVED
+  IN_PROGRESS
+  COMPLETED
+  DELIVERED
+
+  @@map("repairorder_status")
+}
+
+enum JewelryPieceStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  REPAIR
+
+  @@map("jewelrypiece_status")
+}
+
+enum GoldPurchaseStatus {
+  IN_STOCK
+  MELTED
+  TRANSFORMED
+
+  @@map("goldpurchase_status")
+}
+
+model Size {
+  id       String           @id @default(uuid())
+  name     String           @unique
+  order    Int              @default(0)
+  active   Boolean          @default(true)
+  variants ProductVariant[]
+
+  @@map("size")
+}
+
+model Color {
+  id       String           @id @default(uuid())
+  name     String           @unique
+  hexCode  String?
+  active   Boolean          @default(true)
+  variants ProductVariant[]
+
+  @@map("color")
+}
+
+model ProductVariant {
+  id        String   @id @default(uuid())
+  productId String
+  sizeId    String
+  colorId   String
+  barcode   String?  @unique
+  cost      Float
+  price     Float
+  stock     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size    Size    @relation(fields: [sizeId], references: [id])
+  color   Color   @relation(fields: [colorId], references: [id])
+
+  salesItems    SalesInvoiceItem[]
+  purchaseItems PurchaseOrderItem[]
+
+  @@unique([productId, sizeId, colorId])
+  @@index([productId])
+  @@index([sizeId])
+  @@index([colorId])
+  @@map("product_variant")
+}
+
+model CustomerOrder {
+  id          String              @id
+  orderNumber Int                 @unique(map: "CustomerOrder_orderNumber_key") @default(autoincrement())
+  customerId  String
+  userId      String
+  status      CustomerOrderStatus @default(PENDING)
+  totalAmount Float
+  paidAmount  Float               @default(0)
+  notes       String?             @db.Text
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  customer   Customer            @relation(fields: [customerId], references: [id])
+  user       User                @relation(fields: [userId], references: [id])
+  items      CustomerOrderItem[]
+  routeStops DeliveryRouteStop[]
+  payments   CollectionPayment[]
+
+  @@index([customerId])
+  @@index([userId])
+  @@index([status])
+  @@map("customer_order")
+}
+
+model CustomerOrderItem {
+  id          String  @id
+  orderId     String
+  productId   String?
+  productName String
+  quantity    Int
+  unitPrice   Float
+  totalPrice  Float
+
+  order   CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?      @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("customer_order_item")
+}
+
+model HeldSale {
+  id             String         @id
+  dispatcherId   String
+  dispatcherName String
+  customerName   String?
+  items          Json
+  total          Float
+  status         HeldSaleStatus @default(PENDING)
+  invoiceId      String?
+  lockedBy       String?
+  orderId        String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+  @@index([dispatcherId])
+  @@index([lockedBy])
+  @@index([orderId])
+  @@map("held_sale")
+}
+
+model DeliveryRoute {
+  id        String              @id
+  name      String
+  ruteroId  String?
+  date      DateTime
+  status    DeliveryRouteStatus @default(PENDING)
+  notes     String?             @db.Text
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  rutero User?               @relation(fields: [ruteroId], references: [id])
+  stops  DeliveryRouteStop[]
+
+  @@index([ruteroId])
+  @@index([date])
+  @@map("delivery_route")
+}
+
+model DeliveryRouteStop {
+  id         String             @id
+  routeId    String
+  orderId    String?
+  customerId String
+  address    String?
+  notes      String?
+  status     DeliveryStopStatus @default(PENDING)
+  visitedAt  DateTime?
+
+  route    DeliveryRoute  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  order    CustomerOrder? @relation(fields: [orderId], references: [id])
+  customer Customer       @relation(fields: [customerId], references: [id])
+
+  @@index([routeId])
+  @@map("delivery_route_stop")
+}
+
+model CollectionPayment {
+  id            String   @id
+  orderId       String
+  amount        Float
+  paymentMethod String
+  userId        String
+  receivedAt    DateTime @default(now())
+  notes         String?
+
+  order CustomerOrder @relation(fields: [orderId], references: [id])
+  user  User          @relation(fields: [userId], references: [id])
+
+  @@index([orderId])
+  @@map("collection_payment")
+}
+
+enum CustomerOrderStatus {
+  PENDING
+  APPROVED
+  IN_TRANSIT
+  DELIVERED
+  FACTURADO
+  CANCELLED
+
+  @@map("customer_order_status")
+}
+
+enum HeldSaleStatus {
+  PENDING
+  HELD
+  BILLED
+  CANCELLED
+
+  @@map("held_sale_status")
+}
+
+enum DeliveryRouteStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("delivery_route_status")
+}
+
+enum DeliveryStopStatus {
+  PENDING
+  VISITED
+  CANCELLED
+
+  @@map("delivery_stop_status")
+}
+
+enum QuoteStatus {
+  PENDING
+  CONVERTED
+  EXPIRED
+  CANCELLED
+
+  @@map("quote_status")
+}

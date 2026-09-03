@@ -1,0 +1,770 @@
+2026-08-30T10:29:41: Error creating sale: PrismaClientKnownRequestError: 
+2026-08-30T10:29:41: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:29:41: 
+2026-08-30T10:29:41: 
+2026-08-30T10:29:41: The column `subtotal` does not exist in the current database.
+2026-08-30T10:29:41:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:29:41:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:29:41:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:29:41:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:29:41:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6708:28
+2026-08-30T10:29:41:     at async Proxy._transactionWithCallback (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:8000)
+2026-08-30T10:29:41:     at async createSale (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6588:5)
+2026-08-30T10:29:41:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:29:41:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:29:41:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25 {
+2026-08-30T10:29:41:   code: 'P2022',
+2026-08-30T10:29:41:   clientVersion: '5.22.0',
+2026-08-30T10:29:41:   meta: { modelName: 'SalesInvoice', column: 'subtotal' }
+2026-08-30T10:29:41: }
+2026-08-30T10:29:50: Error creating sale: PrismaClientKnownRequestError: 
+2026-08-30T10:29:50: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:29:50: 
+2026-08-30T10:29:50: 
+2026-08-30T10:29:50: The column `subtotal` does not exist in the current database.
+2026-08-30T10:29:50:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:29:50:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:29:50:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:29:50:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:29:50:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6708:28
+2026-08-30T10:29:50:     at async Proxy._transactionWithCallback (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:8000)
+2026-08-30T10:29:50:     at async createSale (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6588:5)
+2026-08-30T10:29:50:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:29:50:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:29:50:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25 {
+2026-08-30T10:29:50:   code: 'P2022',
+2026-08-30T10:29:50:   clientVersion: '5.22.0',
+2026-08-30T10:29:50:   meta: { modelName: 'SalesInvoice', column: 'subtotal' }
+2026-08-30T10:29:50: }
+2026-08-30T10:41:17: Error creating sale: PrismaClientKnownRequestError: 
+2026-08-30T10:41:17: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:41:17: 
+2026-08-30T10:41:17: 
+2026-08-30T10:41:17: The column `subtotal` does not exist in the current database.
+2026-08-30T10:41:17:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:41:17:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:41:17:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:41:17:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:41:17:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6708:28
+2026-08-30T10:41:17:     at async Proxy._transactionWithCallback (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:8000)
+2026-08-30T10:41:17:     at async createSale (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6588:5)
+2026-08-30T10:41:17:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:41:17:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:41:17:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25 {
+2026-08-30T10:41:17:   code: 'P2022',
+2026-08-30T10:41:17:   clientVersion: '5.22.0',
+2026-08-30T10:41:17:   meta: { modelName: 'SalesInvoice', column: 'subtotal' }
+2026-08-30T10:41:17: }
+2026-08-30T10:41:32: Error creating sale: PrismaClientKnownRequestError: 
+2026-08-30T10:41:32: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:41:32: 
+2026-08-30T10:41:32: 
+2026-08-30T10:41:32: The column `subtotal` does not exist in the current database.
+2026-08-30T10:41:32:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:41:32:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:41:32:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:41:32:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:41:32:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6708:28
+2026-08-30T10:41:32:     at async Proxy._transactionWithCallback (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:8000)
+2026-08-30T10:41:32:     at async createSale (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6588:5)
+2026-08-30T10:41:32:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:41:32:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:41:32:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25 {
+2026-08-30T10:41:32:   code: 'P2022',
+2026-08-30T10:41:32:   clientVersion: '5.22.0',
+2026-08-30T10:41:32:   meta: { modelName: 'SalesInvoice', column: 'subtotal' }
+2026-08-30T10:41:32: }
+2026-08-30T10:47:58: Error creating sale: PrismaClientKnownRequestError: 
+2026-08-30T10:47:58: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:47:58: 
+2026-08-30T10:47:58: 
+2026-08-30T10:47:58: The column `presentationFactor` does not exist in the current database.
+2026-08-30T10:47:58:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:47:58:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:47:58:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:47:58:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:47:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6708:28
+2026-08-30T10:47:58:     at async Proxy._transactionWithCallback (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:8000)
+2026-08-30T10:47:58:     at async createSale (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6588:5)
+2026-08-30T10:47:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:47:58:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:47:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25 {
+2026-08-30T10:47:58:   code: 'P2022',
+2026-08-30T10:47:58:   clientVersion: '5.22.0',
+2026-08-30T10:47:58:   meta: { modelName: 'SalesInvoice', column: 'presentationFactor' }
+2026-08-30T10:47:58: }
+2026-08-30T10:48:01: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:48:01: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:01:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:48:01:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:48:01:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:48:01:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:48:01:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:48:01:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:48:01:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:48:01:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:48:01:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:48:01:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:48:01:   code: 'P2022',
+2026-08-30T10:48:01:   clientVersion: '5.22.0',
+2026-08-30T10:48:01:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:48:01: }
+2026-08-30T10:48:01: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:48:01: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: 
+2026-08-30T10:48:01: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:01:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:48:01:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:48:01:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:48:01:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:48:01:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:48:01:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:48:01:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:48:01:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:48:01:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:48:01:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:48:01:   code: 'P2022',
+2026-08-30T10:48:01:   clientVersion: '5.22.0',
+2026-08-30T10:48:01:   meta: {
+2026-08-30T10:48:01:     modelName: 'InventoryItem',
+2026-08-30T10:48:01:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:48:01:   }
+2026-08-30T10:48:01: }
+2026-08-30T10:48:02: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:48:02: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:02:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:48:02:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:48:02:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:48:02:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:48:02:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:48:02:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:48:02:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:48:02:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:48:02:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:48:02:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:48:02:   code: 'P2022',
+2026-08-30T10:48:02:   clientVersion: '5.22.0',
+2026-08-30T10:48:02:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:48:02: }
+2026-08-30T10:48:02: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:48:02: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: 
+2026-08-30T10:48:02: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:48:02:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:48:02:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:48:02:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:48:02:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:48:02:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:48:02:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:48:02:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:48:02:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:48:02:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:48:02:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:48:02:   code: 'P2022',
+2026-08-30T10:48:02:   clientVersion: '5.22.0',
+2026-08-30T10:48:02:   meta: {
+2026-08-30T10:48:02:     modelName: 'InventoryItem',
+2026-08-30T10:48:02:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:48:02:   }
+2026-08-30T10:48:02: }
+2026-08-30T10:48:08: Error creating sale: PrismaClientKnownRequestError: 
+2026-08-30T10:48:08: Invalid `prisma.salesInvoice.create()` invocation:
+2026-08-30T10:48:08: 
+2026-08-30T10:48:08: 
+2026-08-30T10:48:08: The column `presentationFactor` does not exist in the current database.
+2026-08-30T10:48:08:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:48:08:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:48:08:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:48:08:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:48:08:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6708:28
+2026-08-30T10:48:08:     at async Proxy._transactionWithCallback (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:8000)
+2026-08-30T10:48:08:     at async createSale (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:6588:5)
+2026-08-30T10:48:08:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:48:08:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:48:08:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25 {
+2026-08-30T10:48:08:   code: 'P2022',
+2026-08-30T10:48:08:   clientVersion: '5.22.0',
+2026-08-30T10:48:08:   meta: { modelName: 'SalesInvoice', column: 'presentationFactor' }
+2026-08-30T10:48:08: }
+2026-08-30T10:54:57: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:54:57: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:57:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:54:57:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:54:57:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:54:57:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:54:57:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:54:57:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:54:57:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:54:57:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:54:57:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:54:57:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:54:57:   code: 'P2022',
+2026-08-30T10:54:57:   clientVersion: '5.22.0',
+2026-08-30T10:54:57:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:54:57: }
+2026-08-30T10:54:57: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:54:57: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: 
+2026-08-30T10:54:57: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:57:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:54:57:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:54:57:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:54:57:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:54:57:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:54:57:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:54:57:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:54:57:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:54:57:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:54:57:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:54:57:   code: 'P2022',
+2026-08-30T10:54:57:   clientVersion: '5.22.0',
+2026-08-30T10:54:57:   meta: {
+2026-08-30T10:54:57:     modelName: 'InventoryItem',
+2026-08-30T10:54:57:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:54:57:   }
+2026-08-30T10:54:57: }
+2026-08-30T10:54:58: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:54:58: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:58:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:54:58:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:54:58:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:54:58:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:54:58:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:54:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:54:58:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:54:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:54:58:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:54:58:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:54:58:   code: 'P2022',
+2026-08-30T10:54:58:   clientVersion: '5.22.0',
+2026-08-30T10:54:58:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:54:58: }
+2026-08-30T10:54:58: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:54:58: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: 
+2026-08-30T10:54:58: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:54:58:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:54:58:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:54:58:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:54:58:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:54:58:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:54:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:54:58:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:54:58:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:54:58:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:54:58:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:54:58:   code: 'P2022',
+2026-08-30T10:54:58:   clientVersion: '5.22.0',
+2026-08-30T10:54:58:   meta: {
+2026-08-30T10:54:58:     modelName: 'InventoryItem',
+2026-08-30T10:54:58:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:54:58:   }
+2026-08-30T10:54:58: }
+2026-08-30T10:58:48: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:58:48: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:58:48:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:58:48:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:58:48:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:58:48:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:58:48:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:58:48:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:58:48:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:58:48:   code: 'P2022',
+2026-08-30T10:58:48:   clientVersion: '5.22.0',
+2026-08-30T10:58:48:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:58:48: }
+2026-08-30T10:58:48: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:58:48: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:58:48:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:58:48:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:58:48:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:58:48:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:58:48:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:58:48:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:58:48:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:58:48:   code: 'P2022',
+2026-08-30T10:58:48:   clientVersion: '5.22.0',
+2026-08-30T10:58:48:   meta: {
+2026-08-30T10:58:48:     modelName: 'InventoryItem',
+2026-08-30T10:58:48:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:58:48:   }
+2026-08-30T10:58:48: }
+2026-08-30T10:58:48: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:58:48: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:58:48:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:58:48:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:58:48:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:58:48:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:58:48:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:58:48:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:58:48:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:58:48:   code: 'P2022',
+2026-08-30T10:58:48:   clientVersion: '5.22.0',
+2026-08-30T10:58:48:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:58:48: }
+2026-08-30T10:58:48: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:58:48: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: 
+2026-08-30T10:58:48: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:58:48:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:58:48:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:58:48:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:58:48:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:58:48:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:58:48:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:58:48:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:58:48:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:58:48:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:58:48:   code: 'P2022',
+2026-08-30T10:58:48:   clientVersion: '5.22.0',
+2026-08-30T10:58:48:   meta: {
+2026-08-30T10:58:48:     modelName: 'InventoryItem',
+2026-08-30T10:58:48:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:58:48:   }
+2026-08-30T10:58:48: }
+2026-08-30T10:59:21: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:59:21: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:21:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:59:21:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:59:21:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:59:21:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:59:21:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:59:21:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:59:21:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:59:21:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:59:21:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:59:21:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:59:21:   code: 'P2022',
+2026-08-30T10:59:21:   clientVersion: '5.22.0',
+2026-08-30T10:59:21:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:59:21: }
+2026-08-30T10:59:21: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:59:21: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: 
+2026-08-30T10:59:21: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:21:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:59:21:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:59:21:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:59:21:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:59:21:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:59:21:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:59:21:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:59:21:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:59:21:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:59:21:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:59:21:   code: 'P2022',
+2026-08-30T10:59:21:   clientVersion: '5.22.0',
+2026-08-30T10:59:21:   meta: {
+2026-08-30T10:59:21:     modelName: 'InventoryItem',
+2026-08-30T10:59:21:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:59:21:   }
+2026-08-30T10:59:21: }
+2026-08-30T10:59:22: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T10:59:22: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:22:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:59:22:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:59:22:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:59:22:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:59:22:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T10:59:22:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:59:22:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:59:22:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:59:22:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:59:22:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:59:22:   code: 'P2022',
+2026-08-30T10:59:22:   clientVersion: '5.22.0',
+2026-08-30T10:59:22:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T10:59:22: }
+2026-08-30T10:59:22: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T10:59:22: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: 
+2026-08-30T10:59:22: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T10:59:22:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T10:59:22:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T10:59:22:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T10:59:22:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T10:59:22:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T10:59:22:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T10:59:22:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T10:59:22:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T10:59:22:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T10:59:22:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T10:59:22:   code: 'P2022',
+2026-08-30T10:59:22:   clientVersion: '5.22.0',
+2026-08-30T10:59:22:   meta: {
+2026-08-30T10:59:22:     modelName: 'InventoryItem',
+2026-08-30T10:59:22:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T10:59:22:   }
+2026-08-30T10:59:22: }
+2026-08-30T11:00:05: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:00:05: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:00:05:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:00:05:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:00:05:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:00:05:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:00:05:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:00:05:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:00:05:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:00:05:   code: 'P2022',
+2026-08-30T11:00:05:   clientVersion: '5.22.0',
+2026-08-30T11:00:05:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:00:05: }
+2026-08-30T11:00:05: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:00:05: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:00:05:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:00:05:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:00:05:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:00:05:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:00:05:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:00:05:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:00:05:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:00:05:   code: 'P2022',
+2026-08-30T11:00:05:   clientVersion: '5.22.0',
+2026-08-30T11:00:05:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:00:05: }
+2026-08-30T11:00:05: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:00:05: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:00:05:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:00:05:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:00:05:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:00:05:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:00:05:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:00:05:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:00:05:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:00:05:   code: 'P2022',
+2026-08-30T11:00:05:   clientVersion: '5.22.0',
+2026-08-30T11:00:05:   meta: {
+2026-08-30T11:00:05:     modelName: 'InventoryItem',
+2026-08-30T11:00:05:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:00:05:   }
+2026-08-30T11:00:05: }
+2026-08-30T11:00:05: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:00:05: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: 
+2026-08-30T11:00:05: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:00:05:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:00:05:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:00:05:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:00:05:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:00:05:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:00:05:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:00:05:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:00:05:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:00:05:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:00:05:   code: 'P2022',
+2026-08-30T11:00:05:   clientVersion: '5.22.0',
+2026-08-30T11:00:05:   meta: {
+2026-08-30T11:00:05:     modelName: 'InventoryItem',
+2026-08-30T11:00:05:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:00:05:   }
+2026-08-30T11:00:05: }
+2026-08-30T11:01:20: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:01:20: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:01:20:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:01:20:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:01:20:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:01:20:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:01:20:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:01:20:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:01:20:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:01:20:   code: 'P2022',
+2026-08-30T11:01:20:   clientVersion: '5.22.0',
+2026-08-30T11:01:20:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:01:20: }
+2026-08-30T11:01:20: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:01:20: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:01:20:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:01:20:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:01:20:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:01:20:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:01:20:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:01:20:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:01:20:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:01:20:   code: 'P2022',
+2026-08-30T11:01:20:   clientVersion: '5.22.0',
+2026-08-30T11:01:20:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:01:20: }
+2026-08-30T11:01:20: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:01:20: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:01:20:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:01:20:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:01:20:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:01:20:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:01:20:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:01:20:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:01:20:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:01:20:   code: 'P2022',
+2026-08-30T11:01:20:   clientVersion: '5.22.0',
+2026-08-30T11:01:20:   meta: {
+2026-08-30T11:01:20:     modelName: 'InventoryItem',
+2026-08-30T11:01:20:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:01:20:   }
+2026-08-30T11:01:20: }
+2026-08-30T11:01:20: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:01:20: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: 
+2026-08-30T11:01:20: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:01:20:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:01:20:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:01:20:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:01:20:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:01:20:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:01:20:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:01:20:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:01:20:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:01:20:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:01:20:   code: 'P2022',
+2026-08-30T11:01:20:   clientVersion: '5.22.0',
+2026-08-30T11:01:20:   meta: {
+2026-08-30T11:01:20:     modelName: 'InventoryItem',
+2026-08-30T11:01:20:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:01:20:   }
+2026-08-30T11:01:20: }
+2026-08-30T11:14:29: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:14:29: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:29:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:14:29:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:14:29:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:14:29:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:14:29:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:14:29:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:14:29:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:14:29:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:14:29:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:14:29:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:14:29:   code: 'P2022',
+2026-08-30T11:14:29:   clientVersion: '5.22.0',
+2026-08-30T11:14:29:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:14:29: }
+2026-08-30T11:14:29: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:14:29: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: 
+2026-08-30T11:14:29: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:29:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:14:29:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:14:29:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:14:29:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:14:29:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:14:29:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:14:29:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:14:29:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:14:29:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:14:29:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:14:29:   code: 'P2022',
+2026-08-30T11:14:29:   clientVersion: '5.22.0',
+2026-08-30T11:14:29:   meta: {
+2026-08-30T11:14:29:     modelName: 'InventoryItem',
+2026-08-30T11:14:29:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:14:29:   }
+2026-08-30T11:14:29: }
+2026-08-30T11:14:30: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:14:30: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:30:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:14:30:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:14:30:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:14:30:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:14:30:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:14:30:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:14:30:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:14:30:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:14:30:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:14:30:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:14:30:   code: 'P2022',
+2026-08-30T11:14:30:   clientVersion: '5.22.0',
+2026-08-30T11:14:30:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:14:30: }
+2026-08-30T11:14:30: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:14:30: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: 
+2026-08-30T11:14:30: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:14:30:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:14:30:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:14:30:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:14:30:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:14:30:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:14:30:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:14:30:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:14:30:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:14:30:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:14:30:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:14:30:   code: 'P2022',
+2026-08-30T11:14:30:   clientVersion: '5.22.0',
+2026-08-30T11:14:30:   meta: {
+2026-08-30T11:14:30:     modelName: 'InventoryItem',
+2026-08-30T11:14:30:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:14:30:   }
+2026-08-30T11:14:30: }
+2026-08-30T11:19:07: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:19:07: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:19:07:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:19:07:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:19:07:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:19:07:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:19:07:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:19:07:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:19:07:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:19:07:   code: 'P2022',
+2026-08-30T11:19:07:   clientVersion: '5.22.0',
+2026-08-30T11:19:07:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:19:07: }
+2026-08-30T11:19:07: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:19:07: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:19:07:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:19:07:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:19:07:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:19:07:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:19:07:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:19:07:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:19:07:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:19:07:   code: 'P2022',
+2026-08-30T11:19:07:   clientVersion: '5.22.0',
+2026-08-30T11:19:07:   meta: {
+2026-08-30T11:19:07:     modelName: 'InventoryItem',
+2026-08-30T11:19:07:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:19:07:   }
+2026-08-30T11:19:07: }
+2026-08-30T11:19:07: Error fetching products: PrismaClientKnownRequestError: 
+2026-08-30T11:19:07: Invalid `prisma.product.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:19:07:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:19:07:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:19:07:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:19:07:     at async getProducts (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:5193:22)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:19:07:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:19:07:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:19:07:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:19:07:   code: 'P2022',
+2026-08-30T11:19:07:   clientVersion: '5.22.0',
+2026-08-30T11:19:07:   meta: { modelName: 'Product', column: 'farmacia.product.unitsPerBulk' }
+2026-08-30T11:19:07: }
+2026-08-30T11:19:07: Error fetching inventory: PrismaClientKnownRequestError: 
+2026-08-30T11:19:07: Invalid `prisma.inventoryItem.findMany()` invocation:
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: 
+2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+2026-08-30T11:19:07:     at $n.handleRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:7315)
+2026-08-30T11:19:07:     at $n.handleAndLogRequestError (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6623)
+2026-08-30T11:19:07:     at $n.request (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:121:6307)
+2026-08-30T11:19:07:     at async l (C:\Users\carlo\OneDrive\Documents\Downloads\react\Omni Inventario +\node_modules\@prisma\client\runtime\library.js:130:9633)
+2026-08-30T11:19:07:     at async getInventory (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:3263:23)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/dist-server/index.mjs:7747:16
+2026-08-30T11:19:07:     at async dispatch (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/compose.js:22:17)
+2026-08-30T11:19:07:     at async file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/hono/dist/hono-base.js:307:25
+2026-08-30T11:19:07:     at async responseViaResponseObject (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:946:13)
+2026-08-30T11:19:07:     at async Server.<anonymous> (file:///C:/Users/carlo/OneDrive/Documents/Downloads/react/Omni%20Inventario%20+/node_modules/@hono/node-server/dist/index.mjs:1044:11) {
+2026-08-30T11:19:07:   code: 'P2022',
+2026-08-30T11:19:07:   clientVersion: '5.22.0',
+2026-08-30T11:19:07:   meta: {
+2026-08-30T11:19:07:     modelName: 'InventoryItem',
+2026-08-30T11:19:07:     column: 'farmacia.product.unitsPerBulk'
+2026-08-30T11:19:07:   }
+2026-08-30T11:19:07: }

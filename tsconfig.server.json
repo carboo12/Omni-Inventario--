@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "server-only": ["server/shims/server-only.ts"],
+      "next/cache": ["server/shims/next-cache.ts"],
+      "next/headers": ["server/shims/next-headers.ts"],
+      "react": ["server/shims/react.ts"],
+      "@/*": ["src/*"]
+    }
+  }
+}

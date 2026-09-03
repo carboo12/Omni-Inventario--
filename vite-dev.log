@@ -1,0 +1,63 @@
+Port 5173 is in use, trying another one...
+
+  [32m[1mVITE[22m v7.3.6[39m  [2mready in [0m[1m958[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5174[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.43.67:[1m5174[22m/[39m
+[2m8:29:22 p. m.[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [33mwarning: [33mThis case clause will never be evaluated because it duplicates an earlier case clause[33m
+893 |            handleClearCart();
+894 |            break;
+895 |          case 'F2':
+    |               ^
+896 |            if (viewMode === 'payment') {
+897 |              e.preventDefault();
+[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/carlo/OneDrive/Documents/Downloads/react/JoyeriaPlus/src/app/(app)/pos/client.tsx[39m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/pos/admin-auth-dialog.tsx[22m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/pos/admin-auth-dialog.tsx[22m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/hooks/use-business-mode.tsx, /src/components/settings/business-mode-card.tsx[22m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/activation/activation-guard.tsx, /src/hooks/use-auth.tsx, /src/app/setup/page.tsx, /src/app/(auth)/reset-password/page.tsx, /src/components/settings/business-mode-card.tsx[22m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:53 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/hooks/use-cash-register-sessions.tsx, /src/app/(app)/cash-count/page.tsx, /src/app/(app)/cash-register/close/page.tsx, /src/app/(app)/cash-count/z-report/page.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/categories/client.tsx, /src/app/(app)/inventory/categories/page.tsx, /src/components/categories/category-table.tsx, /src/components/categories/category-dialog.tsx, /src/components/pos/product-grid.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/orders/[id]/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/pos/credit-note-dialog.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/delivery-routes/new/client.tsx, /src/app/(app)/customers/client.tsx, /src/app/(app)/customers/credit/client.tsx, /src/app/(app)/orders/new/client.tsx, /src/app/(app)/pos/client.tsx, /src/components/pos/credit-payment-dialog.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/dashboard/page.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/delivery-routes/new/client.tsx, /src/app/(app)/delivery-routes/[id]/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/hooks/use-initial-data.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/inventory/client.tsx, /src/app/(app)/pos/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/settings/jewelry-materials-manager.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/pos/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/auth/license-guard.tsx, /src/app/(app)/settings/page.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/layout/notifications-popover.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/orders/client.tsx, /src/app/(app)/orders/new/client.tsx, /src/app/(app)/orders/[id]/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/orders/new/client.tsx, /src/app/(app)/inventory/client.tsx, /src/app/(app)/pos/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/purchases/orders/[id]/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/purchases/invoice-alerts.tsx, /src/app/(app)/purchases/new/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/cash-count/page.tsx, /src/app/(app)/pos/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/hooks/use-settings.tsx, /src/components/auth/master-key-guard.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/suppliers/new/page.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/components/settings/logo-uploader.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css, /src/app/(app)/users/client.tsx[22m
+[2m8:30:54 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/globals.css[22m
+[2m8:30:59 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/router.tsx, /src/app/globals.css[22m
+[2m8:37:05 p. m.[22m [36m[1m[vite][22m[39m [32mvite.config.ts changed, restarting server...[39m
+[2m8:37:06 p. m.[22m [36m[1m[vite][22m[39m [32mvite.config.ts changed, restarting server...[39m
+[2m8:37:06 p. m.[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because vite config has changed
+[2m8:37:07 p. m.[22m [36m[1m[vite][22m[39m server restarted.

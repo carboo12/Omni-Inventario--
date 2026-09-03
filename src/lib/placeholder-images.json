@@ -1,0 +1,58 @@
+{
+  "placeholderImages": [
+    {
+      "id": "login-bg",
+      "description": "Abstract background with a modern, clean, and professional look suitable for a pharmacy management system.",
+      "imageUrl": "https://images.unsplash.com/photo-1758101512269-660feabf64fd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxhYnN0cmFjdCUyMGxhYm9yYXRvcnl8ZW58MHx8fHwxNzYzODQ0NjkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "abstract laboratory"
+    },
+    {
+      "id": "product-default",
+      "description": "Default placeholder for a pharmacy product.",
+      "imageUrl": "https://images.unsplash.com/photo-1655313719848-23d645684e4a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxwaWxscyUyMGJvdHRsZXxlbnwwfHx8fDE3NjM4NDE2MzZ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "pills bottle"
+    },
+    {
+      "id": "product-pain-relief",
+      "description": "Placeholder for a pain relief product.",
+      "imageUrl": "https://images.unsplash.com/photo-1625402534923-e8132f4b1de4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxwaWxscyUyMHBhaW5raWxsZXJ8ZW58MHx8fHwxNzYzOTE1NDE3fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "pills painkiller"
+    },
+    {
+      "id": "product-allergy",
+      "description": "Placeholder for an allergy product.",
+      "imageUrl": "https://images.unsplash.com/photo-1674049406313-abb5511e0111?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxwaWxscyUyMGFsbGVyZ3l8ZW58MHx8fHwxNzYzOTE1NDE3fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "pills allergy"
+    },
+    {
+      "id": "product-cold-flu",
+      "description": "Placeholder for a cold and flu product.",
+      "imageUrl": "https://images.unsplash.com/photo-1700104494894-4b03ae4f5953?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxzeXJ1cCUyMG1lZGljaW5lfGVufDB8fHx8MTc2MzkxNTQxN3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "syrup medicine"
+    },
+    {
+      "id": "product-antibiotics",
+      "description": "Placeholder for an antibiotic product.",
+      "imageUrl": "https://images.unsplash.com/photo-1549477752-31cd7327aed0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxwaWxscyUyMGFudGliaW90aWN8ZW58MHx8fHwxNzYzOTE1NDE3fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "pills antibiotic"
+    },
+    {
+      "id": "product-vitamins",
+      "description": "Placeholder for a vitamin product.",
+      "imageUrl": "https://images.unsplash.com/photo-1687200267771-7579b6af63bc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHx2aXRhbWlucyUyMGJvdHRsZXxlbnwwfHx8fDE3NjM5MTU0MTd8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "vitamins bottle"
+    },
+    {
+      "id": "product-first-aid",
+      "description": "Placeholder for a first aid product.",
+      "imageUrl": "https://images.unsplash.com/photo-1561976167-fa9e36b104ef?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxmaXJzdC1haWQlMjBraXR8ZW58MHx8fHwxNzYzODk4Nzc3fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "first-aid kit"
+    },
+    {
+      "id": "product-hygiene",
+      "description": "Placeholder for a hygiene product.",
+      "imageUrl": "https://images.unsplash.com/photo-1586162544865-6878ac726bba?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxoYW5kJTIwc2FuaXRpemVyfGVufDB8fHx8MTc2MzgzOTQ4NHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "hand sanitizer"
+    }
+  ]
+}

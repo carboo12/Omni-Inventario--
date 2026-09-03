@@ -1,0 +1,1 @@
+import{a as t}from"./router-CslgxoCA.js";function i(a,r={}){const o=t.lazy(async()=>{const e=await a();return e&&typeof e=="object"&&"default"in e?e:{default:e}}),n=r.loading;return function(c){return t.createElement(t.Suspense,{fallback:n?t.createElement(n):null},t.createElement(o,c))}}export{i as d};

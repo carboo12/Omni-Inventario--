@@ -1,0 +1,1 @@
+import{a3 as e}from"./index-C7l1QfyR.js";async function c(...r){return e("purchase-orders","createPurchaseOrder",r)}async function s(...r){return e("purchase-orders","updatePurchaseOrderStatus",r)}async function u(...r){return e("purchase-orders","receivePurchaseOrder",r)}export{c,u as r,s as u};

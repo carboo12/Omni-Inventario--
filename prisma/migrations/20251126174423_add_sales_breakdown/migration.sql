@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE `cashregistersession` ADD COLUMN `salesCard` DOUBLE NOT NULL DEFAULT 0,
+    ADD COLUMN `salesCash` DOUBLE NOT NULL DEFAULT 0,
+    ADD COLUMN `salesUSD` DOUBLE NOT NULL DEFAULT 0;

@@ -1,0 +1,56 @@
+    const addToCart = (product: Product) => {
+        const invItem = inventory.find(i => i.productId === product.id && i.inventoryType === userInventoryType);
+        const currentStock = invItem?.quantity || 0;
+
+        if (currentStock <= 0) {
+            toast({
+                title: "Sin Existencias",
+                description: `El producto "${product.name}" tiene existencia 0. Hable con el administrador para darle entrada al item para que la venta sea válida.`,
+                variant: "destructive"
+            });
+            return;
+        }
+
+        const existingItem = cart.find((item) => item.product.id === product.id);
+        if (existingItem && existingItem.quantity + 1 > currentStock) {
+            toast({
+                title: "Límite de Existencias",
+                description: `Solo hay ${currentStock} unidades disponibles de este producto.`,
+                variant: "destructive"
+            });
+            return;
+        }
+
+        setCart((prevCart) => {
+            const itemInCart = prevCart.find((item) => item.product.id === product.id);
+            if (itemInCart) {
+                return prevCart.map((item) =>
+                    item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                );
+            }
+            return [...prevCart, { id: product.id, product, quantity: 1 }];
+        });
+    };
+
+    const updateQuantity = (productId: string, change: number) => {
+        const invItem = inventory.find(i => i.productId === productId && i.inventoryType === userInventoryType);
+        const currentStock = invItem?.quantity || 0;
+        const itemInCart = cart.find(i => i.product.id === productId);
+
+        if (itemInCart && change > 0 && itemInCart.quantity + change > currentStock) {
+            toast({
+                title: "Límite de Existencias",
+                description: `No puede exceder las ${currentStock} unidades disponibles.`,
+                variant: "destructive"
+            });
+            return;
+        }
+
+        setCart((prevCart) =>
+            prevCart.map((item) =>
+                item.product.id === productId
+                    ? { ...item, quantity: Math.max(0, item.quantity + change) }
+                    : item
+            ).filter((item) => item.quantity > 0)
+        );
+    };
