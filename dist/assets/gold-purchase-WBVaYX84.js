@@ -1,0 +1,1 @@
+import{a3 as e}from"./index-D7H8Ag2p.js";async function r(...a){return e("gold-purchase","saveGoldPurchase",a)}async function t(...a){return e("gold-purchase","getLatestGoldPrice",a)}async function o(...a){return e("gold-purchase","getGoldPurchaseHistory",a)}export{o as a,t as g,r as s};

@@ -172,13 +172,17 @@ export const QuoteReceiptTemplate: React.FC<QuoteReceiptProps> = ({
                             -webkit-print-color-adjust: exact !important;
                         }
                         #quote-receipt-print {
-                            position: absolute;
-                            left: 0;
-                            top: 0;
-                            width: 100% !important;
+                            display: block !important;
+                            position: relative !important;
+                            top: 0 !important;
+                            left: 0 !important;
+                            float: none !important;
+                            width: 80mm !important;
+                            max-width: 80mm !important;
                             min-height: 0 !important;
                             height: auto !important;
-                            padding: 0 2mm 15mm 2mm !important;
+                            padding: 2mm !important;
+                            margin: 0 !important;
                             opacity: 1 !important;
                             box-shadow: none !important;
                             border: none !important;

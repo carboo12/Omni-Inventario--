@@ -9,11 +9,8 @@ interface ReceiptItem {
     description: string;
     price: number;
     total: number;
-    /** Unidad de medida de la presentación vendida (ej. 'lb', 'qtl', 'ud'). */
     unit?: string;
-    /** Nivel de precio aplicado (1 = priceNIO, 2 = price2, 3 = price3, 4 = price4). */
     priceLevel?: number;
-    /** Artículo sin stock vendido bajo encargo (entrega pendiente). */
     pending?: boolean;
 }
 
@@ -40,9 +37,7 @@ interface ReceiptProps {
     currencySymbol?: string;
     exchangeRate?: number;
     showTotalUSD?: boolean;
-    /** Indica si el ticket contiene al menos un artículo encargado. */
     hasEncargoItems?: boolean;
-    /** Marca la impresión como una reimpresión del último ticket. */
     isReprint?: boolean;
 }
 
@@ -80,17 +75,16 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
     }, []);
 
     const content = (
-        <div 
-            id={previewMode ? "receipt-preview" : "ticket-print-area"} 
+        <div
+            id={previewMode ? "receipt-preview" : "ticket-print-area"}
             className={cn(
-                "p-2 text-[13px] w-[80mm] max-w-[80mm] mx-auto text-black",
-                previewMode 
-                    ? "bg-white border text-left" 
-                    : "fixed left-0 top-0 w-[80mm] max-w-[80mm] bg-white text-black z-[-9999] opacity-0 print:opacity-100 print:z-[9999] print:visible print:static print:m-0 print:p-0"
+                "p-2 text-[13px] w-[80mm] max-w-[80mm] mx-auto text-black bg-white",
+                previewMode
+                    ? "border text-left"
+                    : "hidden print:block print:w-[80mm] print:max-w-[80mm] print:p-0 print:m-0 print:mx-0"
             )}
         >
             <div className="text-center">
-                {/* Logo Premium */}
                 {logoSvg && (
                     <div className="flex justify-center mb-1">
                         <div
@@ -122,34 +116,19 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
 
             <div className="border-b border-black border-dashed my-2" />
 
-            <table className="w-full text-left">
-                <tbody>
-                    {items.map((item, index) => (
-                        <tr key={index}>
-                            <td className="py-0.5 text-[13px] font-semibold leading-snug">
-                                <div className="text-[13px] font-semibold leading-snug">
-                                    {item.quantity}
-                                    {item.unit ? ` ${item.unit.toUpperCase()}` : ''}
-                                    {' - '}{item.description}
-                                    {' - P.U '}{currencySymbol} {formatNumber(item.price)}
-                                    {' - '}{currencySymbol} {formatNumber(item.total)}
-                                </div>
-                                {item.pending && (
-                                    <div className="text-[11px] font-bold text-[#FF5722] uppercase leading-tight">
-                                        * ENCARGO / ENTREGA PENDIENTE
-                                    </div>
-                                )}
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-
-            {hasEncargoItems && (
-                <div className="my-2 border-2 border-black rounded p-1 text-center font-bold text-[12px] leading-tight">
-                    ARTÍCULO ENCARGADO / PENDIENTE DE ENTREGA - PAGADO
-                </div>
-            )}
+            <div className="w-full">
+                {items.map((item, index) => (
+                    <div key={index} className="py-0.5 text-[13px] font-semibold leading-snug">
+                        <div>
+                            {item.quantity}
+                            {item.unit ? ` ${item.unit.toUpperCase()}` : ''}
+                            {' - '}{item.description}
+                            {' - P.U '}{currencySymbol} {formatNumber(item.price)}
+                            {' - '}{currencySymbol} {formatNumber(item.total)}
+                        </div>
+                    </div>
+                ))}
+            </div>
 
             <div className="border-b border-black border-dashed my-2" />
 
@@ -188,64 +167,6 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 {website && <p className="text-[13px]">{website}</p>}
                 <p className="mt-2 font-bold text-[13px]">*** GRACIAS POR SU COMPRA ***</p>
             </div>
-
-            {!previewMode && (
-                <style jsx global>{`
-                    @media print {
-                        @page {
-                            size: auto !important;
-                            margin: 0 !important;
-                        }
-                        html, body {
-                            margin: 0 !important;
-                            padding: 0 !important;
-                            width: 100% !important;
-                            height: auto !important;
-                            min-height: 0 !important;
-                            overflow: visible !important;
-                            background: #ffffff !important;
-                        }
-                        [role="dialog"], [data-radix-portal], .radix-dialog-overlay, .radix-dialog-content {
-                            display: none !important;
-                            visibility: hidden !important;
-                        }
-                        body * {
-                            visibility: hidden !important;
-                        }
-                        #ticket-print-area, #ticket-print-area * {
-                            visibility: visible !important;
-                            box-sizing: border-box !important;
-                            color: #000000 !important;
-                            text-shadow: 0 0 0.3px #000 !important;
-                            print-color-adjust: exact !important;
-                            -webkit-print-color-adjust: exact !important;
-                        }
-                        #ticket-print-area table,
-                        #ticket-print-area tbody,
-                        #ticket-print-area tr,
-                        #ticket-print-area td {
-                            page-break-inside: auto !important;
-                            break-inside: auto !important;
-                            page-break-after: auto !important;
-                            break-after: auto !important;
-                            page-break-before: auto !important;
-                            break-before: auto !important;
-                        }
-                        #ticket-print-area {
-                            position: static !important;
-                            float: none !important;
-                            width: 80mm !important;
-                            max-width: 80mm !important;
-                            min-height: 0 !important;
-                            height: auto !important;
-                            padding: 2mm 2mm 5mm 2mm !important;
-                            margin: 0 auto !important;
-                            overflow: visible !important;
-                            display: block !important;
-                        }
-                    }
-                `}</style>
-            )}
         </div>
     );
 
@@ -254,7 +175,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
     }
 
     if (!isMounted) {
-        return null; // Evitar hidratación mismatch
+        return null;
     }
 
     return createPortal(content, document.body);

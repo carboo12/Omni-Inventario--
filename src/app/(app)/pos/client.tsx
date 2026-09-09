@@ -241,6 +241,18 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     const [saleForPrint, setSaleForPrint] = useState<any>(null);
     const [printFormat, setPrintFormat] = useState<PrintFormat>('ticket');
     useEffect(() => { setPrintFormat(getPreferredPrintFormat()); }, []);
+    // Imprime SOLO cuando el DOM del <ReceiptTemplate> esté renderizado con los
+    // datos de saleForPrint. Evita el ticket en blanco (race condition entre el
+    // setState y window.print) y se auto-limpia para no reimprimir en el siguiente render.
+    useEffect(() => {
+        if (saleForPrint) {
+            const timer = setTimeout(() => {
+                window.print();
+                setSaleForPrint(null);
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [saleForPrint]);
     const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
     const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
@@ -498,9 +510,8 @@ const effectiveCustomerName = activeSale?.customerName || customerName || 'Clien
         const finalCustomerName = effectiveCustomerName && effectiveCustomerName.trim() ? effectiveCustomerName.trim() : 'Cliente General';
         const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, finalCustomerName, paymentMethod, amountPaid, change, ticketLabel);
         setSaleForPrint(receiptData);
-        setTimeout(() => {
-            window.print();
-        }, 150);
+        // La impresión la dispara el useEffect que reacciona a saleForPrint,
+        // garantizando que el DOM ya contenga el <ReceiptTemplate/> renderizado.
 
         setCart([]);
         setIsPaymentSummaryOpen(false);
@@ -739,6 +750,10 @@ return (
                 isLoading={isRetiroSaving}
             />
             {lastRetiro && <RetiroReceiptTemplate {...lastRetiro} />}
+
+            {printFormat === 'invoice'
+                ? (saleForPrint && <FullPageInvoiceTemplate {...saleForPrint} />)
+                : (saleForPrint && <ReceiptTemplate {...saleForPrint} />)}
         </div>
     );
 };
@@ -833,6 +848,18 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
 
     const [printFormat, setPrintFormat] = useState<PrintFormat>('ticket');
     useEffect(() => { setPrintFormat(getPreferredPrintFormat()); }, []);
+    // Imprime SOLO cuando el DOM del <ReceiptTemplate/> esté renderizado con los
+    // datos de saleForPrint. Evita el ticket en blanco (race condition entre el
+    // setState y window.print) y se auto-limpia para no reimprimir en el siguiente render.
+    useEffect(() => {
+        if (saleForPrint) {
+            const timer = setTimeout(() => {
+                window.print();
+                setSaleForPrint(null);
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [saleForPrint]);
     // Credit Note / Return States
     const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
     const [isCreditNoteOpen, setIsCreditNoteOpen] = useState(false);
@@ -1584,9 +1611,8 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                             const toPrint = lastSale;
                             setSaleForPrint(toPrint);
                             setLastSale(null);
-                            setTimeout(() => {
-                                window.print();
-                            }, 150);
+                            // La impresión la dispara el useEffect que reacciona
+                            // a saleForPrint una vez el template esté en el DOM.
                         }}>Imprimir</Button>
                         <Button variant="outline" onClick={() => setLastSale(null)}>Cerrar</Button>
                     </DialogFooter>

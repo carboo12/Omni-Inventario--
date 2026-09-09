@@ -154,7 +154,7 @@ export function ProductAddWizard({
 
       {/* Paso 2: Entrada de cantidad (decimal) */}
       <Dialog open={pending?.step === 'quantity'} onOpenChange={handleDialogChange}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="w-[90%] max-w-md top-1/3 -translate-x-1/2 -translate-y-1/3 sm:top-1/2 sm:-translate-y-1/2 max-h-[85dvh] overflow-y-auto p-6 transition-all duration-200 my-auto">
           <DialogHeader>
             <DialogTitle>Ingresar cantidad</DialogTitle>
             <DialogDescription>

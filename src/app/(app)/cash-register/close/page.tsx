@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from '@/lib/router-nav';
 import { Input } from "@/components/ui/input";
@@ -82,6 +83,131 @@ export default function CloseSessionPage() {
   const setRedirectFlag = (value: boolean) => {
     redirectRef.current = value;
     setRedirectAfterPrint(value);
+  };
+
+  const renderCloseReport = (reportData: any, preview = false, postClose = false) => {
+    const businessName = postClose
+      ? reportData.pharmacyName || settings.ticketHeader.name
+      : settings.ticketHeader.name;
+    const reportDate = postClose ? new Date(reportData.closingTime || Date.now()) : new Date();
+    return (
+      <div className="space-y-6">
+        <div className="text-center border-b pb-4">
+          <h2 className="text-xl font-bold">{businessName}</h2>
+          <h3 className="text-lg font-semibold mt-2">REPORTE DE CIERRE DE TURNO</h3>
+          {preview && (
+            <p className="text-xs text-amber-600 font-bold mt-1">*** BORRADOR - NO VALIDO ***</p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="font-bold">Cajero:</span> {reportData.cashierName}
+          </div>
+          <div className="text-right">
+            <span className="font-bold">Fecha:</span> {reportDate.toLocaleString()}
+          </div>
+        </div>
+
+        <div className="mt-4 border-t pt-4">
+          <div className="flex justify-between font-semibold mb-2">
+            <span>Monto de Apertura (openingBalance):</span>
+            <span>C${reportData.openingBalance?.toFixed(2) || reportData.initialAmount?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2">
+            <span>Total Esperado en Caja (expectedCash):</span>
+            <span>C${reportData.expectedCash?.toFixed(2) || reportData.finalAmount?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2">
+            <span>Total Sistema (Ventas):</span>
+            <span>C${reportData.totalSales?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-semibold mb-2">
+            <span>Ventas Efectivo:</span>
+            <span>C${reportData.salesCash?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-semibold mb-2">
+            <span>Ventas Tarjeta:</span>
+            <span>C${reportData.salesCard?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-semibold mb-2">
+            <span>Abonos a Creditos:</span>
+            <span>C${reportData.salesAbonos?.toFixed(2) || "0.00"}</span>
+          </div>
+          {reportData.salesServices > 0 && (
+            <div className="flex justify-between font-semibold mb-2 text-purple-600">
+              <span>Servicios Joyeria:</span>
+              <span>C${reportData.salesServices?.toFixed(2)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-lg mb-2 text-red-500">
+            <span>Recibos/Salidas:</span>
+            <span>-C${reportData.totalOutflows?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 text-red-500">
+            <span>Devoluciones:</span>
+            <span>-C${reportData.totalReturns?.toFixed(2) || "0.00"}</span>
+          </div>
+          {reportData.outflows?.length > 0 && (
+            <div className="mb-2 border rounded-md p-2">
+              <div className="font-bold text-red-600 mb-1 text-sm uppercase">Detalle Salidas / Retiros</div>
+              <div className="space-y-1">
+                {reportData.outflows.map((o: any) => (
+                  <div key={o.id} className="flex items-start justify-between gap-2 text-xs">
+                    <div className="flex-1">
+                      <span className="font-semibold">{new Date(o.createdAt).toLocaleString()}</span>
+                      <div>{o.reason}</div>
+                      <div className="text-gray-500">Usuario: {reportData.cashierName || 'Cajero'}</div>
+                    </div>
+                    <span className="font-bold text-red-600 whitespace-nowrap">-C${Number(o.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-lg mb-2 border-t pt-2">
+            <span>Esperado en Caja:</span>
+            <span>C${reportData.finalAmount?.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 text-blue-600">
+            <span>Total Arqueo (C$):</span>
+            <span>C${reportData.actualCash?.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 text-green-700">
+            <span>Fondo Inicial USD:</span>
+            <span>${(reportData.initialAmountUSD || 0).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 text-green-700">
+            <span>Ventas USD:</span>
+            <span>${reportData.salesUSD?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 text-green-800 border-t border-green-200 pt-1">
+            <span>Total Esperado USD:</span>
+            <span>${((reportData.initialAmountUSD || 0) + (reportData.salesUSD || 0)).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 text-green-600">
+            <span>USD Contado:</span>
+            <span>${reportData.actualUSD?.toFixed(2) || "0.00"}</span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2 border-t pt-1">
+            <span>Diferencia C$ (sobrante/faltante):</span>
+            <span className={cn(
+              reportData.difference === 0 ? 'text-green-600' :
+              reportData.difference > 0 ? 'text-blue-600' : 'text-red-600'
+            )}>
+              C${reportData.difference?.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex justify-between font-bold text-lg mb-2">
+            <span>Diferencia USD:</span>
+            <span className={cn(
+              (reportData.differenceUSD || 0) === 0 ? 'text-green-600' : 'text-red-600'
+            )}>
+              ${(reportData.differenceUSD || 0).toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -244,7 +370,7 @@ export default function CloseSessionPage() {
       });
 
       if (shouldPrint) {
-        // La rama post-cierre ya montÃ³ el #print-area con los datos del reporte.
+        // La rama post-cierre ya montÃ³ el #cash-close-print-area con los datos del reporte.
         // Esperamos 2 frames para garantizar que React haya pintado antes de imprimir.
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
         handlePrint();
@@ -310,7 +436,7 @@ export default function CloseSessionPage() {
     setIsPrinting(true);
     try {
       // Asegurar que el contenedor imprimible ya estÃ¡ montado en el DOM con contenido.
-      const printArea = document.getElementById("print-area");
+      const printArea = document.getElementById("cash-close-print-area");
       if (!printArea || printArea.children.length === 0) {
         setIsPrinting(false);
         toast({ title: "Esperando datos", description: "El reporte aÃºn se estÃ¡ cargando. IntÃ©ntelo de nuevo.", variant: "destructive" });
@@ -367,124 +493,29 @@ export default function CloseSessionPage() {
   // quedado en null (evita el spinner infinito y la impresiÃ³n en blanco).
   if (hasClosed) {
     return (
-      <div className="min-h-screen bg-gray-100 p-4 md:p-8 flex flex-col items-center">
-        {closedSessionData && (
-          <div className="w-full max-w-3xl bg-white rounded-lg shadow-md p-6 space-y-6" id="print-area">
-            <div className="text-center border-b pb-4">
-              <h2 className="text-xl font-bold">{closedSessionData.pharmacyName || settings.ticketHeader.name}</h2>
-              <h3 className="text-lg font-semibold mt-2">REPORTE DE CIERRE DE TURNO</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="font-bold">Cajero:</span> {closedSessionData.cashierName}</div>
-              <div className="text-right"><span className="font-bold">Fecha:</span> {new Date(closedSessionData.closingTime || Date.now()).toLocaleString()}</div>
-            </div>
-            <div className="mt-4 border-t pt-4">
-              <div className="flex justify-between font-semibold mb-2">
-                <span>Monto de Apertura (openingBalance):</span>
-                <span>C${(closedSessionData.openingBalance ?? closedSessionData.initialAmount ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2">
-                <span>Total Esperado en Caja (expectedCash):</span>
-                <span>C${(closedSessionData.expectedCash ?? closedSessionData.finalAmount ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2">
-                <span>Total Sistema (Ventas):</span>
-                <span>C${(closedSessionData.totalSales ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-semibold mb-2">
-                <span>Ventas Efectivo:</span>
-                <span>C${(closedSessionData.salesCash ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-semibold mb-2">
-                <span>Ventas Tarjeta:</span>
-                <span>C${(closedSessionData.salesCard ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-semibold mb-2">
-                <span>Abonos a Creditos:</span>
-                <span>C${(closedSessionData.salesAbonos ?? 0).toFixed(2)}</span>
-              </div>
-              {(closedSessionData.salesServices ?? 0) > 0 && (
-                <div className="flex justify-between font-semibold mb-2 text-purple-600">
-                  <span>Servicios Joyeria:</span>
-                  <span>C${(closedSessionData.salesServices ?? 0).toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-lg mb-2 text-red-500">
-                <span>Recibos/Salidas:</span>
-                <span>-C${(closedSessionData.totalOutflows ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 text-red-500">
-                <span>Devoluciones:</span>
-                <span>-C${(closedSessionData.totalReturns ?? 0).toFixed(2)}</span>
-              </div>
-              {(closedSessionData.outflows?.length > 0) && (
-                <div className="mb-2 border rounded-md p-2">
-                  <div className="font-bold text-red-600 mb-1 text-sm uppercase">Detalle Salidas / Retiros</div>
-                  <div className="space-y-1">
-                    {closedSessionData.outflows.map((o: any) => (
-                      <div key={o.id} className="flex items-start justify-between gap-2 text-xs">
-                        <div className="flex-1">
-                          <span className="font-semibold">{new Date(o.createdAt).toLocaleString()}</span>
-                          <div>{o.reason}</div>
-                          <div className="text-gray-500">Usuario: {closedSessionData.cashierName || 'Cajero'}</div>
-                        </div>
-                        <span className="font-bold text-red-600 whitespace-nowrap">-C${Number(o.amount).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-lg mb-2 border-t pt-2">
-                <span>Esperado en Caja:</span>
-                <span>C${(closedSessionData.finalAmount ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 text-blue-600">
-                <span>Total Arqueo (C$):</span>
-                <span>C${(closedSessionData.actualCash ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 text-green-700">
-                <span>Fondo Inicial USD:</span>
-                <span>${(closedSessionData.initialAmountUSD ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 text-green-700">
-                <span>Ventas USD:</span>
-                <span>${(closedSessionData.salesUSD ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 text-green-800 border-t border-green-200 pt-1">
-                <span>Total Esperado USD:</span>
-                <span>${((closedSessionData.initialAmountUSD ?? 0) + (closedSessionData.salesUSD ?? 0)).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 text-green-600">
-                <span>USD Contado:</span>
-                <span>${(closedSessionData.actualUSD ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2 border-t pt-1">
-                <span>Diferencia C$ (sobrante/faltante):</span>
-                <span className={cn(
-                  (closedSessionData.difference ?? 0) === 0 ? 'text-green-600' :
-                  (closedSessionData.difference ?? 0) > 0 ? 'text-blue-600' : 'text-red-600'
-                )}>
-                  C${(closedSessionData.difference ?? 0).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mb-2">
-                <span>Diferencia USD:</span>
-                <span className={(closedSessionData.differenceUSD ?? 0) === 0 ? 'text-green-600' : 'text-red-600'}>
-                  ${(closedSessionData.differenceUSD ?? 0).toFixed(2)}
-                </span>
-              </div>
-            </div>
-          </div>
+      <>
+        {closedSessionData && createPortal(
+          <div id="cash-close-print-area" className="printable-content hidden w-full bg-white p-6">
+            {renderCloseReport(closedSessionData, false, true)}
+          </div>,
+          document.body
         )}
-        <div className="w-full max-w-3xl mt-6 flex justify-end gap-2">
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" /> {isPrinting ? 'Imprimiendo...' : 'Imprimir'}
-          </Button>
-          <Button onClick={() => setShowSuccessModal(true)} disabled={isPrinting}>
-            Finalizar
-          </Button>
-        </div>
-{/* === MODAL: CIERRE DE TURNO EXITOSO (logout al siguiente turno) === */}
+        <div className="min-h-screen bg-gray-100 p-4 md:p-8 flex flex-col items-center">
+          {closedSessionData && (
+            <div className="w-full max-w-3xl bg-white rounded-lg shadow-md p-6">
+              {renderCloseReport(closedSessionData, false, true)}
+            </div>
+          )}
+          <div className="w-full max-w-3xl mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" /> {isPrinting ? 'Imprimiendo...' : 'Imprimir'}
+            </Button>
+            <Button onClick={() => setShowSuccessModal(true)} disabled={isPrinting}>
+              Finalizar
+            </Button>
+          </div>
+
+      {/* === MODAL: CIERRE DE TURNO EXITOSO (logout al siguiente turno) === */}
       <Dialog
         open={showSuccessModal}
         // Modal informativo NO bloqueante: permanece visible aunque el usuario cancele o
@@ -550,16 +581,17 @@ export default function CloseSessionPage() {
           @media print {
             @page { margin: 0; size: 80mm auto !important; }
             body * { visibility: hidden; }
-            #print-area, #print-area * {
+            #cash-close-print-area, #cash-close-print-area * {
               visibility: visible;
               color: #000000 !important;
               text-shadow: 0 0 0.3px #000 !important;
               print-color-adjust: exact !important;
               -webkit-print-color-adjust: exact !important;
             }
-            #print-area {
+            #cash-close-print-area {
+              display: block !important;
               position: absolute; left: 0; top: 0;
-              width: 100% !important;
+              width: 80mm !important;
               padding: 0 2mm 15mm 2mm !important;
               box-shadow: none !important;
               border: none !important;
@@ -570,6 +602,7 @@ export default function CloseSessionPage() {
           }
         `}} />
       </div>
+      </>
     );
   }
 
@@ -905,6 +938,13 @@ export default function CloseSessionPage() {
         </DialogContent>
       </Dialog>
 
+      {isReportOpen && closedSessionData && createPortal(
+        <div id="cash-close-print-area" className="printable-content hidden w-full bg-white p-6">
+          {renderCloseReport(closedSessionData, isPreClosePreview, false)}
+        </div>,
+        document.body
+      )}
+
       {/* === DIALOG: REPORTE DE CIERRE (Pre-Cierre preview o Ticket post-cierre) === */}
       <Dialog open={isReportOpen} onOpenChange={(open) => !open && handleFinishReport()}>
         <DialogContent className="max-w-3xl">
@@ -920,121 +960,8 @@ export default function CloseSessionPage() {
           </DialogHeader>
 
           {closedSessionData && (
-            <div className="space-y-6 p-4 border rounded-md" id="print-area">
-              <div className="text-center border-b pb-4">
-                <h2 className="text-xl font-bold">{settings.ticketHeader.name}</h2>
-                <h3 className="text-lg font-semibold mt-2">REPORTE DE CIERRE DE TURNO</h3>
-                {isPreClosePreview && (
-                  <p className="text-xs text-amber-600 font-bold mt-1">*** BORRADOR - NO VALIDO ***</p>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-bold">Cajero:</span> {closedSessionData.cashierName}
-                </div>
-                <div className="text-right">
-                  <span className="font-bold">Fecha:</span> {new Date().toLocaleString()}
-                </div>
-              </div>
-
-              <div className="mt-4 border-t pt-4">
-                <div className="flex justify-between font-semibold mb-2">
-                  <span>Monto de Apertura (openingBalance):</span>
-                  <span>C${closedSessionData.openingBalance?.toFixed(2) || closedSessionData.initialAmount?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2">
-                  <span>Total Esperado en Caja (expectedCash):</span>
-                  <span>C${closedSessionData.expectedCash?.toFixed(2) || closedSessionData.finalAmount?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2">
-                  <span>Total Sistema (Ventas):</span>
-                  <span>C${closedSessionData.totalSales?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-semibold mb-2">
-                  <span>Ventas Efectivo:</span>
-                  <span>C${closedSessionData.salesCash?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-semibold mb-2">
-                  <span>Ventas Tarjeta:</span>
-                  <span>C${closedSessionData.salesCard?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-semibold mb-2">
-                  <span>Abonos a Creditos:</span>
-                  <span>C${closedSessionData.salesAbonos?.toFixed(2) || "0.00"}</span>
-                </div>
-                {closedSessionData.salesServices > 0 && (
-                  <div className="flex justify-between font-semibold mb-2 text-purple-600">
-                    <span>Servicios Joyeria:</span>
-                    <span>C${closedSessionData.salesServices?.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-lg mb-2 text-red-500">
-                  <span>Recibos/Salidas:</span>
-                  <span>-C${closedSessionData.totalOutflows?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 text-red-500">
-                  <span>Devoluciones:</span>
-                  <span>-C${closedSessionData.totalReturns?.toFixed(2) || "0.00"}</span>
-                </div>
-                {closedSessionData.outflows?.length > 0 && (
-                  <div className="mb-2 border rounded-md p-2">
-                    <div className="font-bold text-red-600 mb-1 text-sm uppercase">Detalle Salidas / Retiros</div>
-                    <div className="space-y-1">
-                      {closedSessionData.outflows.map((o: any) => (
-                        <div key={o.id} className="flex items-start justify-between gap-2 text-xs">
-                          <div className="flex-1">
-                            <span className="font-semibold">{new Date(o.createdAt).toLocaleString()}</span>
-                            <div>{o.reason}</div>
-                            <div className="text-gray-500">Usuario: {closedSessionData.cashierName || 'Cajero'}</div>
-                          </div>
-                          <span className="font-bold text-red-600 whitespace-nowrap">-C${Number(o.amount).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-lg mb-2 border-t pt-2">
-                  <span>Esperado en Caja:</span>
-                  <span>C${closedSessionData.finalAmount?.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 text-blue-600">
-                  <span>Total Arqueo (C$):</span>
-                  <span>C${closedSessionData.actualCash?.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 text-green-700">
-                  <span>Fondo Inicial USD:</span>
-                  <span>${(closedSessionData.initialAmountUSD || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 text-green-700">
-                  <span>Ventas USD:</span>
-                  <span>${closedSessionData.salesUSD?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 text-green-800 border-t border-green-200 pt-1">
-                  <span>Total Esperado USD:</span>
-                  <span>${((closedSessionData.initialAmountUSD || 0) + (closedSessionData.salesUSD || 0)).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 text-green-600">
-                  <span>USD Contado:</span>
-                  <span>${closedSessionData.actualUSD?.toFixed(2) || "0.00"}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2 border-t pt-1">
-                  <span>Diferencia C$ (sobrante/faltante):</span>
-                  <span className={cn(
-                    closedSessionData.difference === 0 ? 'text-green-600' :
-                    closedSessionData.difference > 0 ? 'text-blue-600' : 'text-red-600'
-                  )}>
-                    C${closedSessionData.difference?.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between font-bold text-lg mb-2">
-                  <span>Diferencia USD:</span>
-                  <span className={cn(
-                    (closedSessionData.differenceUSD || 0) === 0 ? 'text-green-600' : 'text-red-600'
-                  )}>
-                    ${(closedSessionData.differenceUSD || 0).toFixed(2)}
-                  </span>
-                </div>
-              </div>
+            <div className="space-y-6 p-4 border rounded-md">
+              {renderCloseReport(closedSessionData, isPreClosePreview, false)}
             </div>
           )}
 
@@ -1057,16 +984,17 @@ export default function CloseSessionPage() {
         @media print {
           @page { margin: 0; size: 80mm auto !important; }
           body * { visibility: hidden; }
-          #print-area, #print-area * {
+          #cash-close-print-area, #cash-close-print-area * {
             visibility: visible;
             color: #000000 !important;
             text-shadow: 0 0 0.3px #000 !important;
             print-color-adjust: exact !important;
             -webkit-print-color-adjust: exact !important;
           }
-          #print-area {
+          #cash-close-print-area {
+            display: block !important;
             position: absolute; left: 0; top: 0;
-            width: 100% !important;
+            width: 80mm !important;
             padding: 0 2mm 15mm 2mm !important;
             box-shadow: none !important;
             border: none !important;
