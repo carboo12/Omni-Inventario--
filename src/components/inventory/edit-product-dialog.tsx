@@ -66,6 +66,10 @@ const formSchema = z.object({
   originalPrice: z.coerce.number().min(0),
   originalCost: z.coerce.number().min(0).optional(),
 
+  // Presentación base / unidad de medida (obligatoria). Ej: Unidad, Saco,
+  // Caja, Libra, Botella, Quintal. Se guarda en el campo `baseUnit` de Product.
+  baseUnit: z.string().trim().min(1, { message: "Debe indicar la presentación base." }),
+
   // Niveles de precio adicionales (siempre disponibles)
   price2: z.coerce.number().min(0).optional(),
   price3: z.coerce.number().min(0).optional(),
@@ -150,6 +154,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
         price2: (product as any).price2 ?? undefined,
         price3: (product as any).price3 ?? undefined,
         price4: (product as any).price4 ?? undefined,
+        baseUnit: (product as any).baseUnit ?? '',
         bulkUnit: (product as any).bulkUnit ?? '',
         unitsPerBulk: (product as any).unitsPerBulk ?? (product as any).unitsPerBox ?? undefined,
         bulkUnit2: (product as any).bulkUnit2 ?? '',
@@ -502,6 +507,24 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Presentación base / unidad de medida (obligatoria) */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Presentación Base (Unidad de Medida)</p>
+                  <FormField
+                    control={form.control}
+                    name="baseUnit"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nombre de la Presentación Base *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Ej: Unidad, Saco, Caja, Libra, Botella, Quintal" {...field} disabled={isSaving} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
                 {/* Presentaciones fijas (Venta Fraccionada / Al Mayor): Presentación 1
