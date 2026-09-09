@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn, formatNumber } from '@/lib/utils';
 import { useSettings } from '@/hooks/use-settings';
+import { getBulkPresentationOptions, resolvePresentationFactor } from '@/lib/presentations';
 
 interface CartTicketProps {
     cart: CartItem[];
@@ -16,9 +17,22 @@ interface CartTicketProps {
     selectedItemId?: string | null;
     onSelectItem?: (itemId: string) => void;
     onEditItem?: (item: CartItem) => void;
-    getProductPrice?: (product: any, priceLevel: number) => number;
-    priceLevel?: number;
 }
+
+const getItemPrice = (item: CartItem): number => {
+    // Precio unitario efectivo congelado al agregar/editar (Nivel de Precio × Presentación).
+    if (typeof item.unitPrice === 'number' && item.unitPrice > 0) return item.unitPrice;
+    return item.product.priceNIO;
+};
+
+const getPresentationUnitLabel = (item: CartItem): string | null => {
+    const factor = resolvePresentationFactor(item.product, item.presentation, item.presentationName, item.presentationFactor);
+    if ((item.presentation ?? 'unit') === 'unit' || factor <= 1) return null;
+    const opts = getBulkPresentationOptions(item.product);
+    const name = item.presentationName?.trim().toLowerCase();
+    const match = opts.find(o => o.key === item.presentation || (name && o.name.toLowerCase() === name));
+    return (match?.name ?? item.presentationName ?? item.product.bulkUnit ?? 'Empaque').toUpperCase();
+};
 
 export const CartTicket = ({
     cart,
@@ -31,8 +45,6 @@ export const CartTicket = ({
     selectedItemId,
     onSelectItem,
     onEditItem,
-    getProductPrice,
-    priceLevel = 1,
 }: CartTicketProps) => {
 
     const { settings } = useSettings();
@@ -87,7 +99,10 @@ export const CartTicket = ({
                             NO HAY ARTÍCULOS
                         </div>
                     ) : (
-                        cart.map((item, index) => (
+                        cart.map((item, index) => {
+                            const unitPrice = getItemPrice(item);
+                            const presentationUnit = getPresentationUnitLabel(item);
+                            return (
                             <div 
                                 key={item.id}
                                 onClick={() => onEditItem ? onEditItem(item) : onSelectItem?.(item.id)}
@@ -103,17 +118,23 @@ export const CartTicket = ({
                                 <div className="col-span-2 text-center flex items-center justify-center font-bold">
                                     {item.quantity.toFixed(2)}
                                 </div>
-                                <div className="col-span-3 text-right flex items-center justify-end">
-                                    {formatNumber(getProductPrice ? getProductPrice(item.product, priceLevel) : item.product.priceNIO)}
+                                <div className="col-span-3 text-right flex items-center justify-end gap-1">
+                                    <span>{formatNumber(unitPrice)}</span>
+                                    {presentationUnit && (
+                                        <span className="bg-purple-100 text-purple-700 text-[8px] font-black px-1 py-0.5 rounded uppercase whitespace-nowrap">
+                                            {presentationUnit}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="col-span-2 text-right flex items-center justify-end text-red-500">
                                     0.0
                                 </div>
                                 <div className="col-span-2 text-right font-black flex items-center justify-end">
-                                    {formatNumber((getProductPrice ? getProductPrice(item.product, priceLevel) : item.product.priceNIO) * item.quantity)}
+                                    {formatNumber(unitPrice * item.quantity)}
                                 </div>
                             </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </ScrollArea>

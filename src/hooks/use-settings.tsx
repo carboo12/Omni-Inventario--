@@ -43,6 +43,7 @@ interface Settings {
   licenseStatus?: string;
   invoiceAlertDays: number;
   importProductsInDollars: boolean;
+  creditFinancingEnabled: boolean;
   currency: string;
 }
 
@@ -88,6 +89,7 @@ const defaultSettings: Settings = {
   licenseStatus: "unregistered",
   invoiceAlertDays: 5,
   importProductsInDollars: false,
+  creditFinancingEnabled: false,
   currency: "NIO",
 };
 
@@ -146,6 +148,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         licenseStatus: dbSettings.licenseStatus || "unregistered",
         invoiceAlertDays: dbSettings.invoiceAlertDays || 5,
         importProductsInDollars: dbSettings.importProductsInDollars || false,
+        creditFinancingEnabled: dbSettings.creditFinancingEnabled || false,
         currency: dbSettings.currency || "NIO",
       }));
     }
@@ -187,6 +190,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         licenseStatus: settings.licenseStatus,
         invoiceAlertDays: settings.invoiceAlertDays,
         importProductsInDollars: settings.importProductsInDollars,
+        creditFinancingEnabled: settings.creditFinancingEnabled,
       };
 
       await updateSettings(dataToSave);

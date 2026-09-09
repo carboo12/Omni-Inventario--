@@ -1,1 +1,0 @@
-import{a3 as c}from"./index-D7H8Ag2p.js";async function u(...t){return c("products","getProducts",t)}async function o(...t){return c("products","createProduct",t)}async function a(...t){return c("products","updateProduct",t)}export{o as c,u as g,a as u};

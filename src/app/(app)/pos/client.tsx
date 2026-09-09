@@ -241,18 +241,67 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     const [saleForPrint, setSaleForPrint] = useState<any>(null);
     const [printFormat, setPrintFormat] = useState<PrintFormat>('ticket');
     useEffect(() => { setPrintFormat(getPreferredPrintFormat()); }, []);
-    // Imprime SOLO cuando el DOM del <ReceiptTemplate> esté renderizado con los
-    // datos de saleForPrint. Evita el ticket en blanco (race condition entre el
-    // setState y window.print) y se auto-limpia para no reimprimir en el siguiente render.
+    // Marca que el cobro en curso (handleSuccessfulPayment) debe reiniciar la
+    // venta (carrito, modal de resumen, cliente y panel = productos) SOLO después
+    // de que la vista previa de impresión termine/cierre.
+    const saleResetAfterPrintRef = useRef(false);
+    // Tubería de impresión segura:
+    // 1) NO imprime hasta que el portal del <ReceiptTemplate/> esté montado en
+    //    document.body (#ticket-print-area). Evita la vista previa en blanco por
+    //    la carrera entre setState + el render del portal vs window.print().
+    // 2) window.print() es síncrono: espera a que la vista previa se complete o
+    //    se cierre, y recién entonces reinicia la venta y se auto-limpia.
+    const printAreaId = printFormat === 'invoice' ? 'invoice-print' : 'ticket-print-area';
     useEffect(() => {
-        if (saleForPrint) {
-            const timer = setTimeout(() => {
-                window.print();
-                setSaleForPrint(null);
-            }, 150);
-            return () => clearTimeout(timer);
-        }
-    }, [saleForPrint]);
+        if (!saleForPrint) return;
+
+        let cancelled = false;
+        let pollTimer: number | undefined;
+        let fallbackTimer: number | undefined;
+        let attempts = 0;
+
+        const finishPrint = () => {
+            if (cancelled) return;
+            window.print();
+            if (saleResetAfterPrintRef.current) {
+                saleResetAfterPrintRef.current = false;
+                // Reinicio DESPUÉS de imprimir/cerrar la ventana: volver al catálogo.
+                setViewMode('products');
+                setCart([]);
+                setPaymentData(null);
+                setIsPaymentSummaryOpen(false);
+                if (activeSale) {
+                    removePendingSale(activeSale.id);
+                    setActiveSale(null);
+                }
+                setCustomerName('');
+            }
+            setSaleForPrint(null);
+        };
+
+        const waitForPrintArea = () => {
+            if (cancelled) return;
+            if (typeof document !== 'undefined' && document.getElementById(printAreaId)) {
+                if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+                fallbackTimer = undefined;
+                // Margen extra: garantiza que React terminó de pintar el contenido del portal.
+                window.setTimeout(finishPrint, 30);
+                return;
+            }
+            attempts += 1;
+            if (attempts >= 60) return; // tope de ~6s
+            pollTimer = window.setTimeout(waitForPrintArea, 100);
+        };
+
+        pollTimer = window.setTimeout(waitForPrintArea, 0);
+        fallbackTimer = window.setTimeout(finishPrint, 500);
+
+        return () => {
+            cancelled = true;
+            if (pollTimer !== undefined) window.clearTimeout(pollTimer);
+            if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+        };
+    }, [saleForPrint, printAreaId]);
     const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
     const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
@@ -508,18 +557,13 @@ const effectiveCustomerName = activeSale?.customerName || customerName || 'Clien
             ? (isJewelry ? `Factura ${formatTicketNumber(result.invoiceNumber)}` : formatTicketNumber(result.invoiceNumber))
             : undefined;
         const finalCustomerName = effectiveCustomerName && effectiveCustomerName.trim() ? effectiveCustomerName.trim() : 'Cliente General';
-        const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, finalCustomerName, paymentMethod, amountPaid, change, ticketLabel);
+const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, finalCustomerName, paymentMethod, amountPaid, change, ticketLabel);
+        // Se solicita imprimir SOLO cuando el portal del <ReceiptTemplate/> esté
+        // montado. El reinicio de la venta (carrito/resumen/cliente/panel) se
+        // ejecuta DESPUÉS de cerrar la vista previa, dentro de la tubería de impresión.
+        saleResetAfterPrintRef.current = true;
         setSaleForPrint(receiptData);
-        // La impresión la dispara el useEffect que reacciona a saleForPrint,
-        // garantizando que el DOM ya contenga el <ReceiptTemplate/> renderizado.
 
-        setCart([]);
-        setIsPaymentSummaryOpen(false);
-        if (activeSale) {
-            removePendingSale(activeSale.id);
-            setActiveSale(null);
-        }
-        setCustomerName('');
         refreshSessions();
         toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
     };
@@ -848,18 +892,67 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
 
     const [printFormat, setPrintFormat] = useState<PrintFormat>('ticket');
     useEffect(() => { setPrintFormat(getPreferredPrintFormat()); }, []);
-    // Imprime SOLO cuando el DOM del <ReceiptTemplate/> esté renderizado con los
-    // datos de saleForPrint. Evita el ticket en blanco (race condition entre el
-    // setState y window.print) y se auto-limpia para no reimprimir en el siguiente render.
+    // Marca que el cobro en curso (handleSuccessfulPayment) debe reiniciar la
+    // venta (carrito, modal de resumen, cliente y panel = productos) SOLO después
+    // de que la vista previa de impresión termine/cierre.
+    const saleResetAfterPrintRef = useRef(false);
+    // Tubería de impresión segura:
+    // 1) NO imprime hasta que el portal del <ReceiptTemplate/> esté montado en
+    //    document.body (#ticket-print-area). Evita la vista previa en blanco por
+    //    la carrera entre setState + el render del portal vs window.print().
+    // 2) window.print() es síncrono: espera a que la vista previa se complete o
+    //    se cierre, y recién entonces reinicia la venta y se auto-limpia.
+    const printAreaId = printFormat === 'invoice' ? 'invoice-print' : 'ticket-print-area';
     useEffect(() => {
-        if (saleForPrint) {
-            const timer = setTimeout(() => {
-                window.print();
-                setSaleForPrint(null);
-            }, 150);
-            return () => clearTimeout(timer);
-        }
-    }, [saleForPrint]);
+        if (!saleForPrint) return;
+
+        let cancelled = false;
+        let pollTimer: number | undefined;
+        let fallbackTimer: number | undefined;
+        let attempts = 0;
+
+        const finishPrint = () => {
+            if (cancelled) return;
+            window.print();
+            if (saleResetAfterPrintRef.current) {
+                saleResetAfterPrintRef.current = false;
+                // Reinicio DESPUÉS de imprimir/cerrar la ventana: volver al catálogo.
+                setViewMode('products');
+                setCart([]);
+                setPaymentData(null);
+                setIsPaymentSummaryOpen(false);
+                if (activeSale) {
+                    removePendingSale(activeSale.id);
+                    setActiveSale(null);
+                }
+                setCustomerName('');
+            }
+            setSaleForPrint(null);
+        };
+
+        const waitForPrintArea = () => {
+            if (cancelled) return;
+            if (typeof document !== 'undefined' && document.getElementById(printAreaId)) {
+                if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+                fallbackTimer = undefined;
+                // Margen extra: garantiza que React terminó de pintar el contenido del portal.
+                window.setTimeout(finishPrint, 30);
+                return;
+            }
+            attempts += 1;
+            if (attempts >= 60) return; // tope de ~6s
+            pollTimer = window.setTimeout(waitForPrintArea, 100);
+        };
+
+        pollTimer = window.setTimeout(waitForPrintArea, 0);
+        fallbackTimer = window.setTimeout(finishPrint, 500);
+
+        return () => {
+            cancelled = true;
+            if (pollTimer !== undefined) window.clearTimeout(pollTimer);
+            if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+        };
+    }, [saleForPrint, printAreaId]);
     // Credit Note / Return States
     const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
     const [isCreditNoteOpen, setIsCreditNoteOpen] = useState(false);
@@ -1033,6 +1126,19 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             toast({ title: 'Error', description: result.error, variant: 'destructive' });
             return;
         }
+
+        const isJewelry = mode === 'JEWELRY';
+        const ticketLabel = result.invoiceNumber
+            ? (isJewelry ? `Factura ${formatTicketNumber(result.invoiceNumber)}` : formatTicketNumber(result.invoiceNumber))
+            : undefined;
+        const finalCustomerName = customerName && customerName.trim() ? customerName.trim() : 'Cliente General';
+        const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, finalCustomerName, paymentMethod, amountPaid, change, ticketLabel);
+        // Se solicita imprimir SOLO cuando el portal del <ReceiptTemplate/> esté
+        // montado. El reinicio de la venta (carrito/resumen/cliente/panel) se
+        // ejecuta DESPUÉS de cerrar la vista previa, dentro de la tubería de impresión.
+        saleResetAfterPrintRef.current = true;
+        setSaleForPrint(receiptData);
+
         refreshSessions();
         toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
     };

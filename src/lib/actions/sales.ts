@@ -11,6 +11,12 @@ import { recordAudit } from './audit';
 import { getPaymentBucket, isCreditPayment } from '../payment-method';
 import { resolvePresentationFactor } from '../presentations';
 
+export interface SaleFinancing {
+    installments: number;
+    frequency: 'SEMANAL' | 'QUINCENAL' | 'MENSUAL';
+    interestRate: number;
+}
+
 export async function createSale(
     items: CartItem[],
     sessionId: string,
@@ -18,7 +24,8 @@ export async function createSale(
     inventoryType: string,
     totalAmount: number,
     paymentMethod: 'Efectivo' | 'Tarjeta' | 'Dolares' | 'Credito',
-    customerId?: string
+    customerId?: string,
+    financing?: SaleFinancing | null
 ) {
     console.log('--- DEBUG createSale ---');
     console.log('paymentMethod:', paymentMethod);
@@ -264,16 +271,51 @@ salesInvoiceItem: {
                 const customer = await tx.customer.findUnique({ where: { id: customerId } });
                 if (!customer || !customer.hasCredit) throw new Error('El cliente no tiene habilitado el crÃ©dito');
 
+                // Financiamiento por cuotas: se suma el interÃ©s al valor de la
+                // venta y el saldo del cliente refleja el total financiado.
+                // Cada cuota es INMUTABLE (monto y fecha fijos) y se guarda en
+                // `creditinstallment` con estado PENDING.
+                let financedTotal = roundedTotalAmount;
+                if (financing && financing.installments > 0) {
+                    const interestRate = Number(financing.interestRate) || 0;
+                    financedTotal = Math.round((roundedTotalAmount + (roundedTotalAmount * interestRate) / 100) * 100) / 100;
+                }
+
                 // Check limit (optional, can be a warning or strict)
-                const newBalance = customer.currentBalance + roundedTotalAmount;
+                const newBalance = customer.currentBalance + financedTotal;
                 if (customer.creditLimit > 0 && newBalance > customer.creditLimit) {
                     throw new Error(`LÃ­mite de crÃ©dito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`);
                 }
 
                 await tx.customer.update({
                     where: { id: customerId },
-                    data: { currentBalance: { increment: roundedTotalAmount } }
+                    data: { currentBalance: { increment: financedTotal } }
                 });
+
+                // Genera el plan de pagos inmutable en cuotas.
+                if (financing && financing.installments > 0) {
+                    const totalInstallments = Math.max(1, Math.floor(Number(financing.installments) || 1));
+                    const interestRate = Number(financing.interestRate) || 0;
+                    const totalWithInterest = Math.round((roundedTotalAmount + (roundedTotalAmount * interestRate) / 100) * 100) / 100;
+                    const baseAmount = Math.round((totalWithInterest / totalInstallments) * 100) / 100;
+                    const periodDays = financing.frequency === 'QUINCENAL' ? 15 : financing.frequency === 'MENSUAL' ? 30 : 7;
+                    const baseDate = new Date();
+
+                    await tx.creditInstallment.createMany({
+                        data: Array.from({ length: totalInstallments }, (_, i) => ({
+                            id: generateUUID(),
+                            saleId: salesInvoice.id,
+                            customerId,
+                            installmentNumber: i + 1,
+                            dueDate: new Date(baseDate.getTime() + (i + 1) * periodDays * 24 * 60 * 60 * 1000),
+                            amount: i === totalInstallments - 1
+                                ? Math.round((totalWithInterest - baseAmount * (totalInstallments - 1)) * 100) / 100
+                                : baseAmount,
+                            status: 'PENDING'
+                        })),
+                        skipDuplicates: true
+                    });
+                }
             }
 
             // Update Session with rounded amount

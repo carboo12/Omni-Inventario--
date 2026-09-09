@@ -114,7 +114,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 <p className="text-[13px] leading-tight">Cliente: {clientName || 'Cliente Genérico'}</p>
             </div>
 
-            <div className="border-b border-black border-dashed my-2" />
+            <div className="border-b border-black border-dashed my-1" />
 
             <div className="w-full">
                 {items.map((item, index) => (
@@ -130,7 +130,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 ))}
             </div>
 
-            <div className="border-b border-black border-dashed my-2" />
+            <div className="border-b border-black border-dashed my-1" />
 
             <div className="flex justify-between text-[14px] font-semibold">
                 <span>Subtotal:</span>
@@ -151,7 +151,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 </div>
             )}
 
-            <div className="border-b border-black border-dashed my-2" />
+            <div className="border-b border-black border-dashed my-1" />
 
             <div className="flex justify-between text-[14px]">
                 <span>Pago ({paymentMethod}):</span>

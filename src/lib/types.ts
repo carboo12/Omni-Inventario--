@@ -74,6 +74,10 @@ export type Product = {
   bulkUnit3?: string | null;
   unitsPerBulk3?: number | null;
   baseUnit?: string | null;
+  /** Descripciones adicionales opcionales (Descripción 2 y Descripción 3). */
+  hasExtraDetails?: boolean;
+  description2?: string | null;
+  description3?: string | null;
 };
 
 export type InventoryItem = {
@@ -155,6 +159,19 @@ export type PurchaseInvoice = {
   paidAmount: number;
   status: string;
   details?: string | null;
+};
+
+export type CreditInstallmentStatus = 'PENDING' | 'PAID' | 'OVERDUE';
+
+export type CreditInstallment = {
+  id: string;
+  saleId: string;
+  customerId: string;
+  installmentNumber: number;
+  dueDate: Date;
+  amount: number;
+  status: CreditInstallmentStatus;
+  createdAt: Date;
 };
 
 export type CashRegisterSession = {

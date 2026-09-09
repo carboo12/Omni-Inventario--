@@ -47,6 +47,7 @@ export interface SystemSettingsData {
     licenseStatus?: string;
     invoiceAlertDays?: number;
     importProductsInDollars?: boolean;
+    creditFinancingEnabled?: boolean;
 }
 
 import { verifySession } from '../session';
@@ -109,7 +110,8 @@ export async function getSettings(): Promise<SystemSettingsData> {
             smtpPassword: "",
             emailNotificationsEnabled: false,
             invoiceAlertDays: 5,
-            importProductsInDollars: false
+            importProductsInDollars: false,
+            creditFinancingEnabled: false
         };
     }
 
@@ -147,7 +149,8 @@ export async function getSettings(): Promise<SystemSettingsData> {
         licenseExpirationDate: settings.licenseExpirationDate,
         licenseStatus: settings.licenseStatus,
         invoiceAlertDays: settings.invoiceAlertDays,
-        importProductsInDollars: settings.importProductsInDollars
+        importProductsInDollars: settings.importProductsInDollars,
+        creditFinancingEnabled: settings.creditFinancingEnabled
     };
 }
 
@@ -192,7 +195,8 @@ export async function updateSettings(data: SystemSettingsData) {
                 licenseExpirationDate: data.licenseExpirationDate,
                 licenseStatus: data.licenseStatus,
                 invoiceAlertDays: data.invoiceAlertDays,
-                importProductsInDollars: data.importProductsInDollars
+                importProductsInDollars: data.importProductsInDollars,
+                creditFinancingEnabled: data.creditFinancingEnabled
             }
         });
     } else {
@@ -229,7 +233,8 @@ export async function updateSettings(data: SystemSettingsData) {
                 licenseExpirationDate: data.licenseExpirationDate,
                 licenseStatus: data.licenseStatus || 'unregistered',
                 invoiceAlertDays: data.invoiceAlertDays || 5,
-                importProductsInDollars: data.importProductsInDollars || false
+                importProductsInDollars: data.importProductsInDollars || false,
+                creditFinancingEnabled: data.creditFinancingEnabled || false
             } as any
         });
     }

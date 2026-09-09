@@ -127,6 +127,32 @@ model CreditPayment {
   @@map("creditpayment")
 }
 
+model CreditInstallment {
+  id                String                @id
+  saleId            String
+  customerId        String
+  installmentNumber Int
+  dueDate           DateTime
+  amount            Float
+  status            CreditInstallmentStatus @default(PENDING)
+  createdAt         DateTime              @default(now())
+  salesInvoice      SalesInvoice          @relation(fields: [saleId], references: [id], map: "CreditInstallment_saleId_fkey")
+  customer          Customer              @relation(fields: [customerId], references: [id], map: "CreditInstallment_customerId_fkey")
+
+  @@index([saleId], map: "CreditInstallment_saleId_fkey")
+  @@index([customerId], map: "CreditInstallment_customerId_fkey")
+  @@index([status], map: "CreditInstallment_status_idx")
+  @@map("creditinstallment")
+}
+
+enum CreditInstallmentStatus {
+  PENDING
+  PAID
+  OVERDUE
+
+  @@map("credit_installment_status")
+}
+
 model Customer {
   id             String              @id
   fullName       String
@@ -145,6 +171,7 @@ model Customer {
   salesInvoice   SalesInvoice[]
   customerOrder  CustomerOrder[]
   routeStops     DeliveryRouteStop[]
+  creditInstallment CreditInstallment[]
 
   @@map("customer")
 }
@@ -397,6 +424,10 @@ isFractional      Boolean             @default(false)
     /// Presentación 3 (opcional).
     bulkUnit3         String?
     unitsPerBulk3     Float?
+    /// Descripciones adicionales del producto (opcionales).
+    hasExtraDetails   Boolean             @default(false)
+    description2      String?
+    description3      String?
   inventoryItem     InventoryItem[]
   categoryRelation  Category?           @relation(fields: [categoryId], references: [id], map: "Product_categoryId_fkey")
   purchaseOrderItem PurchaseOrderItem[]
@@ -542,6 +573,7 @@ model SalesInvoice {
   cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "SalesInvoice_sessionId_fkey")
   user                User                @relation(fields: [userId], references: [id], map: "SalesInvoice_userId_fkey")
   salesInvoiceItem    SalesInvoiceItem[]
+  creditInstallment   CreditInstallment[]
 
   @@index([customerId], map: "SalesInvoice_customerId_fkey")
   @@index([sessionId], map: "SalesInvoice_sessionId_fkey")
@@ -673,6 +705,7 @@ model SystemSettings {
   licenseStatus             String       @default("unregistered")
   invoiceAlertDays          Int          @default(5)
   importProductsInDollars   Boolean      @default(false)
+  creditFinancingEnabled    Boolean      @default(false)
 
   @@map("systemsettings")
 }
