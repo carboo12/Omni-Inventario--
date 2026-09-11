@@ -247,8 +247,9 @@ export type Quotation = {
   notes?: string | null;
   createdAt: Date;
   updatedAt: Date;
-  userId: string;
+  userId: string | null;
   convertedInvoiceId?: string | null;
-  quoteItem?: QuotationItem[];
+  clientId?: string | null;
+  items?: QuotationItem[];
   user?: { name: string };
 };

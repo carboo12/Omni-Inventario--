@@ -857,7 +857,7 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
       <AssignClientDialog
         isOpen={isAssignClientOpen}
         onClose={() => setIsAssignClientOpen(false)}
-        onAssign={(name, priceLevel) => { setCustomerName(name); setCustomerPriceLevel(priceLevel || 1); }}
+        onAssign={(client) => { setCustomerName(client.name); setCustomerPriceLevel(client.priceLevel || 1); }}
         currentName={customerName}
       />
       {/* Resumen de pago: confirma el envío de la comanda a caja */}

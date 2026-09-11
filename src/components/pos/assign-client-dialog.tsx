@@ -18,10 +18,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 
+export interface SelectedClient {
+    id?: string;
+    name: string;
+    phone?: string;
+    priceLevel?: number;
+}
+
 interface AssignClientDialogProps {
     isOpen: boolean;
     onClose: () => void;
-    onAssign: (name: string, priceLevel?: number) => void;
+    onAssign: (client: SelectedClient) => void;
     currentName?: string;
 }
 
@@ -82,7 +89,12 @@ export function AssignClientDialog({
     );
 
     const handleSelectCustomer = (customer: any) => {
-        onAssign(customer.fullName, customer.priceLevel || 1);
+        onAssign({
+            id: customer.id,
+            name: customer.fullName,
+            phone: customer.phone || undefined,
+            priceLevel: customer.priceLevel || 1,
+        });
         onClose();
     };
 
@@ -94,7 +106,12 @@ export function AssignClientDialog({
         setLoading(true);
         try {
             const res = await createOrUpdateCustomer(formData);
-            onAssign(res.fullName, (res as any).priceLevel || 1);
+            onAssign({
+                id: res.id,
+                name: res.fullName,
+                phone: res.phone || undefined,
+                priceLevel: (res as any).priceLevel || 1,
+            });
             toast({ title: "✅ Éxito", description: "Cliente guardado y asignado" });
             onClose();
         } catch (error) {

@@ -11,6 +11,7 @@ export async function createQuote(data: {
   customerPhone?: string;
   expirationDays?: number;
   notes?: string;
+  clientId?: string;
   items: { productId?: string; productName: string; quantity: number; unitPrice: number; variantId?: string; priceLevel?: number }[];
   total: number;
 }) {
@@ -19,6 +20,7 @@ export async function createQuote(data: {
 
   try {
     const subtotal = data.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const userId = (session as any).userId;
 
     const quote = await db.quote.create({
       data: {
@@ -31,8 +33,9 @@ export async function createQuote(data: {
         total: data.total || subtotal,
         status: 'PENDING',
         notes: data.notes || null,
-        userId: (session as any).id || (session as any).userId,
-        quoteItem: {
+        clientId: data.clientId || null,
+        userId: userId || null,
+        items: {
           create: data.items.map(item => ({
             id: generateUUID(),
             productId: item.productId || null,
@@ -44,8 +47,8 @@ export async function createQuote(data: {
             priceLevel: typeof item.priceLevel === 'number' ? item.priceLevel : 1,
           }))
         }
-      } as any,
-      include: { quoteItem: true } as any
+      },
+      include: { items: true, customer: true, user: true }
     });
 
     revalidatePath('/quotations');
@@ -77,13 +80,40 @@ export async function getQuotes(search?: string) {
     const quotes = await db.quote.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { quoteItem: true, user: true } as any
+      include: { items: true, user: true, customer: true }
     });
 
     return { success: true, data: quotes };
   } catch (error) {
     console.error('Error fetching quotes:', error);
     return { success: false, error: 'Error al obtener cotizaciones' };
+  }
+}
+
+export async function getPendingQuotes() {
+  const session = await verifySession();
+  if (!session) return { success: false, error: 'Unauthorized' };
+
+  try {
+    const quotes = await db.quote.findMany({
+      where: { status: 'PENDING' },
+      orderBy: { createdAt: 'desc' },
+      include: { customer: true, user: true },
+      take: 50,
+    });
+
+    // Solo cotizaciones aún vigentes (createdAt + expirationDays >= hoy).
+    const now = new Date();
+    const active = (quotes as any[]).filter((q) => {
+      const expiresAt = new Date(q.createdAt);
+      expiresAt.setDate(expiresAt.getDate() + (q.expirationDays || 30));
+      return expiresAt >= now;
+    });
+
+    return { success: true, data: active };
+  } catch (error) {
+    console.error('Error fetching pending quotes:', error);
+    return { success: false, error: 'Error al obtener cotizaciones pendientes' };
   }
 }
 
@@ -105,7 +135,7 @@ export async function getQuoteByNumber(quoteNumber: number | string) {
 
     const quote = await db.quote.findUnique({
       where: { quoteNumber: parsed },
-      include: { quoteItem: true, user: true } as any
+      include: { items: true, user: true, customer: true }
     });
 
     if (!quote) {
@@ -126,7 +156,7 @@ export async function convertQuoteToInvoice(quoteId: string, sessionId: string, 
   try {
     const quote = await db.quote.findUnique({
       where: { id: quoteId },
-      include: { quoteItem: true } as any
+      include: { items: true }
     });
 
     if (!quote) {
@@ -146,7 +176,7 @@ export async function convertQuoteToInvoice(quoteId: string, sessionId: string, 
     let createdInvoiceNumber = 0;
 
     await db.$transaction(async (tx) => {
-      const quoteItems = (quote as any).quoteItem || [];
+      const quoteItems = (quote as any).items || [];
       for (const item of quoteItems) {
         if (!item.productId) continue;
 

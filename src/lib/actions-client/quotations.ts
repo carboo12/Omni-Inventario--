@@ -10,6 +10,10 @@ export async function getQuotes(...args: any[]): Promise<any> {
   return callAction('quotations', 'getQuotes', args);
 }
 
+export async function getPendingQuotes(...args: any[]): Promise<any> {
+  return callAction('quotations', 'getPendingQuotes', args);
+}
+
 export async function getQuoteByNumber(...args: any[]): Promise<any> {
   return callAction('quotations', 'getQuoteByNumber', args);
 }

@@ -448,7 +448,7 @@ export function JewelryPOS({ availablePieces }: JewelryPOSProps) {
             <AssignClientDialog
                 isOpen={isAssignClientOpen}
                 onClose={() => setIsAssignClientOpen(false)}
-                onAssign={setCustomerName}
+                onAssign={(client) => setCustomerName(client.name)}
                 currentName={customerName}
             />
 

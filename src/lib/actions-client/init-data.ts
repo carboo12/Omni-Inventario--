@@ -39,6 +39,7 @@ export interface InitialAppData {
     licenseStatus: string;
     invoiceAlertDays: number | null;
     importProductsInDollars: boolean | null;
+    creditFinancingEnabled: boolean;
   } | null;
   businessMode: BusinessMode;
   sessions: Array<{

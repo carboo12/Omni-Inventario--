@@ -74,7 +74,7 @@ export default function QuotationsClient({ initialQuotes }: QuotationsClientProp
             customerName: quote.customerName,
             customerPhone: quote.customerPhone,
             cashierName: quote.user?.name || 'Cajero',
-            items: (quote.quoteItem || []).map((item: any) => ({
+            items: (quote.items || []).map((item: any) => ({
                 quantity: item.quantity,
                 description: item.productName,
                 price: item.unitPrice,
@@ -237,7 +237,7 @@ export default function QuotationsClient({ initialQuotes }: QuotationsClientProp
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {(selectedQuote.quoteItem || []).map((item) => (
+                                        {(selectedQuote.items || []).map((item) => (
                                             <TableRow key={item.id}>
                                                 <TableCell>{item.productName}</TableCell>
                                                 <TableCell className="text-right">{item.quantity}</TableCell>

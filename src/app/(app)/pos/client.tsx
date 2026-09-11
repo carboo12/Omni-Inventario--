@@ -51,6 +51,7 @@ const AssignClientDialog = dynamic(
     () => import('@/components/pos/assign-client-dialog').then((mod) => ({ default: mod.AssignClientDialog })),
     { ssr: false }
 );
+import type { SelectedClient } from '@/components/pos/assign-client-dialog';
 const HeldBillsDialog = dynamic(
     () => import('@/components/pos/held-bills-dialog').then((mod) => ({ default: mod.HeldBillsDialog })),
     { ssr: false }
@@ -79,35 +80,12 @@ const FullPageInvoiceTemplate = dynamic(
     () => import('@/components/pos/full-page-invoice-template').then((mod) => ({ default: mod.FullPageInvoiceTemplate })),
     { ssr: false }
 );
+const LoadQuoteDialog = dynamic(
+    () => import('@/components/pos/load-quote-dialog').then((mod) => ({ default: mod.LoadQuoteDialog })),
+    { ssr: false }
+);
 
 // Local formatCurrency removed in favor of unified lib/utils utility
-
-const LoadQuoteForm = ({ onSubmit, onClose }: { onSubmit: (num: string) => void; onClose: () => void }) => {
-    const [quoteNum, setQuoteNum] = useState('');
-    return (
-        <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-                Ingrese el número de cotización para cargarla al carrito.
-            </p>
-            <div className="space-y-2">
-                <label className="text-sm font-medium">Número de Cotización</label>
-                <Input
-                    placeholder="COT-0000001 o 1"
-                    value={quoteNum}
-                    onChange={(e) => setQuoteNum(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(quoteNum); }}
-                    autoFocus
-                />
-            </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={onClose}>Cancelar</Button>
-                <Button className="bg-[#9C27B0] hover:bg-[#7B1FA2] text-white" onClick={() => onSubmit(quoteNum)}>
-                    Cargar
-                </Button>
-            </DialogFooter>
-        </div>
-    );
-};
 
 // Helper to prepare receipt data
 const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, tax: number, user: any, settings: any, customerName: string = 'Cliente General', paymentMethod: string = 'Efectivo', amountPaid: number = 0, change: number = 0, ticketIdOverride?: string) => {
@@ -710,7 +688,7 @@ return (
                         <div className="flex flex-col gap-0.5 min-w-0">
                             <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Cliente:</span>
                             <span className="font-black text-base text-[#673AB7] truncate max-w-[160px]">
-                                {customerName || (activeSale?.customerName) || 'ANONIM'}
+                                {customerName || (activeSale?.customerName) || 'ANÓNIMO'}
                             </span>
                         </div>
                         <Button
@@ -784,7 +762,7 @@ return (
             <AssignClientDialog
                 isOpen={isAssignClientOpen}
                 onClose={() => setIsAssignClientOpen(false)}
-                onAssign={(name: string) => setCustomerName(name)}
+                onAssign={(client: SelectedClient) => setCustomerName(client.name)}
                 currentName={customerName || activeSale?.customerName}
             />
 
@@ -968,6 +946,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
                     setActiveSale(null);
                 }
                 setCustomerName('');
+                setSelectedClient(null);
             }
         };
 
@@ -1022,6 +1001,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
     const [lastQuoteReceipt, setLastQuoteReceipt] = useState<any>(null);
     const [quoteCustomerName, setQuoteCustomerName] = useState('');
     const [quoteCustomerPhone, setQuoteCustomerPhone] = useState('');
+    const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
 
     const userInventoryType = user?.inventoryType || 'general';
 
@@ -1240,12 +1220,13 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             }
             setCart([]);
             setCustomerName('');
+            setSelectedClient(null);
         }
     };
 
     const handleHoldBill = () => {
         if (cart.length === 0) {
-            toast({ title: 'Carrito VacÃ­o', description: 'No hay productos para poner en espera.', variant: 'destructive' });
+            toast({ title: 'Carrito Vacío', description: 'No hay productos para poner en espera.', variant: 'destructive' });
             return;
         }
 
@@ -1256,6 +1237,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         toast({ title: 'Factura en Espera', description: 'La factura se ha guardado temporalmente.' });
         setCart([]);
         setCustomerName('');
+        setSelectedClient(null);
     };
 
     const handleResumeBill = (sale: PendingSale) => {
@@ -1330,6 +1312,13 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         }
     };
 
+    const openSaveQuoteDialog = () => {
+        // Auto-llenado: pre-pobla nombre y teléfono desde el cliente seleccionado.
+        setQuoteCustomerName(selectedClient?.name || customerName || '');
+        setQuoteCustomerPhone(selectedClient?.phone || '');
+        setIsSaveQuoteOpen(true);
+    };
+
     const handleSaveQuote = async () => {
         if (cart.length === 0) {
             toast({ title: 'Carrito vacío', description: 'Agregue productos antes de crear una cotización.', variant: 'destructive' });
@@ -1337,8 +1326,9 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         }
         try {
             const result = await createQuote({
-                customerName: quoteCustomerName.trim() || 'Cliente General',
-                customerPhone: quoteCustomerPhone.trim() || undefined,
+                customerName: quoteCustomerName.trim() || selectedClient?.name || 'Cliente General',
+                customerPhone: quoteCustomerPhone.trim() || selectedClient?.phone || undefined,
+                clientId: selectedClient?.id || undefined,
                 expirationDays: 30,
                 items: cart.map(item => ({
                     productId: item.product.id,
@@ -1359,8 +1349,8 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                     quoteNumber: `COT-${String(result.data.quoteNumber).padStart(7, '0')}`,
                     date: new Date(result.data.createdAt),
                     expirationDays: result.data.expirationDays,
-                    customerName: quoteCustomerName.trim() || 'Cliente General',
-                    customerPhone: quoteCustomerPhone.trim() || undefined,
+                    customerName: quoteCustomerName.trim() || selectedClient?.name || 'Cliente General',
+                    customerPhone: quoteCustomerPhone.trim() || selectedClient?.phone || undefined,
                     cashierName: user?.name || 'Cajero',
                     items: cart.map(item => ({
                         quantity: item.quantity,
@@ -1383,6 +1373,8 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                 setQuoteCustomerPhone('');
                 setIsSaveQuoteOpen(false);
                 setCart([]);
+                setCustomerName('');
+                setSelectedClient(null);
                 toast({ title: 'Cotización Guardada', description: `Cotización #${quoteData.quoteNumber} creada exitosamente.` });
             } else {
                 toast({ title: 'Error', description: result.error || 'No se pudo crear la cotización.', variant: 'destructive' });
@@ -1392,14 +1384,13 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         }
     };
 
-    const handleLoadQuote = async (quoteNumberStr: string) => {
-        const cleaned = quoteNumberStr.replace(/^COT-/i, '').trim();
-        if (!cleaned) {
-            toast({ title: 'Error', description: 'Ingrese un número de cotización.', variant: 'destructive' });
+    const handleLoadQuote = async (quote: any) => {
+        if (!quote || !quote.quoteNumber) {
+            toast({ title: 'Error', description: 'No se pudo cargar la cotización.', variant: 'destructive' });
             return;
         }
         try {
-            const result = await getQuoteByNumber(cleaned);
+            const result = await getQuoteByNumber(quote.quoteNumber);
             if (result.success && result.data) {
                 if (result.data.status === 'CONVERTED') {
                     toast({ title: 'Cotización ya convertida', description: 'Esta cotización ya fue facturada.', variant: 'destructive' });
@@ -1416,7 +1407,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                     return;
                 }
 
-                const loadedItems: CartItem[] = (result.data.quoteItem || []).map((qi: any) => {
+                const loadedItems: CartItem[] = (result.data.items || []).map((qi: any) => {
                     const product = products.find(p => p.id === qi.productId);
                     return {
                         id: qi.id,
@@ -1430,13 +1421,24 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                         } as any,
                         quantity: qi.quantity,
                         unitPrice: qi.unitPrice,
+                        priceLevel: qi.priceLevel,
                     };
                 });
 
                 setCart(loadedItems);
                 setIsLoadQuoteOpen(false);
-                setCustomerName(result.data.customerName || 'Cliente General');
-                toast({ title: 'Cotización Cargada', description: `Cotización #COT-${String(result.data.quoteNumber).padStart(7, '0')} cargada al carrito.` });
+                setCustomerName(result.data.customer?.fullName || result.data.customerName || 'Cliente General');
+                // Si la cotización tiene un cliente asignado, vincularlo como cliente seleccionado del carrito.
+                if (result.data.clientId || result.data.customer) {
+                    const cust = result.data.customer;
+                    setSelectedClient({
+                        id: result.data.clientId || cust?.id,
+                        name: cust?.fullName || result.data.customerName || 'Cliente General',
+                        phone: cust?.phone || result.data.customerPhone || undefined,
+                        priceLevel: cust?.priceLevel,
+                    });
+                }
+                toast({ title: 'Cotización Cargada', description: `Cotización COT-${String(result.data.quoteNumber).padStart(7, '0')} cargada con éxito.` });
             } else {
                 toast({ title: 'No encontrada', description: result.error || 'Cotización no encontrada.', variant: 'destructive' });
             }
@@ -1553,7 +1555,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Cliente:</span>
                             <span className="font-black text-base text-[#673AB7] truncate max-w-[180px]">
-                                {customerName || 'ANONIM'}
+                                {customerName || 'ANÓNIMO'}
                             </span>
                         </div>
                         <Button 
@@ -1639,7 +1641,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                     <div className="grid grid-cols-3 gap-2 mt-2">
                         <Button
                             className="h-14 flex flex-col gap-1 bg-[#E91E63] hover:bg-[#C2185B] text-white font-black text-[9px] p-2 transition-all active:scale-95"
-                            onClick={() => setIsSaveQuoteOpen(true)}
+                            onClick={openSaveQuoteDialog}
                             title="Guardar como Cotización"
                         >
                             <FileText className="w-4 h-4" />
@@ -1701,7 +1703,10 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             <AssignClientDialog
                 isOpen={isAssignClientOpen}
                 onClose={() => setIsAssignClientOpen(false)}
-                onAssign={setCustomerName}
+                onAssign={(client: SelectedClient) => {
+                    setCustomerName(client.name);
+                    setSelectedClient(client);
+                }}
                 currentName={customerName}
             />
 
@@ -1854,14 +1859,11 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             </Dialog>
 
             {/* Load Quote Dialog */}
-            <Dialog open={isLoadQuoteOpen} onOpenChange={setIsLoadQuoteOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Cargar Cotización</DialogTitle>
-                    </DialogHeader>
-                    <LoadQuoteForm onSubmit={handleLoadQuote} onClose={() => setIsLoadQuoteOpen(false)} />
-                </DialogContent>
-            </Dialog>
+            <LoadQuoteDialog
+                isOpen={isLoadQuoteOpen}
+                onClose={() => setIsLoadQuoteOpen(false)}
+                onLoadQuote={handleLoadQuote}
+            />
         </div>
     );
 };

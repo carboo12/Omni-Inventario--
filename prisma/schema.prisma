@@ -172,6 +172,7 @@ model Customer {
   customerOrder  CustomerOrder[]
   routeStops     DeliveryRouteStop[]
   creditInstallment CreditInstallment[]
+  quote          Quote[]
 
   @@map("customer")
 }
@@ -624,10 +625,13 @@ model Quote {
   updatedAt      DateTime    @updatedAt
   userId         String?
   convertedInvoiceId String?
+  clientId       String?
   user           User?       @relation(fields: [userId], references: [id])
+  customer       Customer?   @relation(fields: [clientId], references: [id])
   items          QuoteItem[]
 
   @@index([userId])
+  @@index([clientId])
   @@index([status])
   @@map("quote")
 }

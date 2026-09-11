@@ -8,7 +8,12 @@ const CUSTOMER_STORAGE_KEY = 'pos-customer';
 
 // Carrito persistido en sessionStorage para que sobreviva a re-montajes
 // del componente POS (cambio rápido de usuario, refresh de datos iniciales).
-// Se limpia únicamente al cerrar sesión explícitamente (ver use-auth).
+//
+// IMPORTANTE: el cliente NO se persiste a propósito. El POS debe arrancar
+// siempre con el cliente por defecto (Cliente Genérico / Anónimo), no con el
+// cliente de la última venta o cotización cargada. Por eso, al montar la
+// vista se elimina también cualquier clave legacy 'pos-customer' que pudiera
+// haber quedado en sessionStorage.
 export function usePersistedCart() {
   const [cart, setCart] = useState<CartItem[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -20,14 +25,8 @@ export function usePersistedCart() {
     }
   });
 
-  const [customerName, setCustomerName] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    try {
-      return sessionStorage.getItem(CUSTOMER_STORAGE_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  // Siempre inicia sin cliente ('') → la UI muestra "ANÓNIMO / Cliente Genérico".
+  const [customerName, setCustomerName] = useState<string>('');
 
   useEffect(() => {
     try {
@@ -38,15 +37,19 @@ export function usePersistedCart() {
   }, [cart]);
 
   useEffect(() => {
+    // Limpia claves legacy de cliente persistido para que una recarga de la
+    // página no vuelva a fijar un cliente específico como por defecto.
     try {
-      if (customerName) sessionStorage.setItem(CUSTOMER_STORAGE_KEY, customerName);
-      else sessionStorage.removeItem(CUSTOMER_STORAGE_KEY);
+      sessionStorage.removeItem(CUSTOMER_STORAGE_KEY);
     } catch {
       // sessionStorage puede no estar disponible; no bloquear la UI.
     }
-  }, [customerName]);
+  }, []);
 
-  const clearCart = useCallback(() => setCart([]), []);
+  const clearCart = useCallback(() => {
+    setCart([]);
+    setCustomerName('');
+  }, []);
 
   return { cart, setCart, clearCart, customerName, setCustomerName };
 }
