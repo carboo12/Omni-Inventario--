@@ -82,6 +82,11 @@ const formSchema = z.object({
   // Switches
   isFractional: z.boolean().default(false),
   trackInventory: z.boolean().default(true),
+
+  // Especificaciones adicionales (Descripción 2 y Descripción 3, opcionales)
+  hasExtraDetails: z.boolean().default(false),
+  description2: z.string().optional(),
+  description3: z.string().optional(),
 }).superRefine((val, ctx) => {
   if (val.isFractional) {
     if (!val.bulkUnit || !val.bulkUnit.trim()) {
@@ -128,6 +133,9 @@ interface AddInventoryItemDialogProps {
     isFractional?: boolean;
     trackInventory?: boolean;
     baseUnit?: string;
+    hasExtraDetails?: boolean;
+    description2?: string | null;
+    description3?: string | null;
   }) => Promise<{ success: boolean; error?: string }>;
   existingProducts: Product[];
 }
@@ -178,6 +186,9 @@ export function AddInventoryItemDialog({ isOpen, onClose, onSave, existingProduc
       baseUnit: '',
       isFractional: false,
       trackInventory: true,
+      hasExtraDetails: false,
+      description2: '',
+      description3: '',
     },
   });
   const { settings } = useSettings();
@@ -244,6 +255,9 @@ export function AddInventoryItemDialog({ isOpen, onClose, onSave, existingProduc
     form.setValue('baseUnit', (product as any).baseUnit || '');
     form.setValue('isFractional', (product as any).isFractional ?? false);
     form.setValue('trackInventory', (product as any).trackInventory ?? true);
+    form.setValue('hasExtraDetails', (product as any).hasExtraDetails ?? false);
+    form.setValue('description2', (product as any).description2 || '');
+    form.setValue('description3', (product as any).description3 || '');
     setShowTemplates(false);
     setTemplateSearch('');
     toast({ title: 'Plantilla aplicada', description: 'Datos copiados. Modifique lo que necesite.' });
@@ -285,6 +299,9 @@ bulkUnit: '',
       baseUnit: '',
       isFractional: false,
       trackInventory: true,
+      hasExtraDetails: false,
+      description2: '',
+      description3: '',
       });
     }
   }, [isOpen, form, defaultInventoryType]);
@@ -367,6 +384,9 @@ bulkUnit: '',
         isFractional: values.isFractional,
         trackInventory: values.trackInventory,
         baseUnit: values.baseUnit.trim(),
+        hasExtraDetails: values.hasExtraDetails,
+        description2: values.hasExtraDetails ? (values.description2?.trim() || null) : null,
+        description3: values.hasExtraDetails ? (values.description3?.trim() || null) : null,
       } as any);
 
       if (!result?.success) {
@@ -479,6 +499,55 @@ bulkUnit: '',
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={form.control}
+                  name="hasExtraDetails"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-sm">Habilitar especificaciones adicionales</FormLabel>
+                        <p className="text-xs text-muted-foreground">
+                          Agrega descripciones complementarias opcionales (Descripción 2 y 3).
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch('hasExtraDetails') && (
+                  <div className="bg-violet-50 p-4 rounded-xl border border-violet-200 space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="description2"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Descripción 2 (opcional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Ej: Presentación o detalle adicional" {...field} disabled={isSaving} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="description3"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Descripción 3 (opcional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Ej: Presentación o detalle adicional" {...field} disabled={isSaving} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
 
                 <FormField
                   control={form.control}

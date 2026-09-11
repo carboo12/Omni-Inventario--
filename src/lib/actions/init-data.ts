@@ -38,6 +38,7 @@ export interface InitialAppData {
     licenseStatus: string;
     invoiceAlertDays: number | null;
     importProductsInDollars: boolean | null;
+    creditFinancingEnabled: boolean;
   } | null;
   businessMode: BusinessMode;
   sessions: Array<{
@@ -176,6 +177,7 @@ export async function getInitialAppData(): Promise<InitialAppData> {
           licenseStatus: settingsRow.licenseStatus,
           invoiceAlertDays: settingsRow.invoiceAlertDays,
           importProductsInDollars: settingsRow.importProductsInDollars,
+          creditFinancingEnabled: settingsRow.creditFinancingEnabled || false,
         }
       : null,
     businessMode,

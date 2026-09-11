@@ -1,0 +1,1 @@
+import{a3 as e}from"./index-BeIe05t8.js";async function n(...t){return e("quotations","createQuote",t)}async function a(...t){return e("quotations","getQuoteByNumber",t)}async function u(...t){return e("quotations","cancelQuote",t)}export{u as a,n as c,a as g};

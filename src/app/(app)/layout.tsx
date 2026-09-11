@@ -45,6 +45,7 @@ export default function AuthenticatedLayout({
 import { MasterKeyGuard } from '@/components/auth/master-key-guard';
 import { LicenseGuard } from '@/components/auth/license-guard';
 import { InvoiceAlerts } from '@/components/purchases/invoice-alerts';
+import { OverdueInstallmentAlerts } from '@/components/credit/overdue-alerts';
 
 function AuthenticatedLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -69,6 +70,7 @@ function AuthenticatedLayoutContent({ children }: { children: React.ReactNode })
           className={cn(isPOS && 'bg-muted p-0 sm:p-0')}
         >
           <InvoiceAlerts />
+          <OverdueInstallmentAlerts />
           {children}
         </AppLayout>
       </MasterKeyGuard>

@@ -130,6 +130,18 @@
    Estrategia basada en visibility: hidden + position: fixed.
    Funciona en desarrollo (localhost) sin depender de dónde el bundler/Vite
    inyecte el CSS del <head> ni del árbol del DOM (createPortal en document.body). */
+
+/* Quita los spinners de los inputs numéricos (p. ej. % de interés). */
+input.no-spinner::-webkit-outer-spin-button,
+input.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 @media print {
   @page {
     size: 80mm auto !important;

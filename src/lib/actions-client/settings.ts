@@ -45,6 +45,7 @@ export interface SystemSettingsData {
     licenseStatus?: string;
     invoiceAlertDays?: number;
     importProductsInDollars?: boolean;
+    creditFinancingEnabled?: boolean;
 }
 
 export async function getSettings(...args: any[]): Promise<any> {

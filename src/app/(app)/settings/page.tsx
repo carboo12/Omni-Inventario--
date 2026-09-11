@@ -460,6 +460,27 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                         </div>
+
+                        <Separator />
+
+                        {/* Crédito por cuotas (financiamiento) */}
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-4">
+                                <ReceiptText className="w-8 h-8 text-violet-600 mt-1" />
+                                <div className="flex-1">
+                                    <h4 className="font-semibold text-lg">Crédito por cuotas</h4>
+                                    <div className="flex items-center space-x-2 mt-2">
+                                        <Checkbox id="enable-credit-financing" checked={settings.creditFinancingEnabled} onCheckedChange={(c) => handleCheckboxChange('creditFinancingEnabled', !!c)} />
+                                        <Label htmlFor="enable-credit-financing" className="text-sm font-normal">
+                                            Deseo habilitar financiamiento en ventas al crédito
+                                        </Label>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-2 ml-6">
+                                        Al vender al crédito podrás dividir el total en cuotas (semanal, quincenal o mensual) con interés.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </CardContent>
                 </Card>
 

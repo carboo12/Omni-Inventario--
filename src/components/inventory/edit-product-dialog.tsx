@@ -87,6 +87,11 @@ const formSchema = z.object({
   // Switches
   isFractional: z.boolean().default(false),
   trackInventory: z.boolean().default(true),
+
+  // Especificaciones adicionales (Descripción 2 y Descripción 3, opcionales)
+  hasExtraDetails: z.boolean().default(false),
+  description2: z.string().optional(),
+  description3: z.string().optional(),
 }).superRefine((val, ctx) => {
   if (val.isFractional) {
     if (!val.bulkUnit || !val.bulkUnit.trim()) {
@@ -163,6 +168,9 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
         unitsPerBulk3: (product as any).unitsPerBulk3 ?? undefined,
         isFractional: (product as any).isFractional ?? false,
         trackInventory: (product as any).trackInventory ?? true,
+        hasExtraDetails: (product as any).hasExtraDetails ?? false,
+        description2: (product as any).description2 || '',
+        description3: (product as any).description3 || '',
       });
     }
     setIsSaving(false);
@@ -231,6 +239,9 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
         price2: values.price2 ?? null,
         price3: values.price3 ?? null,
         price4: values.price4 ?? null,
+        hasExtraDetails: values.hasExtraDetails,
+        description2: values.hasExtraDetails ? (values.description2?.trim() || null) : null,
+        description3: values.hasExtraDetails ? (values.description3?.trim() || null) : null,
       } as any);
 
       toast({
@@ -294,6 +305,55 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={form.control}
+                  name="hasExtraDetails"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-sm">Habilitar especificaciones adicionales</FormLabel>
+                        <p className="text-xs text-muted-foreground">
+                          Agrega descripciones complementarias opcionales (Descripción 2 y 3).
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch('hasExtraDetails') && (
+                  <div className="bg-violet-50 p-4 rounded-xl border border-violet-200 space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="description2"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Descripción 2 (opcional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Ej: Presentación o detalle adicional" {...field} disabled={isSaving} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="description3"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Descripción 3 (opcional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Ej: Presentación o detalle adicional" {...field} disabled={isSaving} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
 
                 <FormField
                   control={form.control}

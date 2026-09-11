@@ -28,7 +28,9 @@ import { getPreferredPrintFormat, savePreferredPrintFormat, type PrintFormat } f
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { createSale, getLastSale } from '@/lib/actions/sales';
+import type { SaleFinancing } from '@/lib/actions/sales';
 import { buildReceiptDataFromInvoice } from '@/lib/ticket-data';
+import { printReceiptHtml, buildReceiptHtml, buildRetiroReceiptHtml, buildQuoteReceiptHtml } from '@/lib/print-iframe';
 import { createQuote, getQuoteByNumber } from '@/lib/actions/quotations';
 import { searchOrCreateCustomer } from '@/lib/actions/customers';
 import { useBusinessMode } from '@/hooks/use-business-mode';
@@ -37,6 +39,7 @@ import { useQuery } from '@tanstack/react-query';
 import { CartTicket } from '@/components/pos/cart-ticket';
 import { ProductGrid, ProductGridHandle } from '@/components/pos/product-grid';
 import { PaymentGrid } from '@/components/pos/payment-grid';
+import { CreditFinancingDialog } from '@/components/pos/credit-financing-dialog';
 import { DispatcherPOS } from '@/components/pos/dispatcher-pos';
 import { ProductAddWizard } from '@/components/pos/product-add-wizard';
 import { ItemEditDialog } from '@/components/pos/item-edit-dialog';
@@ -260,9 +263,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         let fallbackTimer: number | undefined;
         let attempts = 0;
 
-        const finishPrint = () => {
-            if (cancelled) return;
-            window.print();
+        const resetAfterPrint = () => {
             if (saleResetAfterPrintRef.current) {
                 saleResetAfterPrintRef.current = false;
                 // Reinicio DESPUÉS de imprimir/cerrar la ventana: volver al catálogo.
@@ -276,6 +277,24 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 }
                 setCustomerName('');
             }
+        };
+
+        // TICKET TÉRMICO (80mm): imprime en un iframe aislado con CSS propio, sin
+        // window.print() sobre la ventana principal. Evita el salto de página que
+        // Chromium fuerza en tickets largos (>10 ítems) antes del bloque de Totales.
+        // print() del iframe también es síncrono: el reinicio ocurre al cerrar el diálogo.
+        if (printFormat === 'ticket') {
+            printReceiptHtml(buildReceiptHtml(saleForPrint));
+            resetAfterPrint();
+            setSaleForPrint(null);
+            return () => { cancelled = true; };
+        }
+
+        // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
+        const finishPrint = () => {
+            if (cancelled) return;
+            window.print();
+            resetAfterPrint();
             setSaleForPrint(null);
         };
 
@@ -301,7 +320,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             if (pollTimer !== undefined) window.clearTimeout(pollTimer);
             if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
         };
-    }, [saleForPrint, printAreaId]);
+    }, [saleForPrint, printAreaId, printFormat]);
     const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
     const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
@@ -351,11 +370,12 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             if (!result || !result.id) {
                 throw new Error('Sin respuesta del servidor');
             }
-            setLastRetiro(prepareRetiroReceiptData(settings, user, activeSession, result, amount, reason));
+            const retiroData = prepareRetiroReceiptData(settings, user, activeSession, result, amount, reason);
+            setLastRetiro(retiroData);
             setIsRetiroOpen(false);
             toast({ title: 'Retiro Registrado', description: `Recibo #${result.receiptNumber}. Salida de C$${amount.toFixed(2)}.` });
             setTimeout(() => {
-                window.print();
+                printReceiptHtml(buildRetiroReceiptHtml(retiroData));
                 setLastRetiro(null);
             }, 150);
         } catch (e) {
@@ -509,10 +529,13 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             toast({ title: 'Carrito VacÃ­o', description: 'Agregue productos antes de cobrar.', variant: 'destructive' });
             return;
         }
-        setViewMode('payment');
+setViewMode('payment');
     };
 
-    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string) => {
+const [isFinancingOpen, setIsFinancingOpen] = useState(false);
+    const [pendingCredit, setPendingCredit] = useState<{ paid: number; change: number } | null>(null);
+
+const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing) => {
         if (!user || !activeSession) return;
 
 const effectiveCustomerName = activeSale?.customerName || customerName || 'Cliente General';
@@ -542,9 +565,10 @@ const effectiveCustomerName = activeSale?.customerName || customerName || 'Clien
             activeSession.id,
             user.id,
             user.inventoryType || 'general',
-            roundedTotal,
+roundedTotal,
             paymentMethod as any,
-            customerId
+            customerId,
+            financing || null
         );
 
         if (!result.success) {
@@ -568,9 +592,22 @@ const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount,
         toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
     };
 
-    const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+        if (method === 'Credito' && settings.creditFinancingEnabled) {
+            setPendingCredit({ paid: amountPaid, change });
+            setIsFinancingOpen(true);
+            return;
+        }
         setPaymentData({ paid: amountPaid, change, method });
         setIsPaymentSummaryOpen(true);
+    };
+
+    const handleFinancingConfirm = (financing: SaleFinancing) => {
+        setIsFinancingOpen(false);
+        if (pendingCredit) {
+            handleSuccessfulPayment(pendingCredit.paid, pendingCredit.change, 'Credito', financing);
+        }
+        setPendingCredit(null);
     };
 
     const confirmPayment = () => {
@@ -758,13 +795,20 @@ return (
                 currentUserId={user?.id}
             />
 
-            <PaymentSummaryDialog
+<PaymentSummaryDialog
                 isOpen={isPaymentSummaryOpen}
                 onClose={() => setIsPaymentSummaryOpen(false)}
                 total={cartTotal}
                 amountPaid={paymentData?.paid || 0}
                 change={paymentData?.change || 0}
                 onConfirm={confirmPayment}
+            />
+
+            <CreditFinancingDialog
+                isOpen={isFinancingOpen}
+                onClose={() => setIsFinancingOpen(false)}
+                total={cartTotal}
+                onConfirm={handleFinancingConfirm}
             />
 
             <ProductAddWizard
@@ -911,9 +955,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         let fallbackTimer: number | undefined;
         let attempts = 0;
 
-        const finishPrint = () => {
-            if (cancelled) return;
-            window.print();
+        const resetAfterPrint = () => {
             if (saleResetAfterPrintRef.current) {
                 saleResetAfterPrintRef.current = false;
                 // Reinicio DESPUÉS de imprimir/cerrar la ventana: volver al catálogo.
@@ -927,6 +969,24 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
                 }
                 setCustomerName('');
             }
+        };
+
+        // TICKET TÉRMICO (80mm): imprime en un iframe aislado con CSS propio, sin
+        // window.print() sobre la ventana principal. Evita el salto de página que
+        // Chromium fuerza en tickets largos (>10 ítems) antes del bloque de Totales.
+        // print() del iframe también es síncrono: el reinicio ocurre al cerrar el diálogo.
+        if (printFormat === 'ticket') {
+            printReceiptHtml(buildReceiptHtml(saleForPrint));
+            resetAfterPrint();
+            setSaleForPrint(null);
+            return () => { cancelled = true; };
+        }
+
+        // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
+        const finishPrint = () => {
+            if (cancelled) return;
+            window.print();
+            resetAfterPrint();
             setSaleForPrint(null);
         };
 
@@ -952,7 +1012,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
             if (pollTimer !== undefined) window.clearTimeout(pollTimer);
             if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
         };
-    }, [saleForPrint, printAreaId]);
+    }, [saleForPrint, printAreaId, printFormat]);
     // Credit Note / Return States
     const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
     const [isCreditNoteOpen, setIsCreditNoteOpen] = useState(false);
@@ -1089,7 +1149,10 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         setViewMode('payment');
     };
 
-    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string) => {
+    const [isFinancingOpen, setIsFinancingOpen] = useState(false);
+    const [pendingCredit, setPendingCredit] = useState<{ paid: number; change: number } | null>(null);
+
+    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing) => {
         if (!user || !activeSession) return;
 
         let customerId: string | undefined = undefined;
@@ -1119,7 +1182,8 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             user.inventoryType || 'general',
             roundedTotal,
             paymentMethod as any,
-            customerId
+            customerId,
+            financing || null
         );
 
         if (!result.success) {
@@ -1144,8 +1208,21 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
     };
 
     const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+        if (method === 'Credito' && settings.creditFinancingEnabled) {
+            setPendingCredit({ paid: amountPaid, change });
+            setIsFinancingOpen(true);
+            return;
+        }
         setPaymentData({ paid: amountPaid, change, method });
         setIsPaymentSummaryOpen(true);
+    };
+
+    const handleFinancingConfirm = (financing: SaleFinancing) => {
+        setIsFinancingOpen(false);
+        if (pendingCredit) {
+            handleSuccessfulPayment(pendingCredit.paid, pendingCredit.change, 'Credito', financing);
+        }
+        setPendingCredit(null);
     };
 
     const confirmPayment = () => {
@@ -1218,11 +1295,12 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             if (!result || !result.id) {
                 throw new Error('Sin respuesta del servidor');
             }
-            setLastRetiro(prepareRetiroReceiptData(settings, user, activeSession, result, amount, reason));
+            const retiroData = prepareRetiroReceiptData(settings, user, activeSession, result, amount, reason);
+            setLastRetiro(retiroData);
             setIsRetiroOpen(false);
             toast({ title: 'Retiro Registrado', description: `Recibo #${result.receiptNumber}. Salida de C$${amount.toFixed(2)}.` });
             setTimeout(() => {
-                window.print();
+                printReceiptHtml(buildRetiroReceiptHtml(retiroData));
                 setLastRetiro(null);
             }, 150);
         } catch (e) {
@@ -1298,7 +1376,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                 };
                 setLastQuoteReceipt(quoteData);
                 setTimeout(() => {
-                    window.print();
+                    printReceiptHtml(buildQuoteReceiptHtml(quoteData));
                     setLastQuoteReceipt(null);
                 }, 200);
                 setQuoteCustomerName('');
@@ -1643,6 +1721,14 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                 change={paymentData?.change || 0}
                 onConfirm={confirmPayment}
             />
+
+            <CreditFinancingDialog
+                isOpen={isFinancingOpen}
+                onClose={() => setIsFinancingOpen(false)}
+                total={cartTotal}
+                onConfirm={handleFinancingConfirm}
+            />
+
             <ProductAddWizard
                 product={wizardProduct?.product ?? null}
                 onConfirm={handleWizardConfirm}

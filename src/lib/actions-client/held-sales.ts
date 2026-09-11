@@ -6,10 +6,6 @@ export async function createHeldSale(...args: any[]): Promise<any> {
   return callAction('held-sales', 'createHeldSale', args);
 }
 
-export async function getPendingHeldSales(...args: any[]): Promise<any> {
-  return callAction('held-sales', 'getPendingHeldSales', args);
-}
-
 export async function createHeldOrder(...args: any[]): Promise<any> {
   return callAction('held-sales', 'createHeldOrder', args);
 }
@@ -20,6 +16,10 @@ export async function getHeldOrders(...args: any[]): Promise<any> {
 
 export async function promoteHeldOrder(...args: any[]): Promise<any> {
   return callAction('held-sales', 'promoteHeldOrder', args);
+}
+
+export async function getPendingHeldSales(...args: any[]): Promise<any> {
+  return callAction('held-sales', 'getPendingHeldSales', args);
 }
 
 export async function completeHeldSale(...args: any[]): Promise<any> {

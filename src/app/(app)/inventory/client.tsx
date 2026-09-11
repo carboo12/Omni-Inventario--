@@ -398,6 +398,9 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                 bulkUnit3: (updatedProductData as any).bulkUnit3 ?? null,
                 unitsPerBulk3: (updatedProductData as any).unitsPerBulk3 ?? null,
                 baseUnit: (updatedProductData as any).baseUnit ?? null,
+                hasExtraDetails: (updatedProductData as any).hasExtraDetails ?? false,
+                description2: (updatedProductData as any).description2 ?? null,
+                description3: (updatedProductData as any).description3 ?? null,
             } as any);
 
             if (selectedItem) {
@@ -491,6 +494,9 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                     isFractional: (newItemData as any).isFractional ?? false,
                     trackInventory: (newItemData as any).trackInventory ?? true,
                     baseUnit: (newItemData as any).baseUnit ?? null,
+                    hasExtraDetails: (newItemData as any).hasExtraDetails ?? false,
+                    description2: (newItemData as any).description2 ?? null,
+                    description3: (newItemData as any).description3 ?? null,
                     hasVariants: Boolean(newItemData.hasVariants),
                     variantsData: newItemData.variantsData,
                 } as any);

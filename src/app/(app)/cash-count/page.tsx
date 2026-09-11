@@ -16,8 +16,8 @@ import { useCashRegisterSessions } from "@/hooks/use-cash-register-sessions";
 import { createOutflowAction, getSessionOutflows } from "@/lib/actions/cash-register";
 import { getInvoiceByNumber, getLastSale } from "@/lib/actions/sales";
 import { buildReceiptDataFromInvoice } from "@/lib/ticket-data";
+import { printReceiptHtml, buildReceiptHtml } from "@/lib/print-iframe";
 import { useSettings } from "@/hooks/use-settings";
-import { ReceiptTemplate } from "@/components/pos/receipt-template";
 import { AlertCircle } from "lucide-react";
 import { formatTicketNumber, parseTicketSearch } from "@/lib/utils";
 import AdminCashSupervision from "./admin-supervision";
@@ -61,7 +61,6 @@ export default function CashCountPage() {
     const [amount, setAmount] = useState("");
     const [reason, setReason] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [reprintData, setReprintData] = useState<any>(null);
     const [reprintSession, setReprintSession] = useState<any>(null);
     const [reprintOutflows, setReprintOutflows] = useState<number>(0);
     const [reprintOutflowsList, setReprintOutflowsList] = useState<any[]>([]);
@@ -194,11 +193,12 @@ export default function CashCountPage() {
             setIsLoading(true);
             const result = await getInvoiceByNumber(parsed);
             if (result.success && result.data) {
-                setReprintData(result.data);
                 toast({ title: "Factura Encontrada", description: `Reimprimiendo factura #${formatTicketNumber(result.data.invoiceNumber)}...` });
 
-                // Espera a que el ticket estÃ© montado con datos antes de imprimir.
-                printWhenTicketReady('#ticket-print-area', () => setReprintData(null));
+                // Imprime el ticket térmico en un iframe aislado (sin window.print()
+                // de la ventana principal) para evitar saltos de página en tickets largos.
+                const ticketData = buildReceiptDataFromInvoice(result.data, settings, formatTicketNumber(result.data.invoiceNumber));
+                printReceiptHtml(buildReceiptHtml(ticketData));
             } else {
                 toast({ title: "Error", description: result.error || "No se encontrÃ³ la factura.", variant: "destructive" });
             }
@@ -214,10 +214,12 @@ export default function CashCountPage() {
             setIsLoading(true);
             const result = await getLastSale(activeSession?.id);
             if (result.success && result.data) {
-                setReprintData(result.data);
-                toast({ title: "Ãšltima Venta", description: `Ticket #${formatTicketNumber(result.data.invoiceNumber)} listo para imprimir.` });
+                toast({ title: "Última Venta", description: `Ticket #${formatTicketNumber(result.data.invoiceNumber)} listo para imprimir.` });
 
-                printWhenTicketReady('#ticket-print-area', () => setReprintData(null));
+                // Imprime el ticket térmico en un iframe aislado (sin window.print()
+                // de la ventana principal) para evitar saltos de página en tickets largos.
+                const ticketData = buildReceiptDataFromInvoice(result.data, settings, formatTicketNumber(result.data.invoiceNumber));
+                printReceiptHtml(buildReceiptHtml(ticketData));
             } else {
                 toast({ title: "Error", description: result.error || "No se encontrÃ³ la Ãºltima venta.", variant: "destructive" });
             }
@@ -438,12 +440,6 @@ export default function CashCountPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-
-            {reprintData && (
-                <ReceiptTemplate
-                    {...buildReceiptDataFromInvoice(reprintData, settings, formatTicketNumber(reprintData.invoiceNumber))}
-                />
-            )}
 
             {reprintSession && (
                 <div className="fixed -left-[1000px] top-0 opacity-0 pointer-events-none print:static print:opacity-100 print:visible print:block bg-white p-4 font-mono text-xs space-y-4 w-[80mm] text-black" id="z-print-area">

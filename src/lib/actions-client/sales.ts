@@ -4,6 +4,13 @@ import { callAction } from '../api-client';
 
 import type { InventoryMovement, User } from '@prisma/client';
 
+// Tipos copiados del action original (para no arrastrar código server al bundle).
+export interface SaleFinancing {
+    installments: number;
+    frequency: 'SEMANAL' | 'QUINCENAL' | 'MENSUAL';
+    interestRate: number;
+}
+
 export async function createSale(...args: any[]): Promise<any> {
   return callAction('sales', 'createSale', args);
 }

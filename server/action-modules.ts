@@ -21,6 +21,7 @@ import * as gold from '../src/lib/actions/gold';
 import * as held_sales from '../src/lib/actions/held-sales';
 import * as import_history from '../src/lib/actions/import-history';
 import * as init_data from '../src/lib/actions/init-data';
+import * as installments from '../src/lib/actions/installments';
 import * as inventory from '../src/lib/actions/inventory';
 import * as jewelry_materials from '../src/lib/actions/jewelry-materials';
 import * as jewelry_production from '../src/lib/actions/jewelry-production';
@@ -67,6 +68,7 @@ export const actionModules = {
   'held-sales': held_sales,
   'import-history': import_history,
   'init-data': init_data,
+  'installments': installments,
   'inventory': inventory,
   'jewelry-materials': jewelry_materials,
   'jewelry-production': jewelry_production,
