@@ -22,8 +22,6 @@ export function printReceiptHtml(htmlContent: string) {
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('title', 'impresion-ticket');
     iframe.onload = () => {
-        // Evita imprimir el about:blank/estado vacío; solo imprime cuando el
-        // documento del ticket ya fue inyectado y renderizado.
         const body = iframe.contentWindow?.document.body;
         if (!body || !body.innerHTML || body.innerHTML.trim().length === 0) {
             return;
@@ -43,45 +41,74 @@ export function printReceiptHtml(htmlContent: string) {
 <html>
 <head>
 <meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   @page {
-    size: 80mm auto;
-    margin: 0;
+    size: 80mm auto !important;
+    margin: 0 !important;
+  }
+  @media print {
+    html, body {
+      width: 80mm !important;
+      max-width: 80mm !important;
+      height: auto !important;
+      min-height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      -webkit-print-color-adjust: exact;
+    }
+    .ticket-container {
+      width: 100% !important;
+      max-width: 80mm !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
   }
   * {
     box-sizing: border-box;
+    font-family: inherit;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   html, body {
-    width: 80mm;
-    margin: 0;
-    padding: 0;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 12px;
+    width: 80mm !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
     line-height: 1.2;
     background: #fff;
     color: #000;
   }
 
-  .ticket-container,
-  .ticket-header,
   .ticket-item,
-  .ticket-totals,
-  .ticket-footer {
+  .item-row,
+  .ticket-container tr,
+  .ticket-container td {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
 
-  .ticket-container tr,
-  .ticket-container td,
-  .item-row {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+  .ticket-totals,
+  .total-row,
+  .payment-info,
+  .ticket-footer {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
 
   .ticket-container {
-    width: 100%;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     padding: 4mm 2mm;
   }
 
@@ -96,9 +123,13 @@ export function printReceiptHtml(htmlContent: string) {
   .flex-row {
     display: flex;
     justify-content: space-between;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 400;
     line-height: 1.4;
+  }
+
+  .sum-row {
+    font-weight: 600;
   }
 
   .total-row {
@@ -283,11 +314,11 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
   <div class="dashed-line"></div>
 
   <div class="ticket-totals">
-    <div class="flex-row">
+    <div class="flex-row sum-row">
       <span>Subtotal:</span>
       <span>${currencySymbol} ${fmtNum(subtotal)}</span>
     </div>
-    <div class="flex-row">
+    <div class="flex-row sum-row">
       <span>IVA:</span>
       <span>${currencySymbol} ${fmtNum(tax)}</span>
     </div>
@@ -300,19 +331,189 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
 
   <div class="dashed-line"></div>
 
-  <div class="flex-row">
-    <span>Pago (${escapeHtml(paymentMethod)}):</span>
-    <span>${currencySymbol} ${fmtNum(amountPaid)}</span>
-  </div>
-  <div class="flex-row">
-    <span>Cambio:</span>
-    <span>${currencySymbol} ${fmtNum(change)}</span>
+  <div class="payment-info">
+    <div class="flex-row">
+      <span>Pago (${escapeHtml(paymentMethod)}):</span>
+      <span>${currencySymbol} ${fmtNum(amountPaid)}</span>
+    </div>
+    <div class="flex-row">
+      <span>Cambio:</span>
+      <span>${currencySymbol} ${fmtNum(change)}</span>
+    </div>
   </div>
 
   <div class="ticket-footer text-center" style="margin-top:16px;">
     ${footerMessage ? `<p class="footer-msg">${escapeHtml(footerMessage)}</p>` : ''}
     ${website ? `<p class="info-line">${escapeHtml(website)}</p>` : ''}
     <p class="thanks">*** GRACIAS POR SU COMPRA ***</p>
+  </div>
+</div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Build Z report (cash closing) HTML (ZReportTemplate equivalent)    */
+/* ------------------------------------------------------------------ */
+
+export interface ZReportOutflow {
+    id: string;
+    createdAt: Date | string;
+    reason: string;
+    amount: number;
+}
+
+export interface ZReportHtmlData {
+    pharmacyName: string;
+    address: string;
+    phone: string;
+    rfc?: string;
+    cashierName: string;
+    openingTime: Date | string;
+    closingTime?: Date | string | null;
+    initialAmount: number;
+    salesCash: number;
+    salesCard: number;
+    salesServices?: number;
+    salesAbonos?: number;
+    outflows?: ZReportOutflow[];
+    totalReturns?: number;
+    totalSales?: number;
+    finalAmount?: number;
+    actualCash?: number;
+    difference?: number;
+    initialAmountUSD?: number;
+    salesUSD?: number;
+    actualUSD?: number;
+    differenceUSD?: number;
+    footerMessage?: string;
+    website?: string;
+}
+
+export function buildZReportHtml(data: ZReportHtmlData): string {
+    const {
+        pharmacyName, address, phone, rfc, cashierName,
+        openingTime, closingTime, initialAmount,
+        salesCash, salesCard, salesServices, salesAbonos,
+        outflows = [], totalReturns = 0, totalSales,
+        finalAmount, actualCash, difference,
+        initialAmountUSD, salesUSD, actualUSD, differenceUSD,
+        footerMessage, website,
+    } = data;
+
+    const openStr = new Date(openingTime).toLocaleString();
+    const closeStr = closingTime ? new Date(closingTime).toLocaleString() : '';
+    const nowStr = new Date().toLocaleString();
+
+    const servicesHtml = (salesServices && salesServices > 0)
+        ? `<div class="flex-row" style="color:#6d28d9;">
+            <span>SERVICIOS JOYERIA:</span>
+            <span>C$ ${fmtNum(salesServices)}</span>
+          </div>`
+        : '';
+
+    const abonosHtml = (salesAbonos && salesAbonos > 0)
+        ? `<div class="flex-row" style="color:#1d4ed8;">
+            <span>ABONOS CRÉDITOS:</span>
+            <span>C$ ${fmtNum(salesAbonos)}</span>
+          </div>`
+        : '';
+
+    const totalOutflows = outflows.reduce((acc, o) => acc + Number(o.amount), 0);
+
+    const outflowsDetailHtml = outflows.length > 0
+        ? `<div style="border-top:1px dashed #000;margin-top:6px;padding-top:6px;">
+            <div style="font-weight:700;">DETALLE SALIDAS / RETIROS</div>
+            ${outflows.map(o => `
+              <div style="margin-top:4px;">
+                <div>${new Date(o.createdAt).toLocaleTimeString()} ${new Date(o.createdAt).toLocaleDateString()}</div>
+                <div class="flex-row">
+                  <span style="flex:1;">${escapeHtml(o.reason)}</span>
+                  <span>-C$ ${fmtNum(o.amount)}</span>
+                </div>
+                <div style="color:#6b7280;">Usuario: ${escapeHtml(cashierName)}</div>
+              </div>`).join('')}
+          </div>`
+        : '';
+
+    const expectedUSD = (initialAmountUSD || 0) + (salesUSD || 0);
+    const diffColor = difference !== undefined && difference < 0 ? '#dc2626' : '#16a34a';
+    const diffSign = difference !== undefined && difference > 0 ? '+' : '';
+
+    return `<div class="ticket-container">
+  <div class="ticket-header text-center">
+    <p class="pharmacy-name">${escapeHtml(pharmacyName)}</p>
+    <p class="info-line" style="white-space:pre-line;">${escapeHtml(address)}</p>
+    ${phone ? `<p class="info-line">${escapeHtml(phone)}</p>` : ''}
+    ${rfc ? `<p class="info-line">RFC: ${escapeHtml(rfc)}</p>` : ''}
+    <p class="info-line" style="font-weight:700;margin-top:8px;font-size:14px;">REPORTE DE CIERRE DE CAJA</p>
+    <p class="info-line" style="font-weight:700;">REIMPRESIÓN TICKET Z</p>
+  </div>
+
+  <div style="margin-top:8px;">
+    <div class="flex-row"><span>CAJA:</span><span>01</span></div>
+    <div class="flex-row"><span>CAJERO:</span><span>${escapeHtml(cashierName)}</span></div>
+    <div class="flex-row"><span>APERTURA:</span><span>${openStr}</span></div>
+    ${closeStr ? `<div class="flex-row"><span>CIERRE:</span><span>${closeStr}</span></div>` : ''}
+    <div class="flex-row"><span>IMPRESION:</span><span>${nowStr}</span></div>
+  </div>
+
+  <div class="dashed-line"></div>
+
+  <div class="flex-row sum-row">
+    <span>DESCRIPCION</span>
+    <span>VALOR</span>
+  </div>
+
+  <div class="flex-row"><span>FONDO INICIAL:</span><span>C$ ${fmtNum(initialAmount)}</span></div>
+  <div class="flex-row"><span>VENTAS EFECTIVO:</span><span>C$ ${fmtNum(salesCash)}</span></div>
+  <div class="flex-row"><span>VENTAS TARJETA:</span><span>C$ ${fmtNum(salesCard)}</span></div>
+  ${servicesHtml}
+  ${abonosHtml}
+  <div class="flex-row" style="color:#dc2626;">
+    <span>SALIDAS/RECIBOS:</span>
+    <span>-C$ ${fmtNum(totalOutflows)}</span>
+  </div>
+  <div class="flex-row" style="color:#dc2626;">
+    <span>DEVOLUCIONES:</span>
+    <span>-C$ ${fmtNum(totalReturns)}</span>
+  </div>
+  ${outflowsDetailHtml}
+
+  <div class="dashed-line"></div>
+
+  <div class="flex-row" style="font-weight:700;">
+    <span>TOTAL VENTAS:</span>
+    <span>C$ ${fmtNum(totalSales)}</span>
+  </div>
+  <div class="flex-row sum-row">
+    <span>EFECTIVO ESPERADO:</span>
+    <span>C$ ${fmtNum(finalAmount)}</span>
+  </div>
+  <div class="flex-row sum-row">
+    <span>EFECTIVO REAL:</span>
+    <span>C$ ${fmtNum(actualCash)}</span>
+  </div>
+  <div class="flex-row" style="font-weight:700;color:${diffColor};">
+    <span>DIFERENCIA C$:</span>
+    <span>${diffSign}${fmtNum(difference)}</span>
+  </div>
+
+  <div class="dashed-line"></div>
+
+  <div class="flex-row"><span>FONDO INICIAL USD:</span><span>$ ${fmtNum(initialAmountUSD)}</span></div>
+  <div class="flex-row"><span>VENTAS USD:</span><span>$ ${fmtNum(salesUSD)}</span></div>
+  <div class="flex-row sum-row"><span>ESPERADO USD:</span><span>$ ${fmtNum(expectedUSD)}</span></div>
+  <div class="flex-row sum-row"><span>REAL USD:</span><span>$ ${fmtNum(actualUSD)}</span></div>
+  <div class="flex-row" style="font-weight:700;color:${diffColor};">
+    <span>DIFERENCIA USD:</span>
+    <span>$ ${fmtNum(differenceUSD)}</span>
+  </div>
+
+  <div class="dashed-line"></div>
+
+  <div class="ticket-footer text-center" style="margin-top:12px;">
+    ${footerMessage ? `<p class="footer-msg">${escapeHtml(footerMessage)}</p>` : ''}
+    ${website ? `<p class="info-line">${escapeHtml(website)}</p>` : ''}
+    <p style="margin-top:8px;font-weight:700;">*** FIN DEL REPORTE ***</p>
   </div>
 </div>`;
 }

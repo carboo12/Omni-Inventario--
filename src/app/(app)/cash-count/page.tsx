@@ -16,37 +16,13 @@ import { useCashRegisterSessions } from "@/hooks/use-cash-register-sessions";
 import { createOutflowAction, getSessionOutflows } from "@/lib/actions/cash-register";
 import { getInvoiceByNumber, getLastSale } from "@/lib/actions/sales";
 import { buildReceiptDataFromInvoice } from "@/lib/ticket-data";
-import { printReceiptHtml, buildReceiptHtml } from "@/lib/print-iframe";
+import { printReceiptHtml, buildReceiptHtml, buildZReportHtml } from "@/lib/print-iframe";
 import { useSettings } from "@/hooks/use-settings";
 import { AlertCircle } from "lucide-react";
 import { formatTicketNumber, parseTicketSearch } from "@/lib/utils";
 import AdminCashSupervision from "./admin-supervision";
 
 const ADMIN_ROLES = ["master-admin", "admin"];
-
-// Espera a que el Ã¡rea de impresiÃ³n tenga datos reales montados en el DOM antes de
-// llamar window.print(). Evita la reimpresiÃ³n en blanco cuando el ticket no llega a
-// renderizarse a tiempo (estado pendiente de React).
-function printWhenTicketReady(selector: string, onDone?: () => void, attempts = 20) {
-    let tries = 0;
-    const tryPrint = () => {
-        const el = document.querySelector(selector);
-        if (el && el.textContent && el.textContent.trim().length > 0) {
-            window.print();
-            onDone?.();
-            return;
-        }
-        tries += 1;
-        if (tries >= attempts) {
-            // Aun si el elemento no apareciÃ³, imprime para no dejar en blanco el flujo.
-            window.print();
-            onDone?.();
-            return;
-        }
-        setTimeout(tryPrint, 150);
-    };
-    setTimeout(tryPrint, 200);
-}
 
 
 export default function CashCountPage() {
@@ -61,9 +37,6 @@ export default function CashCountPage() {
     const [amount, setAmount] = useState("");
     const [reason, setReason] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [reprintSession, setReprintSession] = useState<any>(null);
-    const [reprintOutflows, setReprintOutflows] = useState<number>(0);
-    const [reprintOutflowsList, setReprintOutflowsList] = useState<any[]>([]);
     const [docNumber, setDocNumber] = useState("");
     const [docType, setDocType] = useState("factura");
 
@@ -143,14 +116,36 @@ export default function CashCountPage() {
         try {
             setIsLoading(true);
             const outflows = await getSessionOutflows(session.id);
-            const total = outflows.reduce((acc: number, curr: { amount: number }) => acc + curr.amount, 0);
-            setReprintOutflowsList(outflows);
-            setReprintOutflows(total);
-            setReprintSession(session);
 
             toast({ title: "Cierre Encontrado", description: `Reimprimiendo Reporte de Caja de ${session.cashierName}...` });
 
-            printWhenTicketReady('#z-print-area', () => setReprintSession(null));
+            const zReportData = {
+                pharmacyName: settings.ticketHeader.name,
+                address: settings.ticketHeader.address,
+                phone: settings.ticketHeader.phone,
+                rfc: settings.ticketHeader.rfc,
+                cashierName: session.cashierName,
+                openingTime: session.openingTime,
+                closingTime: session.closingTime,
+                initialAmount: session.initialAmount,
+                salesCash: session.salesCash,
+                salesCard: session.salesCard,
+                salesServices: session.salesServices,
+                salesAbonos: session.salesAbonos,
+                outflows,
+                totalReturns: session.totalReturns,
+                totalSales: session.totalSales,
+                finalAmount: session.finalAmount,
+                actualCash: session.actualCash,
+                difference: session.difference,
+                initialAmountUSD: session.initialAmountUSD,
+                salesUSD: session.salesUSD,
+                actualUSD: session.actualUSD,
+                differenceUSD: session.differenceUSD,
+                footerMessage: settings.ticketFooter.message,
+                website: settings.ticketFooter.website,
+            };
+            printReceiptHtml(buildZReportHtml(zReportData));
         } catch (error) {
             console.error(error);
             toast({ title: "Error", description: "No se pudo obtener el historial del cierre.", variant: "destructive" });
@@ -441,187 +436,6 @@ export default function CashCountPage() {
                 </DialogContent>
             </Dialog>
 
-            {reprintSession && (
-                <div className="fixed -left-[1000px] top-0 opacity-0 pointer-events-none print:static print:opacity-100 print:visible print:block bg-white p-4 font-mono text-xs space-y-4 w-[80mm] text-black" id="z-print-area">
-                    <div className="text-center border-b border-dashed pb-4 border-gray-400">
-                        <h2 className="text-base font-bold uppercase">{settings.ticketHeader.name}</h2>
-                        {settings.ticketHeader.address && <p className="text-[10px] whitespace-pre-line">{settings.ticketHeader.address}</p>}
-                        {settings.ticketHeader.phone && <p className="text-[10px]">Tel: {settings.ticketHeader.phone}</p>}
-                        {settings.ticketHeader.rfc && <p className="text-[10px]">RUC: {settings.ticketHeader.rfc}</p>}
-                        <h3 className="text-sm font-bold mt-4">REPORTE DE CIERRE DE CAJA</h3>
-                        <p className="text-[10px] font-bold">REIMPRESIÃ“N TICKET Z</p>
-                    </div>
-
-                    <div className="space-y-0.5 text-[10px]">
-                        <div className="flex justify-between">
-                            <span>CAJA:</span>
-                            <span>01</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>CAJERO:</span>
-                            <span>{reprintSession.cashierName}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>APERTURA:</span>
-                            <span>{new Date(reprintSession.openingTime).toLocaleString()}</span>
-                        </div>
-                        {reprintSession.closingTime && (
-                            <div className="flex justify-between">
-                                <span>CIERRE:</span>
-                                <span>{new Date(reprintSession.closingTime).toLocaleString()}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between">
-                            <span>IMPRESION:</span>
-                            <span>{new Date().toLocaleString()}</span>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-dashed border-gray-400 pt-2 space-y-0.5 text-[10px]">
-                        <div className="flex justify-between font-bold">
-                            <span>DESCRIPCION</span>
-                            <span>VALOR</span>
-                        </div>
-                    </div>
-
-                    <div className="space-y-0.5 text-[10px]">
-                        <div className="flex justify-between">
-                            <span>FONDO INICIAL:</span>
-                            <span>C${reprintSession.initialAmount?.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>VENTAS EFECTIVO:</span>
-                            <span>C${reprintSession.salesCash?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>VENTAS TARJETA:</span>
-                            <span>C${reprintSession.salesCard?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        {reprintSession.salesServices > 0 && (
-                            <div className="flex justify-between text-purple-600">
-                                <span>SERVICIOS JOYERIA:</span>
-                                <span>C${reprintSession.salesServices?.toFixed(2)}</span>
-                            </div>
-                        )}
-                        {reprintSession.salesAbonos > 0 && (
-                            <div className="flex justify-between text-blue-700">
-                                <span>ABONOS CRÃ‰DITOS:</span>
-                                <span>C${reprintSession.salesAbonos?.toFixed(2)}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between text-red-500">
-                            <span>SALIDAS/RECIBOS:</span>
-                            <span>-C${reprintOutflows.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-red-500">
-                            <span>DEVOLUCIONES:</span>
-                            <span>-C${(reprintSession.totalReturns || 0).toFixed(2)}</span>
-                        </div>
-                    </div>
-
-                    {reprintOutflowsList.length > 0 && (
-                        <div className="border-t border-dashed border-gray-400 pt-2 text-[10px]">
-                            <div className="font-bold">DETALLE SALIDAS / RETIROS</div>
-                            <div className="space-y-1 mt-1">
-                                {reprintOutflowsList.map(o => (
-                                    <div key={o.id}>
-                                        <div>{new Date(o.createdAt).toLocaleTimeString()} {new Date(o.createdAt).toLocaleDateString()}</div>
-                                        <div className="flex justify-between">
-                                            <span className="flex-1">{o.reason}</span>
-                                            <span>-C${Number(o.amount).toFixed(2)}</span>
-                                        </div>
-                                        <div className="text-gray-500">Usuario: {reprintSession.cashierName}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="border-t border-dashed border-gray-400 pt-2 text-[10px]">
-                        <div className="flex justify-between text-xs font-bold">
-                            <span>TOTAL VENTAS:</span>
-                            <span>C${reprintSession.totalSales?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between font-semibold mt-2">
-                            <span>EFECTIVO ESPERADO:</span>
-                            <span>C${reprintSession.finalAmount?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between font-semibold">
-                            <span>EFECTIVO REAL:</span>
-                            <span>C${reprintSession.actualCash?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between font-bold mt-1">
-                            <span>DIFERENCIA C$:</span>
-                            <span className={reprintSession.difference < 0 ? 'text-red-500' : 'text-green-600'}>
-                                {reprintSession.difference > 0 ? '+' : ''}{reprintSession.difference?.toFixed(2) || "0.00"}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-dashed border-gray-400 pt-2 text-[10px]">
-                        <div className="flex justify-between">
-                            <span>FONDO INICIAL USD:</span>
-                            <span>${reprintSession.initialAmountUSD?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>VENTAS USD:</span>
-                            <span>${reprintSession.salesUSD?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between font-semibold">
-                            <span>ESPERADO USD:</span>
-                            <span>${((reprintSession.initialAmountUSD || 0) + (reprintSession.salesUSD || 0)).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between font-semibold">
-                            <span>REAL USD:</span>
-                            <span>${reprintSession.actualUSD?.toFixed(2) || "0.00"}</span>
-                        </div>
-                        <div className="flex justify-between font-bold">
-                            <span>DIFERENCIA USD:</span>
-                            <span className={reprintSession.differenceUSD < 0 ? 'text-red-500' : 'text-green-600'}>
-                                {reprintSession.differenceUSD > 0 ? '+' : ''}{reprintSession.differenceUSD?.toFixed(2) || "0.00"}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="pt-6 text-center text-[10px]">
-                        <p>{settings.ticketFooter.message || "Gracias por su preferencia"}</p>
-                        {settings.ticketFooter.website && <p className="mt-1">{settings.ticketFooter.website}</p>}
-                        <p className="mt-4">*** FIN DEL REPORTE ***</p>
-                    </div>
-
-                    <style dangerouslySetInnerHTML={{ __html: `
-                        @media print {
-                            @page {
-                                margin: 0;
-                                size: 80mm auto !important;
-                            }
-                            body * {
-                                visibility: hidden;
-                            }
-                            #z-print-area, #z-print-area * {
-                                visibility: visible;
-                                color: #000000 !important;
-                                text-shadow: 0 0 0.3px #000 !important;
-                                print-color-adjust: exact !important;
-                                -webkit-print-color-adjust: exact !important;
-                            }
-                            #z-print-area {
-                                position: absolute;
-                                left: 0;
-                                top: 0;
-                                width: 100% !important;
-                                padding: 0 2mm 15mm 2mm !important;
-                                opacity: 1 !important;
-                                box-shadow: none !important;
-                                border: none !important;
-                                overflow: visible !important;
-                                page-break-inside: avoid !important;
-                                break-inside: avoid !important;
-                            }
-                        }
-                    `}} />
-                </div>
-            )}
-        </div>
+            </div>
     );
 }

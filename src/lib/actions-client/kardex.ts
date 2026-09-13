@@ -14,6 +14,10 @@ export interface KardexReportRow {
     finalStock: number;
     costPriceNIO: number;
     priceNIO: number;
+    unitProfit: number;
+    profitMargin: number;
+    exitsProfit: number;
+    potentialProfit: number;
     inventoryValue: number;
 }
 

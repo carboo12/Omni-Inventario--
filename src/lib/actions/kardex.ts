@@ -43,6 +43,10 @@ export interface KardexReportRow {
     finalStock: number;
     costPriceNIO: number;
     priceNIO: number;
+    unitProfit: number;
+    profitMargin: number;
+    exitsProfit: number;
+    potentialProfit: number;
     inventoryValue: number;
 }
 
@@ -99,6 +103,11 @@ export async function getKardexReport(startIso: string, endIso: string, inventor
         const rows: KardexReportRow[] = Array.from(grouped.values()).map((g) => {
             const p = productMap.get(g.productName);
             const cost = p?.costPriceNIO ?? 0;
+            const price = p?.priceNIO ?? 0;
+            const unitProfit = price - cost;
+            const profitMargin = price > 0 ? (unitProfit / price) * 100 : 0;
+            const exitsProfit = unitProfit * g.exits;
+            const potentialProfit = unitProfit * g.finalStock;
             return {
                 productName: g.productName,
                 barcode: p?.barcode ?? null,
@@ -109,7 +118,11 @@ export async function getKardexReport(startIso: string, endIso: string, inventor
                 exits: g.exits,
                 finalStock: g.finalStock,
                 costPriceNIO: cost,
-                priceNIO: p?.priceNIO ?? 0,
+                priceNIO: price,
+                unitProfit,
+                profitMargin,
+                exitsProfit,
+                potentialProfit,
                 inventoryValue: cost * g.finalStock,
             };
         });

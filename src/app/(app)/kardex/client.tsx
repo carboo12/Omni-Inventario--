@@ -176,21 +176,28 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
       entries: acc.entries + r.entries,
       exits: acc.exits + r.exits,
       value: acc.value + r.inventoryValue,
-    }), { entries: 0, exits: 0, value: 0 });
+      exitsProfit: acc.exitsProfit + (r.exitsProfit || 0),
+      potentialProfit: acc.potentialProfit + (r.potentialProfit || 0),
+    }), { entries: 0, exits: 0, value: 0, exitsProfit: 0, potentialProfit: 0 });
   }, [reportRows]);
 
   const exportCSV = () => {
     if (!reportRows.length) return;
-    const header = ['Codigo/SKU', 'Producto', 'Categoria', 'Stock Inicial', 'Entradas', 'Salidas', 'Stock Final', 'Valor Total (Costo)'];
+    const header = ['Codigo/SKU', 'Producto', 'Categoria', 'Costo Unitario', 'Precio Venta', 'Ganancia Unit.', 'Margen %', 'Stock Inicial', 'Entradas', 'Salidas', 'Stock Final', 'Valor Total (Costo)', 'Ganancia Total Ventas'];
     const lines = reportRows.map(r => [
       r.barcode || '',
       r.productName,
       r.category,
+      r.costPriceNIO.toFixed(2),
+      r.priceNIO.toFixed(2),
+      r.unitProfit.toFixed(2),
+      `${r.profitMargin.toFixed(1)}%`,
       formatQty(r.initialStock),
       formatQty(r.entries),
       formatQty(r.exits),
       formatQty(r.finalStock),
       r.inventoryValue.toFixed(2),
+      r.exitsProfit.toFixed(2),
     ]);
     const csv = [header, ...lines]
       .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
@@ -434,7 +441,7 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                 </p>
               ) : (
                 <>
-                  <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
                     <div className="rounded-lg border p-3">
                       <p className="text-xs font-medium text-muted-foreground">Productos con movimiento</p>
                       <p className="text-lg font-bold">{reportRows.length.toLocaleString('es-NI')}</p>
@@ -450,6 +457,10 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                     <div className="rounded-lg border p-3">
                       <p className="text-xs font-medium text-muted-foreground">Valor inventario (costo)</p>
                       <p className="text-lg font-bold">{formatMoney(totals.value)}</p>
+                    </div>
+                    <div className="rounded-lg border p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800">
+                      <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">Ganancia en Ventas (Rango)</p>
+                      <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{formatMoney(totals.exitsProfit)}</p>
                     </div>
                   </div>
 
@@ -472,11 +483,15 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                             <th className="border border-border px-2 py-1.5 text-left font-semibold">Código/SKU</th>
                             <th className="border border-border px-2 py-1.5 text-left font-semibold">Producto</th>
                             <th className="border border-border px-2 py-1.5 text-left font-semibold">Categoría</th>
+                            <th className="border border-border px-2 py-1.5 text-right font-semibold">Costo U.</th>
+                            <th className="border border-border px-2 py-1.5 text-right font-semibold">P. Venta U.</th>
+                            <th className="border border-border px-2 py-1.5 text-right font-semibold">Ganancia U. (% Margen)</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">Stock Inicial</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">Entradas</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">Salidas</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">Stock Final</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">Valor Total</th>
+                            <th className="border border-border px-2 py-1.5 text-right font-semibold">Ganancia Ventas</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -485,20 +500,30 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                               <td className="border border-border px-2 py-1">{r.barcode || '—'}</td>
                               <td className="border border-border px-2 py-1 font-medium">{r.productName}</td>
                               <td className="border border-border px-2 py-1">{r.category}</td>
+                              <td className="border border-border px-2 py-1 text-right">{formatMoney(r.costPriceNIO)}</td>
+                              <td className="border border-border px-2 py-1 text-right">{formatMoney(r.priceNIO)}</td>
+                              <td className="border border-border px-2 py-1 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
+                                {formatMoney(r.unitProfit)} <span className="text-[10px] text-muted-foreground font-normal">({r.profitMargin.toFixed(1)}%)</span>
+                              </td>
                               <td className="border border-border px-2 py-1 text-right">{formatQty(r.initialStock)}</td>
                               <td className="border border-border px-2 py-1 text-right text-green-700">{formatQty(r.entries)}</td>
                               <td className="border border-border px-2 py-1 text-right text-red-700">{formatQty(r.exits)}</td>
                               <td className="border border-border px-2 py-1 text-right font-semibold">{formatQty(r.finalStock)}</td>
                               <td className="border border-border px-2 py-1 text-right">{formatMoney(r.inventoryValue)}</td>
+                              <td className="border border-border px-2 py-1 text-right text-emerald-600 dark:text-emerald-400 font-bold">{formatMoney(r.exitsProfit)}</td>
                             </tr>
                           ))}
                           <tr className="bg-muted font-semibold">
                             <td colSpan={3} className="border border-border px-2 py-1.5 text-right">TOTALES</td>
+                            <td className="border border-border px-2 py-1.5 text-right">—</td>
+                            <td className="border border-border px-2 py-1.5 text-right">—</td>
+                            <td className="border border-border px-2 py-1.5 text-right">—</td>
                             <td className="border border-border px-2 py-1.5 text-right">{formatQty(reportRows.reduce((a, r) => a + r.initialStock, 0))}</td>
                             <td className="border border-border px-2 py-1.5 text-right">{formatQty(totals.entries)}</td>
                             <td className="border border-border px-2 py-1.5 text-right">{formatQty(totals.exits)}</td>
                             <td className="border border-border px-2 py-1.5 text-right">{formatQty(reportRows.reduce((a, r) => a + r.finalStock, 0))}</td>
                             <td className="border border-border px-2 py-1.5 text-right">{formatMoney(totals.value)}</td>
+                            <td className="border border-border px-2 py-1.5 text-right text-emerald-600 dark:text-emerald-400 font-extrabold">{formatMoney(totals.exitsProfit)}</td>
                           </tr>
                         </tbody>
                       </table>
