@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Plus, Minus, Search, X, ShoppingCart, ScanLine, User, User as UserIcon, Send, ListOrdered, Clock, Coins, Users, Trash2, CreditCard, FileText, UserPlus, Monitor, ClipboardList, Lock } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter, usePathname } from '@/lib/router-nav';
 import { useCashRegister } from '@/hooks/use-cash-register';
@@ -32,7 +33,7 @@ import type { SaleFinancing } from '@/lib/actions/sales';
 import { buildReceiptDataFromInvoice } from '@/lib/ticket-data';
 import { printReceiptHtml, buildReceiptHtml, buildRetiroReceiptHtml, buildQuoteReceiptHtml } from '@/lib/print-iframe';
 import { createQuote, getQuoteByNumber } from '@/lib/actions/quotations';
-import { searchOrCreateCustomer } from '@/lib/actions/customers';
+import { searchOrCreateCustomer, getAllCustomers } from '@/lib/actions/customers';
 import { useBusinessMode } from '@/hooks/use-business-mode';
 import { getAvailableJewelry } from '@/lib/actions/jewelry-production';
 import { useQuery } from '@tanstack/react-query';
@@ -40,6 +41,7 @@ import { CartTicket } from '@/components/pos/cart-ticket';
 import { ProductGrid, ProductGridHandle } from '@/components/pos/product-grid';
 import { PaymentGrid } from '@/components/pos/payment-grid';
 import { CreditFinancingDialog } from '@/components/pos/credit-financing-dialog';
+import { CreditPaymentDialog } from '@/components/pos/credit-payment-dialog';
 import { DispatcherPOS } from '@/components/pos/dispatcher-pos';
 import { ProductAddWizard } from '@/components/pos/product-add-wizard';
 import { ItemEditDialog } from '@/components/pos/item-edit-dialog';
@@ -305,6 +307,15 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     const [isRetiroOpen, setIsRetiroOpen] = useState(false);
     const [isRetiroSaving, setIsRetiroSaving] = useState(false);
     const [lastRetiro, setLastRetiro] = useState<any>(null);
+    const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
+    const [isSaveQuoteOpen, setIsSaveQuoteOpen] = useState(false);
+    const [isLoadQuoteOpen, setIsLoadQuoteOpen] = useState(false);
+    const [quoteCustomerName, setQuoteCustomerName] = useState('');
+    const [quoteCustomerPhone, setQuoteCustomerPhone] = useState('');
+    const [lastQuoteReceipt, setLastQuoteReceipt] = useState<any>(null);
+    const [isAbonoOpen, setIsAbonoOpen] = useState(false);
+    const [isLoadingAbono, setIsLoadingAbono] = useState(false);
+    const [abonoClient, setAbonoClient] = useState<any>(null);
 
     // Si se llegó al POS vía "Cargar en POS" desde un pedido, vincular la
     // comanda (held sale) activa: la bloquea para este cajero y permite que al
@@ -361,6 +372,176 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             toast({ title: 'Error', description: 'No se pudo registrar el retiro.', variant: 'destructive' });
         } finally {
             setIsRetiroSaving(false);
+        }
+    };
+
+    const openSaveQuoteDialog = () => {
+        // Auto-llenado: pre-pobla nombre y teléfono desde el cliente seleccionado.
+        setQuoteCustomerName(selectedClient?.name || customerName || '');
+        setQuoteCustomerPhone(selectedClient?.phone || '');
+        setIsSaveQuoteOpen(true);
+    };
+
+    const handleSaveQuote = async () => {
+        if (cart.length === 0) {
+            toast({ title: 'Carrito vacío', description: 'Agregue productos antes de crear una cotización.', variant: 'destructive' });
+            return;
+        }
+        try {
+            const result = await createQuote({
+                customerName: quoteCustomerName.trim() || selectedClient?.name || 'Cliente General',
+                customerPhone: quoteCustomerPhone.trim() || selectedClient?.phone || undefined,
+                clientId: selectedClient?.id || undefined,
+                expirationDays: 30,
+                items: cart.map(item => ({
+                    productId: item.product.id,
+                    productName: item.product.name,
+                    quantity: item.quantity,
+                    unitPrice: typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO,
+                    variantId: (item.product as any).variantId || undefined,
+                })),
+                total: cartTotal,
+            });
+
+            if (result.success && result.data) {
+                const quoteData = {
+                    businessName: settings.ticketHeader.name,
+                    address: settings.ticketHeader.address,
+                    phone: settings.ticketHeader.phone,
+                    rfc: settings.ticketHeader.rfc,
+                    quoteNumber: `COT-${String(result.data.quoteNumber).padStart(7, '0')}`,
+                    date: new Date(result.data.createdAt),
+                    expirationDays: result.data.expirationDays,
+                    customerName: quoteCustomerName.trim() || selectedClient?.name || 'Cliente General',
+                    customerPhone: quoteCustomerPhone.trim() || selectedClient?.phone || undefined,
+                    cashierName: user?.name || 'Cajero',
+                    items: cart.map(item => ({
+                        quantity: item.quantity,
+                        description: item.product.name,
+                        price: typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO,
+                        total: (typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO) * item.quantity,
+                    })),
+                    subtotal: cartTotal,
+                    total: cartTotal,
+                    logoSvg: settings.logoSvg,
+                    footerMessage: settings.ticketFooter.message,
+                    website: settings.ticketFooter.website,
+                };
+                setLastQuoteReceipt(quoteData);
+                setTimeout(() => {
+                    printReceiptHtml(buildQuoteReceiptHtml(quoteData));
+                    setLastQuoteReceipt(null);
+                }, 200);
+                setQuoteCustomerName('');
+                setQuoteCustomerPhone('');
+                setIsSaveQuoteOpen(false);
+                setCart([]);
+                setCustomerName('');
+                setSelectedClient(null);
+                toast({ title: 'Cotización Guardada', description: `Cotización #${quoteData.quoteNumber} creada exitosamente.` });
+            } else {
+                toast({ title: 'Error', description: result.error || 'No se pudo crear la cotización.', variant: 'destructive' });
+            }
+        } catch (e) {
+            toast({ title: 'Error', description: 'Error al crear la cotización.', variant: 'destructive' });
+        }
+    };
+
+    const handleLoadQuote = async (quote: any) => {
+        if (!quote || !quote.quoteNumber) {
+            toast({ title: 'Error', description: 'No se pudo cargar la cotización.', variant: 'destructive' });
+            return;
+        }
+        try {
+            const result = await getQuoteByNumber(quote.quoteNumber);
+            if (result.success && result.data) {
+                if (result.data.status === 'CONVERTED') {
+                    toast({ title: 'Cotización ya convertida', description: 'Esta cotización ya fue facturada.', variant: 'destructive' });
+                    return;
+                }
+                if (result.data.status === 'CANCELLED') {
+                    toast({ title: 'Cotización cancelada', description: 'Esta cotización fue cancelada.', variant: 'destructive' });
+                    return;
+                }
+                const expiresAt = new Date(result.data.createdAt);
+                expiresAt.setDate(expiresAt.getDate() + result.data.expirationDays);
+                if (expiresAt < new Date()) {
+                    toast({ title: 'Cotización vencida', description: 'Esta cotización ya venció.', variant: 'destructive' });
+                    return;
+                }
+
+                const loadedItems: CartItem[] = (result.data.items || []).map((qi: any) => {
+                    const product = products.find(p => p.id === qi.productId);
+                    return {
+                        id: qi.id,
+                        product: product || {
+                            id: qi.productId || 'unknown',
+                            name: qi.productName,
+                            priceNIO: qi.unitPrice,
+                            category: '',
+                            inventoryType: userInventoryType,
+                            unitOfMeasure: 'ud',
+                        } as any,
+                        quantity: qi.quantity,
+                        unitPrice: qi.unitPrice,
+                        priceLevel: qi.priceLevel,
+                    };
+                });
+
+                setCart(loadedItems);
+                setIsLoadQuoteOpen(false);
+                setCustomerName(result.data.customer?.fullName || result.data.customerName || 'Cliente General');
+                // Si la cotización tiene un cliente asignado, vincularlo como cliente seleccionado del carrito.
+                if (result.data.clientId || result.data.customer) {
+                    const cust = result.data.customer;
+                    setSelectedClient({
+                        id: result.data.clientId || cust?.id,
+                        name: cust?.fullName || result.data.customerName || 'Cliente General',
+                        phone: cust?.phone || result.data.customerPhone || undefined,
+                        priceLevel: cust?.priceLevel,
+                    });
+                }
+                toast({ title: 'Cotización Cargada', description: `Cotización COT-${String(result.data.quoteNumber).padStart(7, '0')} cargada con éxito.` });
+            } else {
+                toast({ title: 'No encontrada', description: result.error || 'Cotización no encontrada.', variant: 'destructive' });
+            }
+        } catch (e) {
+            toast({ title: 'Error', description: 'Error al cargar la cotización.', variant: 'destructive' });
+        }
+    };
+
+    // Abre el diálogo de "Abono a Cuentas / Cuotas" del cliente seleccionado en el carrito.
+    const openAbonoDialog = async () => {
+        if (!selectedClient?.id) {
+            toast({ title: 'Seleccione un Cliente', description: 'Asigne primero un cliente con saldo pendiente para registarle un abono.', variant: 'destructive' });
+            setIsAssignClientOpen(true);
+            return;
+        }
+        if (!activeSession) {
+            toast({ title: 'Error', description: 'Debe haber una caja activa para registrar abonos.', variant: 'destructive' });
+            return;
+        }
+        setIsLoadingAbono(true);
+        try {
+            const customers = await getAllCustomers();
+            const found = customers.find(c => c.id === selectedClient.id);
+            if (!found) {
+                toast({ title: 'Cliente no encontrado', description: 'No se encontró el cliente seleccionado.', variant: 'destructive' });
+                return;
+            }
+            if (found.currentBalance <= 0) {
+                toast({ title: 'Sin Saldo Pendiente', description: 'Este cliente no tiene deudas activas.' });
+                setSelectedClient(null);
+                setCustomerName('');
+                return;
+            }
+            setAbonoClient({ id: found.id, fullName: found.fullName, currentBalance: found.currentBalance });
+            setIsAbonoOpen(true);
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'No se pudo cargar el saldo del cliente.', variant: 'destructive' });
+        } finally {
+            setIsLoadingAbono(false);
         }
     };
 
@@ -617,6 +798,53 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
         setCustomerName('');
     };
 
+    // Fila de acciones secundarias del POS. Cada acción declara explícitamente
+    // su texto, ícono y colores en español (sin depender de BD ni traducciones),
+    // de modo que ninguna celda del grid quede en blanco/transparente.
+    const secondaryActions: {
+        label?: string;
+        title?: string;
+        icon?: LucideIcon;
+        color?: string;
+        hover?: string;
+        onClick: () => void;
+        enabled?: boolean;
+    }[] = [
+        {
+            label: 'COTIZACIÓN',
+            title: 'Guardar cotización del carrito actual',
+            icon: ClipboardList,
+            color: 'bg-[#E91E63]',
+            hover: 'hover:bg-[#C2185B]',
+            onClick: openSaveQuoteDialog,
+            enabled: true,
+        },
+        {
+            label: 'CARGAR COTIZACIÓN',
+            title: 'Cargar una cotización existente',
+            icon: FileText,
+            color: 'bg-[#00ACC1]',
+            hover: 'hover:bg-[#00838F]',
+            onClick: () => setIsLoadQuoteOpen(true),
+            enabled: true,
+        },
+        {
+            label: 'ABONO A CUENTAS',
+            title: 'Registrar abono a la cuenta del cliente',
+            icon: Coins,
+            color: 'bg-[#5C6BC0]',
+            hover: 'hover:bg-[#3949AB]',
+            onClick: openAbonoDialog,
+            enabled: true,
+        },
+    ];
+    // Omitir antes de renderizar toda acción sin texto/ícono/color válido o deshabilitada
+    // para que el grid nunca deje huecos con tarjetas vacías.
+    const visibleSecondaryButtons = secondaryActions.filter(
+        (btn): btn is { label: string; icon: LucideIcon; color: string; hover?: string; title?: string; enabled: true; onClick: () => void } =>
+            !!btn && !!btn.label && !!btn.enabled && !!btn.icon && !!btn.color
+    );
+
 return (
         <div className="flex w-full h-full min-w-0 bg-gray-100">
             {/* Left Panel: Cart + Resumen (ancho fijo, no colapsa) */}
@@ -728,6 +956,25 @@ return (
                         </Button>
                     </div>
 
+                    {visibleSecondaryButtons.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                            {visibleSecondaryButtons.map(btn => {
+                                const ActionIcon = btn.icon;
+                                return (
+                                    <Button
+                                        key={btn.label}
+                                        className={`h-14 flex flex-col gap-1 ${btn.color} ${btn.hover} text-white font-black text-[10px] p-2 active:scale-95`}
+                                        onClick={btn.onClick}
+                                        title={btn.title || btn.label}
+                                    >
+                                        <ActionIcon className="w-5 h-5" />
+                                        {btn.label || 'ACCIÓN'}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     <Button
                         className="h-20 w-full flex items-center justify-center gap-3 bg-[#8BC34A] hover:bg-[#7CB342] text-white font-black text-xl shadow-lg transition-all active:scale-[0.98]"
                         onClick={handlePayment}
@@ -762,7 +1009,7 @@ return (
             <AssignClientDialog
                 isOpen={isAssignClientOpen}
                 onClose={() => setIsAssignClientOpen(false)}
-                onAssign={(client: SelectedClient) => setCustomerName(client.name)}
+                onAssign={(client: SelectedClient) => { setCustomerName(client.name); setSelectedClient(client); }}
                 currentName={customerName || activeSale?.customerName}
             />
 
@@ -787,6 +1034,64 @@ return (
                 onClose={() => setIsFinancingOpen(false)}
                 total={cartTotal}
                 onConfirm={handleFinancingConfirm}
+            />
+
+            <CreditPaymentDialog
+                isOpen={isAbonoOpen}
+                onClose={() => setIsAbonoOpen(false)}
+                customer={abonoClient}
+                sessionId={activeSession?.id || ''}
+                userId={user?.id || ''}
+                userName={user?.name || 'Cajero'}
+                onSuccess={() => refreshSessions()}
+            />
+
+            {lastQuoteReceipt && <QuoteReceiptTemplate {...lastQuoteReceipt} />}
+
+            {/* Guardar como Cotización */}
+            <Dialog open={isSaveQuoteOpen} onOpenChange={setIsSaveQuoteOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Guardar como Cotización</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <p className="text-sm text-muted-foreground">
+                            Se guardará el carrito actual como cotización. El cliente puede presentarla después para facturar.
+                        </p>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Nombre del Cliente (opcional)</label>
+                            <Input
+                                placeholder="Cliente General"
+                                value={quoteCustomerName}
+                                onChange={(e) => setQuoteCustomerName(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Teléfono (opcional)</label>
+                            <Input
+                                placeholder="0000-0000"
+                                value={quoteCustomerPhone}
+                                onChange={(e) => setQuoteCustomerPhone(e.target.value)}
+                            />
+                        </div>
+                        <div className="bg-muted p-3 rounded-lg text-sm">
+                            <p className="font-semibold">Total: {formatCurrency(cartTotal)}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{cart.length} producto(s) en el carrito</p>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsSaveQuoteOpen(false)}>Cancelar</Button>
+                        <Button className="bg-[#E91E63] hover:bg-[#C2185B] text-white" onClick={handleSaveQuote}>
+                            Guardar e Imprimir
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <LoadQuoteDialog
+                isOpen={isLoadQuoteOpen}
+                onClose={() => setIsLoadQuoteOpen(false)}
+                onLoadQuote={handleLoadQuote}
             />
 
             <ProductAddWizard
@@ -1718,7 +2023,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             />
 
 
-            <PaymentSummaryDialog
+<PaymentSummaryDialog
                 isOpen={isPaymentSummaryOpen}
                 onClose={() => setIsPaymentSummaryOpen(false)}
                 total={cartTotal}
@@ -1734,7 +2039,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
                 onConfirm={handleFinancingConfirm}
             />
 
-            <ProductAddWizard
+<ProductAddWizard
                 product={wizardProduct?.product ?? null}
                 onConfirm={handleWizardConfirm}
                 onClose={() => setWizardProduct(null)}

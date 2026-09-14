@@ -22,6 +22,7 @@
     "db:deploy": "prisma generate && prisma migrate deploy",
     "db:safe": "node scripts/prisma-safe-deploy.mjs",
     "db:fix-tickets": "npx tsx --tsconfig tsconfig.server.json scripts/fix-ticket-numbers.ts",
+    "seed:cashier-perms": "node scripts/seed-cashier-permissions.mjs",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {

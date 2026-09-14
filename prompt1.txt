@@ -1,18 +1,33 @@
-Corregir codificación de caracteres UTF-8 en cash-count/page.tsx (Mojibake en acentos y caracteres especiales).
+Corregir tarjetas transparentes/en blanco en la barra de botones del POS (debajo de Limpiar/Espera/Retiro).
 
-Problema:
-La interfaz de /cash-count muestra caracteres corruptos en las tildes y letras especiales (ej. "GestiÃ³n", "Ãšltimo", "sesiÃ³n", "NÃºmero").
+Problema Detectado:
+En la interfaz del POS (/pos), la fila de acciones secundarias (donde aparece el botón fucsia COTIZACIÓN) muestra 2 espacios en blanco/transparentes que mantienen la estructura del grid pero sin texto, ícono ni color de fondo.
 
-Requerimientos de Solución:
+Causas a Revisar y Corregir:
 
-Re-guardar archivo en UTF-8:
+Definición de Acciones Faltantes:
 
-Asegúrate de que el archivo src/app/cash-count/page.tsx (y cualquier componente hijo) esté guardado con codificación UTF-8 sin BOM.
+Revisa el archivo del componente POS donde se renderiza esta barra (ej. src/components/pos/action-buttons.tsx o pos/page.tsx).
 
-Corregir cadenas de texto hardcodeadas:
+Asegúrate de que las acciones destinadas a esos dos espacios (ej. ABONO / CUOTA, REIMPRIMIR, DESCUENTO o DEVOLUCIÓN) tengan asignados explícitamente sus textos (labels), íconos (Lucide React / Heroicons) y colores de fondo (clases Tailwind como bg-blue-600, bg-purple-600, etc.).
 
-Revisa los textos en el JSX y reemplaza los caracteres corruptos por su acentuación correcta en español (Gestión, Último, sesión, Número).
+Si estas acciones dependen de la base de datos o de i18n/traducciones, añade valores de respaldo (fallbacks) en texto directo en español para que no queden en blanco si la propiedad viene como undefined.
 
-Configurar charset global:
+Renderizado Condicional del Grid:
 
-Confirma que el archivo principal de maquetación (layout.tsx o head.tsx) incluya la etiqueta <meta charSet="utf-8" />.
+Si una acción no tiene permisos habilitados o el botón es null, la interfaz NO debe renderizar el contenedor <div> vacío.
+
+Modifica el .map() para filtrar elementos nulos antes de renderizar:
+
+TypeScript
+// Filtrar botones válidos antes de mapear
+const visibleButtons = actionButtons.filter(btn => btn && btn.label && btn.enabled);
+Asegúrate de que el contenedor use grid-cols-3 o flex flex-wrap fluido para que el botón de COTIZACIÓN (y los que estén activos) se ajusten limpiamente sin dejar huecos en blanco.
+
+REGLAS ESTRICTAS:
+
+Conserva intacto el botón COTIZACIÓN (color fucsia #e91e63 / bg-pink-600 con ícono de documento).
+
+No modifiques el botón verde COBRAR ni la fila superior (LIMPIAR, ESPERA, RETIRO/SALIDA).
+
+Todos los textos hardcodeados o de fallback deben estar en español.
