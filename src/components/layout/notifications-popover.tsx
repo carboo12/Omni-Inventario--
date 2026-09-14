@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Bell, Check } from "lucide-react";
-import { getNotifications, markAsRead, NotificationData } from "@/lib/actions/notifications";
+import { Bell, Check, CheckCheck } from "lucide-react";
+import { getNotifications, markAsRead, markAllAsRead, NotificationData } from "@/lib/actions/notifications";
 import { useAuth } from "@/hooks/use-auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
@@ -37,10 +37,34 @@ export function NotificationsPopover() {
         return () => clearInterval(interval);
     }, [user]);
 
-    const handleMarkAsRead = async (id: string) => {
-        await markAsRead(id);
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    const handleMarkAsRead = async (id: string, e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        setNotifications(prev => prev.filter(n => n.id !== id));
         setUnreadCount(prev => Math.max(0, prev - 1));
+        try {
+            await markAsRead(id);
+        } catch (error) {
+            console.error("Error marking notification as read:", error);
+            fetchNotifications();
+        }
+    };
+
+    const handleMarkAllAsRead = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        setNotifications([]);
+        setUnreadCount(0);
+        try {
+            await markAllAsRead();
+        } catch (error) {
+            console.error("Error marking all notifications as read:", error);
+            fetchNotifications();
+        }
     };
 
     return (
@@ -53,11 +77,27 @@ export function NotificationsPopover() {
                     )}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
-                <div className="flex items-center justify-between p-4 border-b">
-                    <h4 className="font-semibold">Notificaciones</h4>
+            <PopoverContent className="w-80 sm:w-96 p-0" align="end">
+                <div className="flex items-center justify-between p-3 px-4 border-b gap-2">
+                    <div className="flex items-center gap-2">
+                        <h4 className="font-semibold text-sm">Notificaciones</h4>
+                        {unreadCount > 0 && (
+                            <span className="text-[11px] bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400 font-semibold px-2 py-0.5 rounded-full">
+                                {unreadCount} nuevas
+                            </span>
+                        )}
+                    </div>
                     {unreadCount > 0 && (
-                        <span className="text-xs text-muted-foreground">{unreadCount} nuevas</span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground hover:bg-muted font-normal flex items-center gap-1.5"
+                            onClick={handleMarkAllAsRead}
+                            title="Marcar todas como leídas"
+                        >
+                            <CheckCheck className="h-3.5 w-3.5 text-primary" />
+                            <span>Marcar todas leídas</span>
+                        </Button>
                     )}
                 </div>
                 <ScrollArea className="h-[300px]">
@@ -84,7 +124,7 @@ export function NotificationsPopover() {
                                             </p>
                                         </div>
                                         {!notification.read && (
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleMarkAsRead(notification.id)}>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => handleMarkAsRead(notification.id, e)}>
                                                 <Check className="h-3 w-3" />
                                                 <span className="sr-only">Marcar como leída</span>
                                             </Button>

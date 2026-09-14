@@ -20,6 +20,10 @@ export async function markAsRead(...args: any[]): Promise<any> {
   return callAction('notifications', 'markAsRead', args);
 }
 
+export async function markAllAsRead(...args: any[]): Promise<any> {
+  return callAction('notifications', 'markAllAsRead', args);
+}
+
 export async function createNotification(...args: any[]): Promise<any> {
   return callAction('notifications', 'createNotification', args);
 }

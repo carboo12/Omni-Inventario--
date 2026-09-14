@@ -152,7 +152,7 @@ export default function XReportPage() {
                 @media print {
                     @page {
                         margin: 0;
-                        size: 80mm auto !important;
+                        size: auto;
                     }
                     body * {
                         visibility: hidden;

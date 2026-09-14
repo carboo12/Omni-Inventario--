@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -579,7 +579,7 @@ export default function CloseSessionPage() {
 
       <style dangerouslySetInnerHTML={{ __html: `
           @media print {
-            @page { margin: 0; size: 80mm auto !important; }
+            @page { margin: 0; size: auto; }
             body * { visibility: hidden; }
             #cash-close-print-area, #cash-close-print-area * {
               visibility: visible;
@@ -982,7 +982,7 @@ export default function CloseSessionPage() {
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         @media print {
-          @page { margin: 0; size: 80mm auto !important; }
+          @page { margin: 0; size: auto; }
           body * { visibility: hidden; }
           #cash-close-print-area, #cash-close-print-area * {
             visibility: visible;

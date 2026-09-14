@@ -49,6 +49,13 @@ export async function markAsRead(id: string) {
     });
 }
 
+export async function markAllAsRead() {
+    await db.notification.updateMany({
+        where: { read: false },
+        data: { read: true }
+    });
+}
+
 export async function createNotification(type: 'info' | 'warning' | 'success' | 'error', message: string, userId?: string) {
     await db.notification.create({
         data: {
