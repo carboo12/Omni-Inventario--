@@ -3316,7 +3316,8 @@ async function getInitialAppData() {
       licenseExpirationDate: settingsRow.licenseExpirationDate,
       licenseStatus: settingsRow.licenseStatus,
       invoiceAlertDays: settingsRow.invoiceAlertDays,
-      importProductsInDollars: settingsRow.importProductsInDollars
+      importProductsInDollars: settingsRow.importProductsInDollars,
+      creditFinancingEnabled: settingsRow.creditFinancingEnabled || false
     } : null,
     businessMode,
     sessions,
@@ -3329,6 +3330,37 @@ async function getInitialAppData() {
       assignedLocation: userRow.assignedLocation
     } : null
   };
+}
+
+// src/lib/actions/installments.ts
+var installments_exports = {};
+__export(installments_exports, {
+  getOverdueInstallments: () => getOverdueInstallments
+});
+init_db();
+var isAdminRole2 = (role) => role === "admin" || role === "master-admin";
+async function getOverdueInstallments() {
+  const session = await verifySession();
+  if (!session || !isAdminRole2(session.role)) {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    const installments = await db_default.creditInstallment.findMany({
+      where: {
+        status: "PENDING",
+        dueDate: { lt: /* @__PURE__ */ new Date() }
+      },
+      orderBy: { dueDate: "asc" },
+      include: {
+        customer: { select: { fullName: true, phone: true } },
+        salesInvoice: { select: { invoiceNumber: true } }
+      }
+    });
+    return { success: true, data: installments };
+  } catch (error) {
+    console.error("Error fetching overdue installments:", error);
+    return { success: false, error: "Failed to fetch overdue installments" };
+  }
 }
 
 // src/lib/actions/inventory.ts
@@ -4998,6 +5030,11 @@ async function getKardexReport(startIso, endIso, inventoryType) {
     const rows = Array.from(grouped.values()).map((g) => {
       const p = productMap.get(g.productName);
       const cost = p?.costPriceNIO ?? 0;
+      const price = p?.priceNIO ?? 0;
+      const unitProfit = price - cost;
+      const profitMargin = price > 0 ? unitProfit / price * 100 : 0;
+      const exitsProfit = unitProfit * g.exits;
+      const potentialProfit = unitProfit * g.finalStock;
       return {
         productName: g.productName,
         barcode: p?.barcode ?? null,
@@ -5008,7 +5045,11 @@ async function getKardexReport(startIso, endIso, inventoryType) {
         exits: g.exits,
         finalStock: g.finalStock,
         costPriceNIO: cost,
-        priceNIO: p?.priceNIO ?? 0,
+        priceNIO: price,
+        unitProfit,
+        profitMargin,
+        exitsProfit,
+        potentialProfit,
         inventoryValue: cost * g.finalStock
       };
     });
@@ -6231,6 +6272,7 @@ __export(quotations_exports, {
   cancelQuote: () => cancelQuote,
   convertQuoteToInvoice: () => convertQuoteToInvoice,
   createQuote: () => createQuote,
+  getPendingQuotes: () => getPendingQuotes,
   getQuoteByNumber: () => getQuoteByNumber,
   getQuotes: () => getQuotes
 });
@@ -6240,6 +6282,7 @@ async function createQuote(data) {
   if (!session) return { success: false, error: "Unauthorized" };
   try {
     const subtotal = data.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const userId = session.userId;
     const quote = await db_default.quote.create({
       data: {
         id: generateUUID(),
@@ -6251,8 +6294,9 @@ async function createQuote(data) {
         total: data.total || subtotal,
         status: "PENDING",
         notes: data.notes || null,
-        userId: session.id || session.userId,
-        quoteItem: {
+        clientId: data.clientId || null,
+        userId: userId || null,
+        items: {
           create: data.items.map((item) => ({
             id: generateUUID(),
             productId: item.productId || null,
@@ -6265,7 +6309,7 @@ async function createQuote(data) {
           }))
         }
       },
-      include: { quoteItem: true }
+      include: { items: true, customer: true, user: true }
     });
     revalidatePath("/quotations");
     return { success: true, data: quote };
@@ -6293,12 +6337,34 @@ async function getQuotes(search) {
     const quotes = await db_default.quote.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: { quoteItem: true, user: true }
+      include: { items: true, user: true, customer: true }
     });
     return { success: true, data: quotes };
   } catch (error) {
     console.error("Error fetching quotes:", error);
     return { success: false, error: "Error al obtener cotizaciones" };
+  }
+}
+async function getPendingQuotes() {
+  const session = await verifySession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  try {
+    const quotes = await db_default.quote.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      include: { customer: true, user: true },
+      take: 50
+    });
+    const now = /* @__PURE__ */ new Date();
+    const active = quotes.filter((q) => {
+      const expiresAt = new Date(q.createdAt);
+      expiresAt.setDate(expiresAt.getDate() + (q.expirationDays || 30));
+      return expiresAt >= now;
+    });
+    return { success: true, data: active };
+  } catch (error) {
+    console.error("Error fetching pending quotes:", error);
+    return { success: false, error: "Error al obtener cotizaciones pendientes" };
   }
 }
 async function getQuoteByNumber(quoteNumber) {
@@ -6317,7 +6383,7 @@ async function getQuoteByNumber(quoteNumber) {
     }
     const quote = await db_default.quote.findUnique({
       where: { quoteNumber: parsed },
-      include: { quoteItem: true, user: true }
+      include: { items: true, user: true, customer: true }
     });
     if (!quote) {
       return { success: false, error: "Cotizaci\xF3n no encontrada" };
@@ -6334,7 +6400,7 @@ async function convertQuoteToInvoice(quoteId, sessionId, userId, inventoryType, 
   try {
     const quote = await db_default.quote.findUnique({
       where: { id: quoteId },
-      include: { quoteItem: true }
+      include: { items: true }
     });
     if (!quote) {
       return { success: false, error: "Cotizaci\xF3n no encontrada" };
@@ -6348,7 +6414,7 @@ async function convertQuoteToInvoice(quoteId, sessionId, userId, inventoryType, 
     const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
     let createdInvoiceNumber = 0;
     await db_default.$transaction(async (tx) => {
-      const quoteItems = quote.quoteItem || [];
+      const quoteItems = quote.items || [];
       for (const item of quoteItems) {
         if (!item.productId) continue;
         const inventoryItems = await tx.inventoryItem.findMany({
@@ -6848,7 +6914,7 @@ var resolvePresentationFactor = (product, presentation, presentationName, presen
 };
 
 // src/lib/actions/sales.ts
-async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId) {
+async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId, financing) {
   console.log("--- DEBUG createSale ---");
   console.log("paymentMethod:", paymentMethod);
   console.log("customerId:", customerId);
@@ -6857,7 +6923,7 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
   try {
     const isJewelry = await BusinessGuard.isJewelryMode();
     if (isJewelry && !customerId) {
-      return { success: false, error: "El cliente es obligatorio para realizar ventas en modo Joyer\xEDa." };
+      return { success: false, error: "El cliente es obligatorio para realizar ventas en modo Joyer\xC3\xADa." };
     }
     const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
     const roundedTotalAmount = Math.round(totalAmount * 100) / 100;
@@ -7026,17 +7092,42 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
       });
       createdInvoiceNumber = salesInvoice.invoiceNumber;
       if (isCreditPayment(paymentMethod)) {
-        if (!customerId) throw new Error("Cliente es requerido para venta al cr\xE9dito");
+        if (!customerId) throw new Error("Cliente es requerido para venta al cr\xC3\xA9dito");
         const customer = await tx.customer.findUnique({ where: { id: customerId } });
-        if (!customer || !customer.hasCredit) throw new Error("El cliente no tiene habilitado el cr\xE9dito");
-        const newBalance = customer.currentBalance + roundedTotalAmount;
+        if (!customer || !customer.hasCredit) throw new Error("El cliente no tiene habilitado el cr\xC3\xA9dito");
+        let financedTotal = roundedTotalAmount;
+        if (financing && financing.installments > 0) {
+          const interestRate = Number(financing.interestRate) || 0;
+          financedTotal = Math.round((roundedTotalAmount + roundedTotalAmount * interestRate / 100) * 100) / 100;
+        }
+        const newBalance = customer.currentBalance + financedTotal;
         if (customer.creditLimit > 0 && newBalance > customer.creditLimit) {
-          throw new Error(`L\xEDmite de cr\xE9dito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`);
+          throw new Error(`L\xC3\xADmite de cr\xC3\xA9dito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`);
         }
         await tx.customer.update({
           where: { id: customerId },
-          data: { currentBalance: { increment: roundedTotalAmount } }
+          data: { currentBalance: { increment: financedTotal } }
         });
+        if (financing && financing.installments > 0) {
+          const totalInstallments = Math.max(1, Math.floor(Number(financing.installments) || 1));
+          const interestRate = Number(financing.interestRate) || 0;
+          const totalWithInterest = Math.round((roundedTotalAmount + roundedTotalAmount * interestRate / 100) * 100) / 100;
+          const baseAmount = Math.round(totalWithInterest / totalInstallments * 100) / 100;
+          const periodDays = financing.frequency === "QUINCENAL" ? 15 : financing.frequency === "MENSUAL" ? 30 : 7;
+          const baseDate = /* @__PURE__ */ new Date();
+          await tx.creditInstallment.createMany({
+            data: Array.from({ length: totalInstallments }, (_, i) => ({
+              id: generateUUID(),
+              saleId: salesInvoice.id,
+              customerId,
+              installmentNumber: i + 1,
+              dueDate: new Date(baseDate.getTime() + (i + 1) * periodDays * 24 * 60 * 60 * 1e3),
+              amount: i === totalInstallments - 1 ? Math.round((totalWithInterest - baseAmount * (totalInstallments - 1)) * 100) / 100 : baseAmount,
+              status: "PENDING"
+            })),
+            skipDuplicates: true
+          });
+        }
       }
       const updateData = {
         totalSales: { increment: roundedTotalAmount }
@@ -7073,7 +7164,7 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
         action: "CREATE",
         entity: "Sale",
         entityId: `FACTURA-${createdInvoiceNumber}`,
-        description: `Registr\xF3 una venta por C$${roundedTotalAmount.toFixed(2)} (factura #${createdInvoiceNumber})`,
+        description: `Registr\xC3\xB3 una venta por C$${roundedTotalAmount.toFixed(2)} (factura #${createdInvoiceNumber})`,
         metadata: { invoiceNumber: createdInvoiceNumber, totalAmount: roundedTotalAmount, paymentMethod, items: items.length }
       });
     } catch (auditError) {
@@ -7119,7 +7210,7 @@ async function getInvoiceByNumber2(invoiceNumber) {
       const cleaned = invoiceNumber.replace(/^0+/, "");
       parsed = cleaned === "" ? 1 : parseInt(cleaned, 10);
       if (!Number.isFinite(parsed) || parsed <= 0) {
-        return { success: false, error: "N\xFAmero de factura inv\xE1lido" };
+        return { success: false, error: "N\xC3\xBAmero de factura inv\xC3\xA1lido" };
       }
     } else {
       parsed = invoiceNumber;
@@ -7127,7 +7218,9 @@ async function getInvoiceByNumber2(invoiceNumber) {
     const invoice = await db_default.salesInvoice.findUnique({
       where: { invoiceNumber: parsed },
       include: {
-        salesInvoiceItem: true,
+        salesInvoiceItem: {
+          orderBy: { id: "asc" }
+        },
         customer: true,
         user: true
       }
@@ -7151,7 +7244,9 @@ async function getLastSale(sessionId) {
       where,
       orderBy: { date: "desc" },
       include: {
-        salesInvoiceItem: true,
+        salesInvoiceItem: {
+          orderBy: { id: "asc" }
+        },
         customer: true,
         user: true
       }
@@ -7162,7 +7257,7 @@ async function getLastSale(sessionId) {
     return { success: true, data: invoice };
   } catch (error) {
     console.error("Error fetching last sale:", error);
-    return { success: false, error: "Error al obtener la \xFAltima venta" };
+    return { success: false, error: "Error al obtener la \xC3\xBAltima venta" };
   }
 }
 
@@ -7205,7 +7300,8 @@ async function getSettings() {
       smtpPassword: "",
       emailNotificationsEnabled: false,
       invoiceAlertDays: 5,
-      importProductsInDollars: false
+      importProductsInDollars: false,
+      creditFinancingEnabled: false
     };
   }
   return {
@@ -7242,7 +7338,8 @@ async function getSettings() {
     licenseExpirationDate: settings.licenseExpirationDate,
     licenseStatus: settings.licenseStatus,
     invoiceAlertDays: settings.invoiceAlertDays,
-    importProductsInDollars: settings.importProductsInDollars
+    importProductsInDollars: settings.importProductsInDollars,
+    creditFinancingEnabled: settings.creditFinancingEnabled
   };
 }
 async function updateSettings(data) {
@@ -7284,7 +7381,8 @@ async function updateSettings(data) {
         licenseExpirationDate: data.licenseExpirationDate,
         licenseStatus: data.licenseStatus,
         invoiceAlertDays: data.invoiceAlertDays,
-        importProductsInDollars: data.importProductsInDollars
+        importProductsInDollars: data.importProductsInDollars,
+        creditFinancingEnabled: data.creditFinancingEnabled
       }
     });
   } else {
@@ -7321,7 +7419,8 @@ async function updateSettings(data) {
         licenseExpirationDate: data.licenseExpirationDate,
         licenseStatus: data.licenseStatus || "unregistered",
         invoiceAlertDays: data.invoiceAlertDays || 5,
-        importProductsInDollars: data.importProductsInDollars || false
+        importProductsInDollars: data.importProductsInDollars || false,
+        creditFinancingEnabled: data.creditFinancingEnabled || false
       }
     });
   }
@@ -7872,6 +7971,7 @@ var actionModules = {
   "held-sales": held_sales_exports,
   "import-history": import_history_exports,
   "init-data": init_data_exports,
+  "installments": installments_exports,
   "inventory": inventory_exports,
   "jewelry-materials": jewelry_materials_exports,
   "jewelry-production": jewelry_production_exports,

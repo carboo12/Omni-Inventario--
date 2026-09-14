@@ -46,8 +46,8 @@ export function printReceiptHtml(htmlContent: string) {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   @page {
-    size: 80mm auto !important;
     margin: 0 !important;
+    size: auto;
   }
   @media print {
     html, body {
@@ -56,8 +56,13 @@ export function printReceiptHtml(htmlContent: string) {
       height: auto !important;
       min-height: auto !important;
       max-height: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
       overflow: visible !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
       -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .ticket-container {
       width: 100% !important;
@@ -65,6 +70,8 @@ export function printReceiptHtml(htmlContent: string) {
       height: auto !important;
       max-height: none !important;
       overflow: visible !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
     }
   }
   * {
@@ -88,20 +95,17 @@ export function printReceiptHtml(htmlContent: string) {
     color: #000;
   }
 
+  .ticket-container,
   .ticket-item,
   .item-row,
   .ticket-container tr,
-  .ticket-container td {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
+  .ticket-container td,
   .ticket-totals,
   .total-row,
   .payment-info,
   .ticket-footer {
-    break-inside: auto !important;
-    page-break-inside: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .ticket-container {

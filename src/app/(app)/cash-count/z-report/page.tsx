@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCashRegister } from "@/hooks/use-cash-register";
@@ -31,7 +31,7 @@ export default function ZReportPage() {
     if (!session) {
         return (
             <div className="flex flex-col items-center justify-center p-12">
-                <p>Cargando datos de sesiÃ³n...</p>
+                <p>Cargando datos de sesión...</p>
                 <Button variant="link" onClick={() => router.push("/cash-count")}>Volver</Button>
             </div>
         )

@@ -1,0 +1,1 @@
+import{a3 as e}from"./index-CMWhpmtV.js";async function o(...t){return e("quotations","createQuote",t)}async function u(...t){return e("quotations","getPendingQuotes",t)}async function a(...t){return e("quotations","getQuoteByNumber",t)}async function c(...t){return e("quotations","cancelQuote",t)}export{c as a,u as b,o as c,a as g};

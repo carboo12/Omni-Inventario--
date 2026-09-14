@@ -1,24 +1,18 @@
-CORRECCIÓN DE ERROR DE VALIDACIÓN PRISMA EN recordAudit (src/lib/actions/audit.ts)
+Corregir codificación de caracteres UTF-8 en cash-count/page.tsx (Mojibake en acentos y caracteres especiales).
 
-** REGLA ESTRICTA DE EJECUCIÓN:**
+Problema:
+La interfaz de /cash-count muestra caracteres corruptos en las tildes y letras especiales (ej. "GestiÃ³n", "Ãšltimo", "sesiÃ³n", "NÃºmero").
 
-NO ejecutes npm run build ni npm run build:web. Verifica el código únicamente con npx tsc --noEmit.
+Requerimientos de Solución:
 
-1. Diagnóstico del Error:
-Al ejecutar recordAudit, Prisma lanza PrismaClientValidationError:
-Argument metadata: Invalid value provided. Expected String or Null, provided Object.
+Re-guardar archivo en UTF-8:
 
-2. Corrección Requerida en src/lib/actions/audit.ts:
+Asegúrate de que el archivo src/app/cash-count/page.tsx (y cualquier componente hijo) esté guardado con codificación UTF-8 sin BOM.
 
-Antes de pasar el campo metadata a db.auditLog.create(), serialízalo a JSON string si viene como objeto o si es distinto de undefined/null.
+Corregir cadenas de texto hardcodeadas:
 
-Aplica la siguiente conversión en la carga útil (data):
+Revisa los textos en el JSX y reemplaza los caracteres corruptos por su acentuación correcta en español (Gestión, Último, sesión, Número).
 
-TypeScript
-metadata: params.metadata 
-  ? (typeof params.metadata === 'string' ? params.metadata : JSON.stringify(params.metadata))
-  : null,
-ipAddress: params.ipAddress ?? null
-Asegúrate de no enviar undefined a campos opcionales de Prisma; utiliza null para evitar advertencias de tipos.
+Configurar charset global:
 
-Entregable: Función recordAudit sanitizada guardando metadata como JSON string válido sin tumbar el flujo de Login ni de la API. Verificación con npx tsc --noEmit.
+Confirma que el archivo principal de maquetación (layout.tsx o head.tsx) incluya la etiqueta <meta charSet="utf-8" />.

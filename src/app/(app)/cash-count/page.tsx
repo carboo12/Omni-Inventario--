@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from '@/lib/router-nav';
@@ -58,15 +58,15 @@ export default function CashCountPage() {
 
     const handleNotImplemented = (feature: string) => {
         toast({
-            title: "FunciÃ³n No Disponible",
-            description: `La opciÃ³n ${feature} aÃºn no estÃ¡ implementada o estÃ¡ deshabilitada.`,
+            title: "Función No Disponible",
+            description: `La opción ${feature} aún no está implementada o está deshabilitada.`,
         });
     };
 
     const handleOpenDrawer = () => {
         toast({
             title: "Gaveta Abierta",
-            description: "Se ha enviado la seÃ±al para abrir la gaveta.",
+            description: "Se ha enviado la señal para abrir la gaveta.",
         });
         // In a real app, this would call an API endpoint to trigger the hardware
     };
@@ -75,7 +75,7 @@ export default function CashCountPage() {
         if (!activeSession) {
             toast({
                 title: "Error",
-                description: "No hay una sesiÃ³n de caja activa.",
+                description: "No hay una sesión de caja activa.",
                 variant: "destructive",
             });
             return;
@@ -156,7 +156,7 @@ export default function CashCountPage() {
 
     const handleReprint = async () => {
         if (!docNumber) {
-            toast({ title: "Error", description: "Ingrese un nÃºmero de documento.", variant: "destructive" });
+            toast({ title: "Error", description: "Ingrese un número de documento.", variant: "destructive" });
             return;
         }
 
@@ -168,7 +168,7 @@ export default function CashCountPage() {
             if (foundSession) {
                 handleReprintSession(foundSession);
             } else {
-                toast({ title: "Error", description: "No se encontrÃ³ ningÃºn cierre de caja con ese cÃ³digo o cajero.", variant: "destructive" });
+                toast({ title: "Error", description: "No se encontró ningún cierre de caja con ese código o cajero.", variant: "destructive" });
             }
             return;
         }
@@ -180,7 +180,7 @@ export default function CashCountPage() {
 
         const parsed = parseTicketSearch(docNumber);
         if (!parsed) {
-            toast({ title: "Error", description: "NÃºmero de documento invÃ¡lido.", variant: "destructive" });
+            toast({ title: "Error", description: "Número de documento inválido.", variant: "destructive" });
             return;
         }
 
@@ -195,7 +195,7 @@ export default function CashCountPage() {
                 const ticketData = buildReceiptDataFromInvoice(result.data, settings, formatTicketNumber(result.data.invoiceNumber));
                 printReceiptHtml(buildReceiptHtml(ticketData));
             } else {
-                toast({ title: "Error", description: result.error || "No se encontrÃ³ la factura.", variant: "destructive" });
+                toast({ title: "Error", description: result.error || "No se encontró la factura.", variant: "destructive" });
             }
         } catch (error) {
             toast({ title: "Error", description: "Error al buscar el documento.", variant: "destructive" });
@@ -216,10 +216,10 @@ export default function CashCountPage() {
                 const ticketData = buildReceiptDataFromInvoice(result.data, settings, formatTicketNumber(result.data.invoiceNumber));
                 printReceiptHtml(buildReceiptHtml(ticketData));
             } else {
-                toast({ title: "Error", description: result.error || "No se encontrÃ³ la Ãºltima venta.", variant: "destructive" });
+                toast({ title: "Error", description: result.error || "No se encontró la última venta.", variant: "destructive" });
             }
         } catch (error) {
-            toast({ title: "Error", description: "Error al obtener la Ãºltima venta.", variant: "destructive" });
+            toast({ title: "Error", description: "Error al obtener la última venta.", variant: "destructive" });
         } finally {
             setIsLoading(false);
         }
@@ -227,7 +227,7 @@ export default function CashCountPage() {
 
     return (
         <div className="container mx-auto p-4 max-w-4xl h-[calc(100vh-100px)] flex flex-col">
-            <h1 className="text-xl font-bold mb-4 text-center text-primary">GestiÃ³n de Efectivo</h1>
+            <h1 className="text-xl font-bold mb-4 text-center text-primary">Gestión de Efectivo</h1>
 
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[300px]">
                 {/* Columna Izquierda */}
@@ -263,7 +263,7 @@ export default function CashCountPage() {
 
                 {/* Columna Derecha */}
                 <div className="grid grid-rows-2 gap-4">
-                    {/* Fila Superior Derecha - Cuadre de Caja (BotÃ³n Verde) */}
+                    {/* Fila Superior Derecha - Cuadre de Caja (Botón Verde) */}
                     <Button
                         className="h-full w-full text-lg bg-[#84b541] hover:bg-[#73a036] flex flex-col gap-1"
                         onClick={() => handleNavigation("/cash-register/close")}
@@ -292,15 +292,15 @@ export default function CashCountPage() {
             </div>
 
             <div className="mt-6 space-y-4">
-                {/* Reimprimir Ãšltimo Ticket */}
+                {/* Reimprimir Último Ticket */}
                 {activeSession && (
                     <Card className="shadow-sm border-green-200">
                         <CardContent className="py-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <Printer className="h-5 w-5 text-green-600" />
                                 <div>
-                                    <p className="text-sm font-semibold">Reimprimir Ãšltimo Ticket</p>
-                                    <p className="text-xs text-muted-foreground">Imprime la venta mÃ¡s reciente de esta sesiÃ³n</p>
+                                    <p className="text-sm font-semibold">Reimprimir Último Ticket</p>
+                                    <p className="text-xs text-muted-foreground">Imprime la venta más reciente de esta sesión</p>
                                 </div>
                             </div>
                             <Button
@@ -329,17 +329,17 @@ export default function CashCountPage() {
                                 <SelectContent>
                                     <SelectItem value="factura">Factura</SelectItem>
                                     <SelectItem value="cierre">Cierre de Caja</SelectItem>
-                                    <SelectItem value="devolucion">DevoluciÃ³n</SelectItem>
+                                    <SelectItem value="devolucion">Devolución</SelectItem>
                                     <SelectItem value="recibo">Recibo</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
                         <div className="grid w-full max-w-[200px] items-center gap-1">
-                            <Label htmlFor="doc-number" className="text-xs">NÃºmero</Label>
+                            <Label htmlFor="doc-number" className="text-xs">Número</Label>
                             <Input
                                 type="text"
                                 id="doc-number"
-                                placeholder="NÃºmero"
+                                placeholder="Número"
                                 className="bg-blue-100/50 h-8"
                                 value={docNumber}
                                 onChange={(e) => setDocNumber(e.target.value)}
@@ -359,7 +359,7 @@ export default function CashCountPage() {
                 {/* Historial de Cierres Recientes */}
                 <Card className="shadow-sm">
                     <CardHeader className="py-2">
-                        <CardTitle className="text-center text-sm font-medium text-gray-600">Historial de Cierres Recientes (Ãšltimos 5)</CardTitle>
+                        <CardTitle className="text-center text-sm font-medium text-gray-600">Historial de Cierres Recientes (Últimos 5)</CardTitle>
                     </CardHeader>
                     <CardContent className="py-2">
                         {closedSessions.length > 0 ? (

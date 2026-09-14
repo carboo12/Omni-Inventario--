@@ -148,7 +148,7 @@ export const QuoteReceiptTemplate: React.FC<QuoteReceiptProps> = ({
                     @media print {
                         @page {
                             margin: 0 !important;
-                            size: 80mm auto !important;
+                            size: auto;
                         }
                         html,
                         body {

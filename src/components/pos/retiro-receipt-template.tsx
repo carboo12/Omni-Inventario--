@@ -92,7 +92,7 @@ export const RetiroReceiptTemplate: React.FC<RetiroReceiptProps> = ({
                     @media print {
                         @page {
                             margin: 0 !important;
-                            size: 80mm auto !important;
+                            size: auto;
                         }
                         html,
                         body {
