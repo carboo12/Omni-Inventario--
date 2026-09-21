@@ -132,6 +132,7 @@ export default function CashCountPage() {
                 salesCard: session.salesCard,
                 salesServices: session.salesServices,
                 salesAbonos: session.salesAbonos,
+                salesAbonosCard: session.salesAbonosCard,
                 outflows,
                 totalReturns: session.totalReturns,
                 totalSales: session.totalSales,

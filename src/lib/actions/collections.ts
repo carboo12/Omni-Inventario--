@@ -8,7 +8,7 @@ import { BusinessGuard } from '../business-guard';
 
 export async function getCollections() {
   const session = await verifySession();
-  if (!session) return { success: false, error: 'Unauthorized' };
+  if (!session) return { success: false, error: 'Sesión no autorizada' };
   await BusinessGuard.assertMode('DISTRIBUIDORA');
 
   try {
@@ -24,7 +24,7 @@ export async function getCollections() {
     return { success: true, data: payments };
   } catch (error) {
     console.error('Error fetching collections:', error);
-    return { success: false, error: 'Failed to fetch collections' };
+    return { success: false, error: 'No se pudieron obtener los cobros' };
   }
 }
 
@@ -35,36 +35,46 @@ export async function registerPayment(data: {
   notes?: string;
 }) {
   const session = await verifySession();
-  if (!session) return { success: false, error: 'Unauthorized' };
+  if (!session) return { success: false, error: 'Sesión no autorizada' };
   await BusinessGuard.assertMode('DISTRIBUIDORA');
 
   try {
-    const payment = await db.collectionPayment.create({
-      data: {
-        id: generateUUID(),
-        orderId: data.orderId,
-        amount: data.amount,
-        paymentMethod: data.paymentMethod,
-        userId: session.userId,
-        notes: data.notes,
-      },
-    });
+    // Registro de cobro, lectura y actualización del pedido en UNA transacción
+    // para que no queden pagos sin reflejar o desplazamientos inconsistentes.
+    const payment = await db.$transaction(async (tx) => {
+      const order = await tx.customerOrder.findUnique({ where: { id: data.orderId } });
+      if (!order) throw new Error('Pedido no encontrado');
 
-    const order = await db.customerOrder.findUnique({ where: { id: data.orderId } });
-    if (order) {
-      const newPaid = order.paidAmount + data.amount;
+      const newPaid = Math.round((order.paidAmount + data.amount) * 100) / 100;
       const newStatus = newPaid >= order.totalAmount ? 'DELIVERED' : order.status;
-      await db.customerOrder.update({
+
+      const created = await tx.collectionPayment.create({
+        data: {
+          id: generateUUID(),
+          orderId: data.orderId,
+          amount: data.amount,
+          paymentMethod: data.paymentMethod,
+          userId: session.userId,
+          notes: data.notes,
+        },
+      });
+
+      await tx.customerOrder.update({
         where: { id: data.orderId },
         data: { paidAmount: newPaid, status: newStatus as any },
       });
-    }
+
+      return created;
+    });
 
     revalidatePath('/collections');
     revalidatePath(`/orders/${data.orderId}`);
     return { success: true, data: payment };
   } catch (error) {
     console.error('Error registering payment:', error);
-    return { success: false, error: 'Failed to register payment' };
+    if (error instanceof Error && error.message === 'Pedido no encontrado') {
+      return { success: false, error: 'El pedido no fue encontrado' };
+    }
+    return { success: false, error: 'No se pudo registrar el cobro' };
   }
 }

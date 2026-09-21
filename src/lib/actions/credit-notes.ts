@@ -4,6 +4,7 @@ import { generateUUID } from '@/lib/uuid';
 import db from '../db';
 import { revalidatePath } from 'next/cache';
 import { verifySession } from '../session';
+import { isCreditPayment } from '../payment-method';
 
 export async function getInvoiceByNumber(invoiceNumber: number | string) {
     const session = await verifySession();
@@ -90,6 +91,34 @@ export async function createCreditNote(
                 where: { id: invoice.id },
                 data: { status: 'REFUNDED' } // Or PARTIALLY_REFUNDED if we support that later
             });
+
+            // 4b. Si la venta fue a crédito, la devolución reduce el saldo pendiente
+            //     de la factura y del cliente (CxC), marcando las cuotas cubiertas.
+            if (isCreditPayment(invoice.paymentMethod) && invoice.customerId && refundAmount > 0) {
+                await tx.salesInvoice.update({
+                    where: { id: invoice.id },
+                    data: { pendingBalance: { decrement: refundAmount } }
+                });
+                await tx.customer.update({
+                    where: { id: invoice.customerId },
+                    data: { currentBalance: { decrement: refundAmount } }
+                });
+                const openInst = await tx.creditInstallment.findMany({
+                    where: { saleId: invoice.id, status: { in: ['PENDING', 'OVERDUE'] } },
+                    orderBy: { dueDate: 'asc' },
+                    select: { id: true, amount: true },
+                });
+                let rem = refundAmount;
+                for (const i of openInst) {
+                    if (rem <= 0.005) break;
+                    if (Number(i.amount) <= rem + 0.005) {
+                        await tx.creditInstallment.update({ where: { id: i.id }, data: { status: 'PAID' } });
+                        rem -= Number(i.amount);
+                    } else {
+                        break;
+                    }
+                }
+            }
 
             // 5. Restore Inventory
             for (const itemReturn of itemsToReturn) {

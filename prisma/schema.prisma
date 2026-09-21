@@ -63,6 +63,8 @@ model CashRegisterSession {
   totalReturns     Float            @default(0)
   salesServices    Float            @default(0)
   salesAbonos      Float            @default(0)
+  /// Abonos de crédito recibidos por tarjeta/transferencia (NO entran al efectivo esperado).
+  salesAbonosCard  Float            @default(0)
   salesCredit      Float            @default(0)
   initialAmountUSD Float            @default(0)
   cashOutflow      CashOutflow[]
@@ -70,6 +72,7 @@ model CashRegisterSession {
   creditNote       CreditNote[]
   jewelryService   JewelryService[]
   salesInvoice     SalesInvoice[]
+  supplierPayment  SupplierPayment[]
 
   @@index([cashierId], map: "CashRegisterSession_cashierId_fkey")
   @@map("cashregistersession")
@@ -111,18 +114,21 @@ model CreditNote {
 }
 
 model CreditPayment {
-  id            String   @id
+  id            String        @id
   customerId    String
+  invoiceId     String?
   amount        Float
   paymentMethod String
-  timestamp     DateTime @default(now())
+  timestamp     DateTime      @default(now())
   userId        String
   notes         String?
-  receiptNumber Int      @unique(map: "CreditPayment_receiptNumber_key") @default(autoincrement())
-  customer      Customer @relation(fields: [customerId], references: [id], map: "CreditPayment_customerId_fkey")
-  user          User     @relation(fields: [userId], references: [id], map: "CreditPayment_userId_fkey")
+  receiptNumber Int           @unique(map: "CreditPayment_receiptNumber_key") @default(autoincrement())
+  customer      Customer      @relation(fields: [customerId], references: [id], map: "CreditPayment_customerId_fkey")
+  salesInvoice  SalesInvoice? @relation(fields: [invoiceId], references: [id], map: "CreditPayment_invoiceId_fkey")
+  user          User          @relation(fields: [userId], references: [id], map: "CreditPayment_userId_fkey")
 
   @@index([customerId], map: "CreditPayment_customerId_fkey")
+  @@index([invoiceId], map: "CreditPayment_invoiceId_fkey")
   @@index([userId], map: "CreditPayment_userId_fkey")
   @@map("creditpayment")
 }
@@ -163,6 +169,7 @@ model Customer {
   creditLimit    Float               @default(0)
   currentBalance Float               @default(0)
   hasCredit      Boolean             @default(false)
+  interestRate   Float               @default(0)
   priceLevel     Int                 @default(1)
   creditPayment  CreditPayment[]
   goldPurchase   GoldPurchase[]
@@ -460,6 +467,7 @@ model PurchaseInvoice {
   supplier      Supplier              @relation(fields: [supplierId], references: [id], map: "PurchaseInvoice_supplierId_fkey")
   items         PurchaseInvoiceItem[]
   accountsPayable AccountsPayable[]
+  supplierPayment SupplierPayment[]
 
   @@index([supplierId], map: "PurchaseInvoice_supplierId_fkey")
   @@map("purchaseinvoice")
@@ -560,6 +568,8 @@ model SalesInvoice {
   invoiceNumber       Int                 @unique(map: "SalesInvoice_invoiceNumber_key") @default(autoincrement())
   date                DateTime            @default(now())
   totalAmount         Float
+  /// Saldo pendiente por cobrar de esta factura (monto financiado original menos abonos aplicados).
+  pendingBalance      Float               @default(0)
   /// Subtotal de la venta (sin impuestos) para reproducir el ticket exacto en reimpresión.
   subtotal            Float               @default(0)
   /// Impuesto (IVA) aplicado sobre el subtotal para reproducir el ticket exacto.
@@ -575,6 +585,7 @@ model SalesInvoice {
   user                User                @relation(fields: [userId], references: [id], map: "SalesInvoice_userId_fkey")
   salesInvoiceItem    SalesInvoiceItem[]
   creditInstallment   CreditInstallment[]
+  creditPayment       CreditPayment[]
 
   @@index([customerId], map: "SalesInvoice_customerId_fkey")
   @@index([sessionId], map: "SalesInvoice_sessionId_fkey")
@@ -665,8 +676,33 @@ model Supplier {
   purchaseInvoice PurchaseInvoice[]
   purchaseOrder   PurchaseOrder[]
   accountsPayable AccountsPayable[]
+  supplierPayment SupplierPayment[]
 
   @@map("supplier")
+}
+
+/// Historial de pagos/abonos a facturas de proveedor (Cuentas por Pagar) para
+/// trazabilidad. Los pagos en efectivo además generan un CashOutflow en caja.
+model SupplierPayment {
+  id            String              @id
+  invoiceId     String
+  supplierId    String
+  amount        Float
+  paymentMethod String
+  userId        String
+  sessionId     String?
+  notes         String?
+  createdAt     DateTime            @default(now())
+  purchaseInvoice PurchaseInvoice   @relation(fields: [invoiceId], references: [id], map: "SupplierPayment_invoiceId_fkey")
+  supplier      Supplier            @relation(fields: [supplierId], references: [id], map: "SupplierPayment_supplierId_fkey")
+  cashRegisterSession CashRegisterSession? @relation(fields: [sessionId], references: [id], map: "SupplierPayment_sessionId_fkey", onDelete: SetNull)
+  user          User                @relation(fields: [userId], references: [id], map: "SupplierPayment_userId_fkey")
+
+  @@index([invoiceId], map: "SupplierPayment_invoiceId_fkey")
+  @@index([supplierId], map: "SupplierPayment_supplierId_fkey")
+  @@index([sessionId], map: "SupplierPayment_sessionId_fkey")
+  @@index([userId], map: "SupplierPayment_userId_fkey")
+  @@map("supplierpayment")
 }
 
 model SystemSettings {
@@ -710,6 +746,11 @@ model SystemSettings {
   invoiceAlertDays          Int          @default(5)
   importProductsInDollars   Boolean      @default(false)
   creditFinancingEnabled    Boolean      @default(false)
+  
+  allowCreditSales          Boolean      @default(true)
+  enableRecipes             Boolean      @default(false)
+  enableBatchAndExpiration  Boolean      @default(false)
+  enableKitchenPrinter      Boolean      @default(false)
 
   @@map("systemsettings")
 }
@@ -727,6 +768,7 @@ model User {
   cashRegisterSession CashRegisterSession[]
   creditNote          CreditNote[]
   creditPayment       CreditPayment[]
+  supplierPayment     SupplierPayment[]
   importHistory       ImportHistory[]
   inventoryMovement   InventoryMovement[]
   notification        Notification[]

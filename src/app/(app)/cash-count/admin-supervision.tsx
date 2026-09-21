@@ -49,6 +49,7 @@ interface ActiveSessionRow {
   salesCard: number;
   salesUSD: number;
   salesAbonos: number;
+  salesAbonosCard: number;
   totalSales: number;
   totalReturns: number;
   closingTime?: string | null;
@@ -93,7 +94,7 @@ export default function AdminCashSupervision() {
   const expectedCash = arqueoSession
     ? (arqueoSession.initialAmount || 0) +
       (arqueoSession.salesCash || 0) +
-      (arqueoSession.salesAbonos || 0) -
+      ((arqueoSession.salesAbonos || 0) - (arqueoSession.salesAbonosCard || 0)) -
       expectedOutflows -
       (arqueoSession.totalReturns || 0)
     : 0;

@@ -42,9 +42,12 @@ interface Settings {
   licenseExpirationDate?: Date | null;
   licenseStatus?: string;
   invoiceAlertDays: number;
-  importProductsInDollars: boolean;
   creditFinancingEnabled: boolean;
   currency: string;
+  allowCreditSales: boolean;
+  enableRecipes: boolean;
+  enableBatchAndExpiration: boolean;
+  enableKitchenPrinter: boolean;
 }
 
 interface SettingsContextType {
@@ -88,9 +91,12 @@ const defaultSettings: Settings = {
   licenseExpirationDate: null,
   licenseStatus: "unregistered",
   invoiceAlertDays: 5,
-  importProductsInDollars: false,
   creditFinancingEnabled: false,
   currency: "NIO",
+  allowCreditSales: true,
+  enableRecipes: false,
+  enableBatchAndExpiration: false,
+  enableKitchenPrinter: false,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -150,6 +156,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         importProductsInDollars: dbSettings.importProductsInDollars || false,
         creditFinancingEnabled: dbSettings.creditFinancingEnabled || false,
         currency: dbSettings.currency || "NIO",
+        allowCreditSales: dbSettings.allowCreditSales ?? true,
+        enableRecipes: dbSettings.enableRecipes ?? false,
+        enableBatchAndExpiration: dbSettings.enableBatchAndExpiration ?? false,
+        enableKitchenPrinter: dbSettings.enableKitchenPrinter ?? false,
       }));
     }
     setSettingsLoaded(true);
@@ -191,6 +201,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         invoiceAlertDays: settings.invoiceAlertDays,
         importProductsInDollars: settings.importProductsInDollars,
         creditFinancingEnabled: settings.creditFinancingEnabled,
+        allowCreditSales: settings.allowCreditSales,
+        enableRecipes: settings.enableRecipes,
+        enableBatchAndExpiration: settings.enableBatchAndExpiration,
+        enableKitchenPrinter: settings.enableKitchenPrinter,
       };
 
       await updateSettings(dataToSave);

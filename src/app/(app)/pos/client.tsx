@@ -32,11 +32,12 @@ import { createSale, getLastSale } from '@/lib/actions/sales';
 import type { SaleFinancing } from '@/lib/actions/sales';
 import { buildReceiptDataFromInvoice } from '@/lib/ticket-data';
 import { printReceiptHtml, buildReceiptHtml, buildRetiroReceiptHtml, buildQuoteReceiptHtml } from '@/lib/print-iframe';
+import { printA4Html, buildA4ReceiptHtml } from '@/lib/print-a4';
 import { createQuote, getQuoteByNumber } from '@/lib/actions/quotations';
 import { searchOrCreateCustomer, getAllCustomers } from '@/lib/actions/customers';
 import { useBusinessMode } from '@/hooks/use-business-mode';
 import { getAvailableJewelry } from '@/lib/actions/jewelry-production';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CartTicket } from '@/components/pos/cart-ticket';
 import { ProductGrid, ProductGridHandle } from '@/components/pos/product-grid';
 import { PaymentGrid } from '@/components/pos/payment-grid';
@@ -273,7 +274,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
         const finishPrint = () => {
             if (cancelled) return;
-            window.print();
+            printA4Html(buildA4ReceiptHtml(saleForPrint));
             resetAfterPrint();
             setSaleForPrint(null);
         };
@@ -693,8 +694,21 @@ setViewMode('payment');
 
 const [isFinancingOpen, setIsFinancingOpen] = useState(false);
     const [pendingCredit, setPendingCredit] = useState<{ paid: number; change: number } | null>(null);
+    const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
+    const [adminAuthAction, setAdminAuthAction] = useState<'credit-note' | 'credit-sale'>('credit-note');
+    const [pendingAdminSale, setPendingAdminSale] = useState<{ paid: number; change: number; method: string; financing?: SaleFinancing } | null>(null);
 
-const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing) => {
+    const handleAdminAuthSuccess = () => {
+        setIsAdminAuthOpen(false);
+        if (adminAuthAction === 'credit-sale' && pendingAdminSale) {
+            const p = pendingAdminSale;
+            setPendingAdminSale(null);
+            handleSuccessfulPayment(p.paid, p.change, p.method, p.financing, true);
+        }
+        setAdminAuthAction('credit-note');
+    };
+
+const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false) => {
         if (!user || !activeSession) return;
 
 const effectiveCustomerName = activeSale?.customerName || customerName || 'Cliente General';
@@ -727,10 +741,22 @@ const effectiveCustomerName = activeSale?.customerName || customerName || 'Clien
 roundedTotal,
             paymentMethod as any,
             customerId,
-            financing || null
+            financing || null,
+            adminAuthorized || undefined
         );
 
         if (!result.success) {
+            if (result.requiresAdmin) {
+                setAdminAuthAction('credit-sale');
+                setPendingAdminSale({ paid: amountPaid, change, method: paymentMethod, financing });
+                setIsAdminAuthOpen(true);
+                toast({
+                    title: 'Autorización requerida',
+                    description: 'Venta a crédito excede límite o el cliente tiene pagos vencidos. Solicite autorización.',
+                    variant: 'destructive',
+                });
+                return;
+            }
             toast({ title: 'Error', description: result.error, variant: 'destructive' });
             return;
         }
@@ -1036,6 +1062,12 @@ return (
                 onConfirm={handleFinancingConfirm}
             />
 
+            <AdminAuthDialog
+                isOpen={isAdminAuthOpen}
+                onClose={() => setIsAdminAuthOpen(false)}
+                onSuccess={handleAdminAuthSuccess}
+            />
+
             <CreditPaymentDialog
                 isOpen={isAbonoOpen}
                 onClose={() => setIsAbonoOpen(false)}
@@ -1269,7 +1301,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
         const finishPrint = () => {
             if (cancelled) return;
-            window.print();
+            printA4Html(buildA4ReceiptHtml(saleForPrint));
             resetAfterPrint();
             setSaleForPrint(null);
         };
@@ -1299,6 +1331,10 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
     }, [saleForPrint, printAreaId, printFormat]);
     // Credit Note / Return States
     const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
+    // Para autorizar ventas a crédito que exceden límite / cliente en mora:
+    // se guarda el intento y se reintenta con autorización tras el diálogo.
+    const [pendingAdminSale, setPendingAdminSale] = useState<{ paid: number; change: number; method: string; financing?: SaleFinancing } | null>(null);
+    const [adminAuthAction, setAdminAuthAction] = useState<'credit-note' | 'credit-sale'>('credit-note');
     const [isCreditNoteOpen, setIsCreditNoteOpen] = useState(false);
     const [isOpenDrawerReceiptActive, setIsOpenDrawerReceiptActive] = useState(false);
     const [isSaveQuoteOpen, setIsSaveQuoteOpen] = useState(false);
@@ -1434,10 +1470,10 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         setViewMode('payment');
     };
 
-    const [isFinancingOpen, setIsFinancingOpen] = useState(false);
+const [isFinancingOpen, setIsFinancingOpen] = useState(false);
     const [pendingCredit, setPendingCredit] = useState<{ paid: number; change: number } | null>(null);
 
-    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing) => {
+    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false) => {
         if (!user || !activeSession) return;
 
         let customerId: string | undefined = undefined;
@@ -1468,10 +1504,24 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             roundedTotal,
             paymentMethod as any,
             customerId,
-            financing || null
+            financing || null,
+            adminAuthorized || undefined
         );
 
         if (!result.success) {
+            // Venta a crédito con cliente en mora o límite excedido: se pide
+            // autorización del Administrador y se reintenta automáticamente.
+            if (result.requiresAdmin) {
+                setPendingAdminSale({ paid: amountPaid, change, method: paymentMethod, financing });
+                setAdminAuthAction('credit-sale');
+                setIsAdminAuthOpen(true);
+                toast({
+                    title: 'Autorización requerida',
+                    description: 'Venta a crédito excede límite o el cliente tiene pagos vencidos. Solicite autorización.',
+                    variant: 'destructive',
+                });
+                return;
+            }
             toast({ title: 'Error', description: result.error, variant: 'destructive' });
             return;
         }
@@ -1554,11 +1604,19 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
 
     // Handler for Credit Note Button
     const handleCreditNoteClick = () => {
+        setAdminAuthAction('credit-note');
         setIsAdminAuthOpen(true);
     };
 
     const handleAdminAuthSuccess = () => {
         setIsAdminAuthOpen(false);
+        if (adminAuthAction === 'credit-sale' && pendingAdminSale) {
+            const p = pendingAdminSale;
+            setPendingAdminSale(null);
+            handleSuccessfulPayment(p.paid, p.change, p.method, p.financing, true);
+            return;
+        }
+        setAdminAuthAction('credit-note');
         setIsCreditNoteOpen(true);
     };
 

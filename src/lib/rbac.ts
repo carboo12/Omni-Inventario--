@@ -20,6 +20,14 @@ export const DISPATCHER_RESTRICTED_PREFIXES = [
 
 export const DISPATCHER_HOME = '/pos';
 
+// Rutas a las que un Cajero NO debe acceder. El cajero opera únicamente en su
+// flujo de venta/caja; el Dashboard expone métricas globales de la tienda.
+export const CASHIER_RESTRICTED_PREFIXES = [
+  '/dashboard',
+];
+
+export const CASHIER_HOME = '/pos';
+
 /** Indica si el rol actual puede acceder al pathname dado. */
 export function canAccessRoute(role: UserRole | undefined, pathname: string): boolean {
   if (!role) return true;
@@ -31,6 +39,10 @@ export function canAccessRoute(role: UserRole | undefined, pathname: string): bo
       return true;
     }
     return !DISPATCHER_RESTRICTED_PREFIXES.some((p) => pathname.startsWith(p));
+  }
+
+  if (role === 'cashier') {
+    return !CASHIER_RESTRICTED_PREFIXES.some((p) => pathname.startsWith(p));
   }
 
   return true;

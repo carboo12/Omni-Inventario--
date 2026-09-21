@@ -6,6 +6,7 @@ import { Customer } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "./audit";
 import { verifySession } from "@/lib/session";
+import { getPaymentBucket } from "@/lib/payment-method";
 
 const isAdminRole = (role?: string) => role === "admin" || role === "master-admin";
 
@@ -16,6 +17,7 @@ export async function createOrUpdateCustomer(data: {
     address?: string | null;
     hasCredit?: boolean;
     creditLimit?: number;
+    interestRate?: number;
     priceLevel?: number;
 }) {
     const trimmedName = data.fullName.trim();
@@ -124,22 +126,48 @@ export async function searchOrCreateCustomer(fullName: string, documentId?: stri
     return customer;
 }
 
-export async function updateCustomerCredit(id: string, data: { hasCredit: boolean, creditLimit: number }) {
+export async function updateCustomerCredit(id: string, data: { hasCredit: boolean, creditLimit: number, interestRate?: number }) {
     try {
+        // SEGURIDAD: solo Administrador puede habilitar crédito o modificar límites.
+        const session = await verifySession();
+        if (!session || !isAdminRole(session.role)) {
+            return { success: false, error: 'No autorizado. Solo el Administrador puede modificar la configuración de crédito.' };
+        }
+
         const customer = await db.customer.update({
             where: { id },
-            data
+            data: {
+                hasCredit: data.hasCredit,
+                creditLimit: Number(data.creditLimit) || 0,
+                ...(typeof data.interestRate === 'number' ? { interestRate: data.interestRate } : {}),
+            }
         });
+
+        // AUDIT
+        await recordAudit({
+            userId: session.id,
+            userName: session.name,
+            action: "UPDATE",
+            entity: "Customer",
+            entityId: customer.id,
+            description: `Modificó la configuración de crédito del cliente ${customer.fullName} (habilitado: ${customer.hasCredit}, límite: C$ ${customer.creditLimit})`,
+            metadata: { hasCredit: customer.hasCredit, creditLimit: customer.creditLimit }
+        });
+
         revalidatePath('/customers/credit');
+        revalidatePath('/customers');
         return { success: true, data: customer };
     } catch (error) {
         console.error('Error updating customer credit:', error);
-        return { success: false, error: 'Failed to update credit settings' };
+        return { success: false, error: 'No se pudo actualizar la configuración de crédito' };
     }
 }
 
 export async function getCustomerStatement(id: string) {
     try {
+        const session = await verifySession();
+        if (!session) return { success: false, error: 'No autorizado' };
+
         const customer = await db.customer.findUnique({
             where: { id },
             include: {
@@ -148,15 +176,106 @@ export async function getCustomerStatement(id: string) {
                     where: { paymentMethod: 'Credito' }
                 },
                 creditPayment: {
-                    orderBy: { timestamp: 'desc' }
+                    orderBy: { timestamp: 'desc' },
+                    include: { salesInvoice: { select: { invoiceNumber: true } } }
+                },
+                creditInstallment: {
+                    orderBy: { dueDate: 'asc' }
                 }
             }
         });
-        return { success: true, data: customer };
+        if (!customer) return { success: false, error: 'Cliente no encontrado' };
+
+        // Normaliza la forma a lo que consumen las UIs (sales / creditPayments).
+        const { salesInvoice, creditPayment, creditInstallment, ...rest } = customer;
+        return {
+            success: true,
+            data: {
+                ...rest,
+                sales: salesInvoice,
+                creditPayments: creditPayment,
+                installments: creditInstallment,
+            }
+        };
     } catch (error) {
         console.error('Error fetching customer statement:', error);
-        return { success: false, error: 'Failed to fetch statement' };
+        return { success: false, error: 'No se pudo obtener el estado de cuenta' };
     }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Aplica un abono de crédito FIFO: primero a las cuotas más antiguas (PENDING/
+ * OVERDUE) de todas las facturas del cliente y luego a los saldos pendientes de
+ * las facturas más antiguas. Reduce `SalesInvoice.pendingBalance` por factura y
+ * marca las cuotas como PAID cuando quedan cubiertas.
+ *
+ * Devuelve los trozos por factura para crear un CreditPayment por cada uno.
+ */
+async function applyPaymentToInvoices(tx: any, customerId: string, amount: number): Promise<{ invoiceId: string | null; amount: number }[]> {
+    const invoices = await tx.salesInvoice.findMany({
+        where: { customerId, status: 'COMPLETED', pendingBalance: { gt: 0.005 } },
+        orderBy: [{ date: 'asc' }, { id: 'asc' }],
+        select: { id: true, pendingBalance: true },
+    });
+    const installments = await tx.creditInstallment.findMany({
+        where: { customerId, status: { in: ['PENDING', 'OVERDUE'] } },
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+        include: { salesInvoice: { select: { id: true } } },
+    });
+
+    const remainingByInvoice: Record<string, number> = {};
+    for (const inv of invoices) remainingByInvoice[inv.id] = round2(Number(inv.pendingBalance) || 0);
+
+    const chunks: { invoiceId: string | null; amount: number }[] = [];
+    let remaining = round2(amount);
+
+    const takeFromInvoice = async (invoiceId: string, take: number): Promise<number> => {
+        const bal = remainingByInvoice[invoiceId] ?? 0;
+        if (bal <= 0.005 || take <= 0.005) return 0;
+        const applied = Math.min(bal, take);
+        await tx.salesInvoice.update({
+            where: { id: invoiceId },
+            data: { pendingBalance: { decrement: applied } },
+        });
+        remainingByInvoice[invoiceId] = round2(bal - applied);
+        return round2(applied);
+    };
+
+    // Pasada 1: cuotas más antiguas (FIFO). Marca PAID solo si quedan cubiertas.
+    for (const inst of installments) {
+        if (remaining <= 0.005) break;
+        const applied = await takeFromInvoice(inst.saleId, Math.min(Number(inst.amount) || 0, remaining));
+        if (applied <= 0.005) continue;
+        if (applied >= (Number(inst.amount) || 0) - 0.005) {
+            await tx.creditInstallment.update({ where: { id: inst.id }, data: { status: 'PAID' } });
+        }
+        chunks.push({ invoiceId: inst.saleId, amount: applied });
+        remaining = round2(remaining - applied);
+    }
+
+    // Pasada 2: saldos pendientes de las facturas (FIFO por fecha).
+    for (const inv of invoices) {
+        if (remaining <= 0.005) break;
+        const bal = remainingByInvoice[inv.id] ?? 0;
+        if (bal <= 0.005) continue;
+        const applied = round2(Math.min(bal, remaining));
+        await tx.salesInvoice.update({
+            where: { id: inv.id },
+            data: { pendingBalance: { decrement: applied } },
+        });
+        remainingByInvoice[inv.id] = round2(bal - applied);
+        chunks.push({ invoiceId: inv.id, amount: applied });
+        remaining = round2(remaining - applied);
+    }
+
+    // Residuo sin factura asociada (saldo histórico sin pendingBalance).
+    if (remaining > 0.005) {
+        chunks.push({ invoiceId: null, amount: remaining });
+    }
+
+    return chunks;
 }
 
 export async function recordCreditPayment(data: {
@@ -168,54 +287,80 @@ export async function recordCreditPayment(data: {
     notes?: string;
 }) {
     try {
-        return await db.$transaction(async (tx) => {
-            // 1. Create Payment Record
-            const payment = await tx.creditPayment.create({
-                data: {
-                    id: generateUUID(),
-                    customerId: data.customerId,
-                    amount: data.amount,
-                    paymentMethod: data.paymentMethod,
-                    userId: data.userId,
-                    notes: data.notes
-                } as any
-            });
+        const session = await verifySession();
+        if (!session) return { success: false, error: 'No autorizado' };
 
-            // 2. Update Customer Balance
+        const amount = round2(Number(data.amount));
+        if (!amount || amount <= 0) return { success: false, error: 'Monto inválido' };
+
+        const result = await db.$transaction(async (tx) => {
+            const customer = await tx.customer.findUnique({ where: { id: data.customerId } });
+            if (!customer) throw new Error('Cliente no encontrado');
+
+            // Protección server-side contra sobrepago (redondeo de 2 decimales).
+            if (amount > round2(Number(customer.currentBalance) || 0) + 0.005) {
+                throw new Error(`El monto excede el saldo pendiente del cliente (C$ ${Number(customer.currentBalance).toFixed(2)}).`);
+            }
+
+            const chunks = await applyPaymentToInvoices(tx, data.customerId, amount);
+
+            // 1. Crear registros de pago (un abono por factura a la que se aplica).
+            const paymentRows: any[] = [];
+            for (const chunk of chunks) {
+                if (chunk.amount <= 0.005) continue;
+                const payment = await tx.creditPayment.create({
+                    data: {
+                        id: generateUUID(),
+                        customerId: data.customerId,
+                        invoiceId: chunk.invoiceId,
+                        amount: chunk.amount,
+                        paymentMethod: data.paymentMethod,
+                        userId: data.userId,
+                        notes: data.notes
+                    } as any
+                });
+                paymentRows.push(payment);
+            }
+
+            // 2. Actualizar saldo del cliente.
             await tx.customer.update({
                 where: { id: data.customerId },
-                data: {
-                    currentBalance: { decrement: data.amount }
-                }
+                data: { currentBalance: { decrement: amount } }
             });
 
-            // 3. Update Session
+            // 3. Actualizar caja por método de pago: tarjeta/transferencia NO entra
+            //    al efectivo esperado (se cuenta en salesAbonosCard).
+            const bucket = getPaymentBucket(data.paymentMethod);
+            const sessionUpdate = bucket === 'card'
+                ? { salesAbonosCard: { increment: amount } }
+                : { salesAbonos: { increment: amount } };
             await tx.cashRegisterSession.update({
                 where: { id: data.sessionId },
-                data: {
-                    salesAbonos: { increment: data.amount }
-                }
+                data: sessionUpdate
             });
 
             // 4. AUDIT
-            const customer = await tx.customer.findUnique({ where: { id: data.customerId } });
             await recordAudit({
-                userId: data.userId,
-                userName: "Cajero", // We should get the real name if possible
+                userId: session.id,
+                userName: session.name,
                 action: "CREDIT_PAYMENT",
                 entity: "Customer",
                 entityId: data.customerId,
-                description: `Recibió abono de C$ ${data.amount} del cliente ${customer?.fullName}`,
-                metadata: { amount: data.amount, paymentMethod: data.paymentMethod }
+                description: `Recibió abono de C$ ${amount.toFixed(2)} del cliente ${customer.fullName} (${data.paymentMethod})`,
+                metadata: { amount, paymentMethod: data.paymentMethod, invoices: chunks.map(c => c.invoiceId) }
             });
 
-            revalidatePath('/customers/credit');
-            revalidatePath('/cash-count');
-            return { success: true, data: payment };
+            return { payment: paymentRows[0] || null, total: amount };
         });
+
+        revalidatePath('/customers/credit');
+        revalidatePath('/customers');
+        revalidatePath('/cash-count');
+        revalidatePath('/pos');
+        return { success: true, data: result };
     } catch (error) {
         console.error('Error recording credit payment:', error);
-        return { success: false, error: 'Failed to record payment' };
+        return { success: false, error: error instanceof Error ? error.message : 'No se pudo registrar el abono' };
     }
 }
 export async function deleteCustomer(id: string, userId: string, userName: string) {

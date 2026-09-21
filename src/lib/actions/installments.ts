@@ -2,11 +2,12 @@
 import db from '../db';
 import { verifySession } from '../session';
 
-const isAdminRole = (role?: string) => role === 'admin' || role === 'master-admin';
+const canViewOverdueCredits = (role?: string) =>
+    role === 'admin' || role === 'master-admin' || role === 'cashier';
 
 export async function getOverdueInstallments() {
     const session = await verifySession();
-    if (!session || !isAdminRole(session.role)) {
+    if (!session || !canViewOverdueCredits(session.role)) {
         return { success: false, error: 'Unauthorized' };
     }
 

@@ -18,7 +18,7 @@ import { LicenseGuard } from '@/components/auth/license-guard';
 import { InvoiceAlerts } from '@/components/purchases/invoice-alerts';
 import { AppLayout } from '@/components/layout/app-layout';
 import { useRouterState, useNavigate } from '@tanstack/react-router';
-import { canAccessRoute, DISPATCHER_HOME } from '@/lib/rbac';
+import { canAccessRoute, CASHIER_HOME, DISPATCHER_HOME } from '@/lib/rbac';
 
 // Registro de páginas: path -> componente. Se puebla en src/pages-registry.tsx.
 import { matchPage } from '@/lib/route-match';
@@ -36,7 +36,7 @@ function PageRenderer() {
 
   // RBAC: si el rol no puede acceder a la ruta, reorientar al home del rol.
   if (user && requiresAuth && !canAccessRoute(user.role, pathname)) {
-    const home = user.role === 'dispatcher' ? DISPATCHER_HOME : '/dashboard';
+    const home = user.role === 'dispatcher' ? DISPATCHER_HOME : user.role === 'cashier' ? CASHIER_HOME : '/dashboard';
     if (pathname !== home) {
       return <RedirectTo to={home} />;
     }

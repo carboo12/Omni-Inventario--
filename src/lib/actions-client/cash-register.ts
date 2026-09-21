@@ -22,6 +22,7 @@ export interface CashRegisterSessionData {
     actualUSD?: number | null;
     difference?: number | null;
     differenceUSD?: number | null;
+    salesAbonosCard?: number;
     status: 'open' | 'closed';
 }
 
@@ -33,6 +34,7 @@ export interface SessionSalesBreakdown {
     salesCredit: number;
     salesServices: number;
     salesAbonos: number;
+    salesAbonosCard: number;
     totalReturns: number;
 }
 
@@ -57,6 +59,7 @@ export interface CloseCashSessionReport {
     salesCredit: number;
     salesServices: number;
     salesAbonos: number;
+    salesAbonosCard: number;
     totalReturns: number;
     totalOutflows: number;
     initialAmount: number;

@@ -9,7 +9,7 @@ import { verifySession } from '../session';
 
 export async function getSuppliers() {
     const session = await verifySession();
-    if (!session) return { success: false, error: 'Unauthorized' };
+    if (!session) return { success: false, error: 'Sesión no autorizada' };
 
     try {
         const suppliers = await db.supplier.findMany({
@@ -18,13 +18,13 @@ export async function getSuppliers() {
         return { success: true, data: suppliers };
     } catch (error) {
         console.error('Error fetching suppliers:', error);
-        return { success: false, error: 'Failed to fetch suppliers' };
+        return { success: false, error: 'No se pudieron obtener los proveedores' };
     }
 }
 
 export async function getSupplierById(id: string) {
     const session = await verifySession();
-    if (!session) return { success: false, error: 'Unauthorized' };
+    if (!session) return { success: false, error: 'Sesión no autorizada' };
 
     try {
         const supplier = await db.supplier.findUnique({
@@ -33,13 +33,13 @@ export async function getSupplierById(id: string) {
         return { success: true, data: supplier };
     } catch (error) {
         console.error('Error fetching supplier:', error);
-        return { success: false, error: 'Failed to fetch supplier' };
+        return { success: false, error: 'No se pudo obtener el proveedor' };
     }
 }
 
 export async function createSupplier(data: Omit<Supplier, 'id'>) {
     const session = await verifySession();
-    if (!session) return { success: false, error: 'Unauthorized' };
+    if (!session) return { success: false, error: 'Sesión no autorizada' };
 
     try {
         const supplier = await db.supplier.create({
@@ -53,13 +53,13 @@ export async function createSupplier(data: Omit<Supplier, 'id'>) {
         return { success: true, data: supplier };
     } catch (error) {
         console.error('Error creating supplier:', error);
-        return { success: false, error: 'Failed to create supplier' };
+        return { success: false, error: 'No se pudo crear el proveedor' };
     }
 }
 
 export async function updateSupplier(id: string, data: Partial<Supplier>) {
     const session = await verifySession();
-    if (!session) return { success: false, error: 'Unauthorized' };
+    if (!session) return { success: false, error: 'Sesión no autorizada' };
 
     try {
         const supplier = await db.supplier.update({
@@ -71,13 +71,13 @@ export async function updateSupplier(id: string, data: Partial<Supplier>) {
         return { success: true, data: supplier };
     } catch (error) {
         console.error('Error updating supplier:', error);
-        return { success: false, error: 'Failed to update supplier' };
+        return { success: false, error: 'No se pudo actualizar el proveedor' };
     }
 }
 
 export async function deleteSupplier(id: string) {
     const session = await verifySession();
-    if (!session) return { success: false, error: 'Unauthorized' };
+    if (!session) return { success: false, error: 'Sesión no autorizada' };
 
     try {
         await db.supplier.delete({
@@ -88,6 +88,6 @@ export async function deleteSupplier(id: string) {
         return { success: true };
     } catch (error) {
         console.error('Error deleting supplier:', error);
-        return { success: false, error: 'Failed to delete supplier' };
+        return { success: false, error: 'No se pudo eliminar el proveedor' };
     }
 }

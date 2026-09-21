@@ -88,6 +88,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
         address: '',
         hasCredit: false,
         creditLimit: 0,
+        interestRate: 0,
         priceLevel: 1
     });
 
@@ -109,6 +110,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                 address: customer.address || '',
                 hasCredit: customer.hasCredit,
                 creditLimit: customer.creditLimit,
+                interestRate: (customer as any).interestRate || 0,
                 priceLevel: (customer as any).priceLevel || 1
             });
         } else {
@@ -120,6 +122,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                 address: '',
                 hasCredit: false,
                 creditLimit: 0,
+                interestRate: 0,
                 priceLevel: 1
             });
         }
@@ -378,15 +381,28 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                             {!isAdmin && <span className="text-xs text-muted-foreground">(Solo administrador)</span>}
                         </div>
                         {formData.hasCredit && (
-                            <div className="grid gap-2 bg-primary/5 p-3 rounded-lg border border-primary/10">
-                                <Label htmlFor="creditLimit">Límite de Crédito (C$)</Label>
-                                <Input 
-                                    id="creditLimit" 
-                                    type="number"
-                                    disabled={!isAdmin}
-                                    value={formData.creditLimit} 
-                                    onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})}
-                                />
+                            <div className="grid grid-cols-2 gap-3 bg-primary/5 p-3 rounded-lg border border-primary/10">
+                                <div>
+                                    <Label htmlFor="creditLimit">Límite Crédito (C$)</Label>
+                                    <Input 
+                                        id="creditLimit" 
+                                        type="number"
+                                        disabled={!isAdmin}
+                                        value={formData.creditLimit} 
+                                        onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})}
+                                    />
+                                </div>
+                                <div>
+                                    <Label htmlFor="interestRate">Tasa Interés (%)</Label>
+                                    <Input 
+                                        id="interestRate" 
+                                        type="number"
+                                        step="0.1"
+                                        disabled={!isAdmin}
+                                        value={formData.interestRate} 
+                                        onChange={(e) => setFormData({...formData, interestRate: parseFloat(e.target.value) || 0})}
+                                    />
+                                </div>
                             </div>
                         )}
                     </div>

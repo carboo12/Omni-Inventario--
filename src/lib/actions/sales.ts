@@ -1,4 +1,4 @@
-﻿'use server'
+'use server'
 import { generateUUID } from '@/lib/uuid';
 
 import db from '../db';
@@ -17,6 +17,13 @@ export interface SaleFinancing {
     interestRate: number;
 }
 
+/** Se lanza cuando una venta a crédito requiere autorización de Administrador
+ * (cliente en mora o límite de crédito excedido). El POS abre el diálogo de
+ * autorización y reintenta con `adminAuthorized = true`. */
+class CreditAuthRequiredError extends Error {
+    requiresAdmin = true;
+}
+
 export async function createSale(
     items: CartItem[],
     sessionId: string,
@@ -25,7 +32,8 @@ export async function createSale(
     totalAmount: number,
     paymentMethod: 'Efectivo' | 'Tarjeta' | 'Dolares' | 'Credito',
     customerId?: string,
-    financing?: SaleFinancing | null
+    financing?: SaleFinancing | null,
+    adminAuthorized?: boolean
 ) {
     console.log('--- DEBUG createSale ---');
     console.log('paymentMethod:', paymentMethod);
@@ -37,7 +45,7 @@ export async function createSale(
     try {
         const isJewelry = await BusinessGuard.isJewelryMode();
         if (isJewelry && !customerId) {
-            return { success: false, error: 'El cliente es obligatorio para realizar ventas en modo JoyerÃ­a.' };
+            return { success: false, error: 'El cliente es obligatorio para realizar ventas en modo Joyería.' };
         }
 
         const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -118,11 +126,13 @@ let remainingToSell = physicalUnits;
 
                 for (const invItem of inventoryItems) {
                     if (remainingToSell <= 0) break;
+                    if (invItem.quantity <= 0) continue;
 
                     const quantityToTake = Math.min(invItem.quantity, remainingToSell);
                     // El InventoryItem.quantity es Int; para fraccionarios redondeamos
-                    // hacia arriba el descuento fÃ­sico pero el Kardex guarda la fracciÃ³n real.
+                    // hacia arriba el descuento físico pero el Kardex guarda la fracción real.
                     const invQtyToTake = item.product.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
+                    if (invQtyToTake <= 0) continue;
 
                     // Update inventory item ATOMICALLY
                     // We use decrement to ensure safety against concurrent sales
@@ -266,12 +276,20 @@ salesInvoiceItem: {
 
             // Handle Credit Logic
             if (isCreditPayment(paymentMethod)) {
-                if (!customerId) throw new Error('Cliente es requerido para venta al crÃ©dito');
-                
-                const customer = await tx.customer.findUnique({ where: { id: customerId } });
-                if (!customer || !customer.hasCredit) throw new Error('El cliente no tiene habilitado el crÃ©dito');
+                if (!customerId) throw new Error('El cliente es obligatorio para la venta al crédito');
 
-                // Financiamiento por cuotas: se suma el interÃ©s al valor de la
+                const customer = await tx.customer.findUnique({
+                    where: { id: customerId },
+                    include: {
+                        creditInstallment: {
+                            where: { status: { in: ['PENDING', 'OVERDUE'] }, dueDate: { lt: new Date() } },
+                            select: { id: true },
+                        },
+                    },
+                });
+                if (!customer || !customer.hasCredit) throw new Error('El cliente no tiene habilitado el crédito');
+
+                // Financiamiento por cuotas: se suma el interés al valor de la
                 // venta y el saldo del cliente refleja el total financiado.
                 // Cada cuota es INMUTABLE (monto y fecha fijos) y se guarda en
                 // `creditinstallment` con estado PENDING.
@@ -281,15 +299,32 @@ salesInvoiceItem: {
                     financedTotal = Math.round((roundedTotalAmount + (roundedTotalAmount * interestRate) / 100) * 100) / 100;
                 }
 
-                // Check limit (optional, can be a warning or strict)
+                // Validación de riesgo de crédito: cliente en mora (isOverdue) o
+                // límite de crédito excedido bloquean la venta, salvo autorización
+                // explícita de un Administrador.
+                const overdueCount = customer.creditInstallment?.length || 0;
                 const newBalance = customer.currentBalance + financedTotal;
-                if (customer.creditLimit > 0 && newBalance > customer.creditLimit) {
-                    throw new Error(`LÃ­mite de crÃ©dito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`);
+                const exceedsLimit = customer.creditLimit > 0 && newBalance > customer.creditLimit;
+
+                if ((overdueCount > 0 || exceedsLimit) && !adminAuthorized) {
+                    const reason = overdueCount > 0
+                        ? 'El cliente tiene cuotas vencidas (mora).'
+                        : `Límite de crédito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`;
+                    throw new CreditAuthRequiredError(
+                        `${reason} Se requiere autorización del Administrador para completar la venta a crédito.`
+                    );
                 }
 
                 await tx.customer.update({
                     where: { id: customerId },
                     data: { currentBalance: { increment: financedTotal } }
+                });
+
+                // La factura queda con el saldo pendiente correspondiente al total
+                // financiado (con interés). Los abonos lo reducen por factura (FIFO).
+                await tx.salesInvoice.update({
+                    where: { id: salesInvoice.id },
+                    data: { pendingBalance: { increment: financedTotal } }
                 });
 
                 // Genera el plan de pagos inmutable en cuotas.
@@ -362,7 +397,7 @@ salesInvoiceItem: {
                 action: 'CREATE',
                 entity: 'Sale',
                 entityId: `FACTURA-${createdInvoiceNumber}`,
-                description: `RegistrÃ³ una venta por C$${roundedTotalAmount.toFixed(2)} (factura #${createdInvoiceNumber})`,
+                description: `Registró una venta por C$${roundedTotalAmount.toFixed(2)} (factura #${createdInvoiceNumber})`,
                 metadata: { invoiceNumber: createdInvoiceNumber, totalAmount: roundedTotalAmount, paymentMethod, items: items.length }
             });
         } catch (auditError) {
@@ -372,6 +407,9 @@ salesInvoiceItem: {
         return { success: true, invoiceNumber: createdInvoiceNumber };
     } catch (error) {
         console.error('Error creating sale:', error);
+        if (error instanceof CreditAuthRequiredError) {
+            return { success: false, error: error.message, requiresAdmin: true };
+        }
         return { success: false, error: error instanceof Error ? error.message : 'Error al procesar la venta' };
     }
 }

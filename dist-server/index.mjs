@@ -749,6 +749,7 @@ __export(notifications_exports, {
   checkUnclosedBoxes: () => checkUnclosedBoxes,
   createNotification: () => createNotification,
   getNotifications: () => getNotifications,
+  markAllAsRead: () => markAllAsRead,
   markAsRead: () => markAsRead,
   notifyExpiringProduct: () => notifyExpiringProduct,
   notifyLowStock: () => notifyLowStock,
@@ -786,6 +787,12 @@ async function getNotifications(userId) {
 async function markAsRead(id) {
   await db_default.notification.update({
     where: { id },
+    data: { read: true }
+  });
+}
+async function markAllAsRead() {
+  await db_default.notification.updateMany({
+    where: { read: false },
     data: { read: true }
   });
 }
@@ -1113,10 +1120,10 @@ async function computeSessionBreakdown(client, sessionId) {
     }),
     client.cashRegisterSession.findUnique({
       where: { id: sessionId },
-      select: { totalReturns: true, salesAbonos: true }
+      select: { totalReturns: true, salesAbonos: true, salesAbonosCard: true }
     })
   ]);
-  const round2 = (n) => Math.round(n * 100) / 100;
+  const round23 = (n) => Math.round(n * 100) / 100;
   let invoiceTotal = 0;
   let salesCash = 0;
   let salesCard = 0;
@@ -1144,13 +1151,14 @@ async function computeSessionBreakdown(client, sessionId) {
   }
   const salesServices = Number(servicesAgg._sum.amount) || 0;
   return {
-    totalSales: round2(invoiceTotal + salesServices),
-    salesCash: round2(salesCash + salesServices),
-    salesCard: round2(salesCard),
-    salesUSD: round2(salesUSD),
-    salesCredit: round2(salesCredit),
-    salesServices: round2(salesServices),
+    totalSales: round23(invoiceTotal + salesServices),
+    salesCash: round23(salesCash + salesServices),
+    salesCard: round23(salesCard),
+    salesUSD: round23(salesUSD),
+    salesCredit: round23(salesCredit),
+    salesServices: round23(salesServices),
     salesAbonos: Number(sessionRow?.salesAbonos) || 0,
+    salesAbonosCard: Number(sessionRow?.salesAbonosCard) || 0,
     totalReturns: Number(sessionRow?.totalReturns) || 0
   };
 }
@@ -1184,6 +1192,7 @@ async function getSessions() {
       salesServices: row.salesServices ?? 0,
       salesCredit: row.salesCredit ?? 0,
       salesAbonos: row.salesAbonos ?? 0,
+      salesAbonosCard: row.salesAbonosCard ?? 0,
       totalReturns: row.totalReturns,
       actualCash: row.actualCash,
       actualUSD: row.actualUSD ?? 0,
@@ -1223,7 +1232,7 @@ async function openSession(cashierId, cashierName, initialAmount, initialAmountU
 async function closeCashSession(sessionId, payload = {}) {
   const actualCash = Number(payload?.actualCash) || 0;
   const actualUSD = Number(payload?.actualUSD) || 0;
-  const round2 = (n) => Math.round(n * 100) / 100;
+  const round23 = (n) => Math.round(n * 100) / 100;
   const result = await db_default.$transaction(async (tx) => {
     const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
     if (!session) throw new Error("Session not found");
@@ -1233,11 +1242,12 @@ async function closeCashSession(sessionId, payload = {}) {
       _sum: { amount: true }
     });
     const totalOutflows = Number(outflowsAgg._sum.amount) || 0;
-    const expectedCash = round2((session.initialAmount || 0) + breakdown.salesCash + breakdown.salesAbonos - totalOutflows - breakdown.totalReturns);
-    const expectedUSD = round2((session.initialAmountUSD || 0) + breakdown.salesUSD);
+    const abonosCash = Math.round((breakdown.salesAbonos - breakdown.salesAbonosCard) * 100) / 100;
+    const expectedCash = round23((session.initialAmount || 0) + breakdown.salesCash + abonosCash - totalOutflows - breakdown.totalReturns);
+    const expectedUSD = round23((session.initialAmountUSD || 0) + breakdown.salesUSD);
     const finalAmount = expectedCash;
-    const difference = round2(actualCash - expectedCash);
-    const differenceUSD = round2(actualUSD - expectedUSD);
+    const difference = round23(actualCash - expectedCash);
+    const differenceUSD = round23(actualUSD - expectedUSD);
     const closingTime = (/* @__PURE__ */ new Date()).toISOString();
     const updated = await tx.cashRegisterSession.update({
       where: { id: sessionId },
@@ -1255,7 +1265,8 @@ async function closeCashSession(sessionId, payload = {}) {
         salesUSD: breakdown.salesUSD,
         salesCredit: breakdown.salesCredit,
         salesServices: breakdown.salesServices,
-        salesAbonos: breakdown.salesAbonos
+        salesAbonos: breakdown.salesAbonos,
+        salesAbonosCard: breakdown.salesAbonosCard
       }
     });
     const report = {
@@ -1277,6 +1288,7 @@ async function closeCashSession(sessionId, payload = {}) {
       salesCredit: breakdown.salesCredit,
       salesServices: breakdown.salesServices,
       salesAbonos: breakdown.salesAbonos,
+      salesAbonosCard: breakdown.salesAbonosCard,
       totalReturns: breakdown.totalReturns,
       totalOutflows
     };
@@ -1578,7 +1590,7 @@ var BusinessGuard = class {
 // src/lib/actions/collections.ts
 async function getCollections() {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   await BusinessGuard.assertMode("DISTRIBUIDORA");
   try {
     const payments = await db_default.collectionPayment.findMany({
@@ -1593,39 +1605,44 @@ async function getCollections() {
     return { success: true, data: payments };
   } catch (error) {
     console.error("Error fetching collections:", error);
-    return { success: false, error: "Failed to fetch collections" };
+    return { success: false, error: "No se pudieron obtener los cobros" };
   }
 }
 async function registerPayment(data) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   await BusinessGuard.assertMode("DISTRIBUIDORA");
   try {
-    const payment = await db_default.collectionPayment.create({
-      data: {
-        id: generateUUID(),
-        orderId: data.orderId,
-        amount: data.amount,
-        paymentMethod: data.paymentMethod,
-        userId: session.userId,
-        notes: data.notes
-      }
-    });
-    const order = await db_default.customerOrder.findUnique({ where: { id: data.orderId } });
-    if (order) {
-      const newPaid = order.paidAmount + data.amount;
+    const payment = await db_default.$transaction(async (tx) => {
+      const order = await tx.customerOrder.findUnique({ where: { id: data.orderId } });
+      if (!order) throw new Error("Pedido no encontrado");
+      const newPaid = Math.round((order.paidAmount + data.amount) * 100) / 100;
       const newStatus = newPaid >= order.totalAmount ? "DELIVERED" : order.status;
-      await db_default.customerOrder.update({
+      const created = await tx.collectionPayment.create({
+        data: {
+          id: generateUUID(),
+          orderId: data.orderId,
+          amount: data.amount,
+          paymentMethod: data.paymentMethod,
+          userId: session.userId,
+          notes: data.notes
+        }
+      });
+      await tx.customerOrder.update({
         where: { id: data.orderId },
         data: { paidAmount: newPaid, status: newStatus }
       });
-    }
+      return created;
+    });
     revalidatePath("/collections");
     revalidatePath(`/orders/${data.orderId}`);
     return { success: true, data: payment };
   } catch (error) {
     console.error("Error registering payment:", error);
-    return { success: false, error: "Failed to register payment" };
+    if (error instanceof Error && error.message === "Pedido no encontrado") {
+      return { success: false, error: "El pedido no fue encontrado" };
+    }
+    return { success: false, error: "No se pudo registrar el cobro" };
   }
 }
 
@@ -1702,6 +1719,31 @@ async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId) {
         data: { status: "REFUNDED" }
         // Or PARTIALLY_REFUNDED if we support that later
       });
+      if (isCreditPayment(invoice.paymentMethod) && invoice.customerId && refundAmount > 0) {
+        await tx.salesInvoice.update({
+          where: { id: invoice.id },
+          data: { pendingBalance: { decrement: refundAmount } }
+        });
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: { currentBalance: { decrement: refundAmount } }
+        });
+        const openInst = await tx.creditInstallment.findMany({
+          where: { saleId: invoice.id, status: { in: ["PENDING", "OVERDUE"] } },
+          orderBy: { dueDate: "asc" },
+          select: { id: true, amount: true }
+        });
+        let rem = refundAmount;
+        for (const i of openInst) {
+          if (rem <= 5e-3) break;
+          if (Number(i.amount) <= rem + 5e-3) {
+            await tx.creditInstallment.update({ where: { id: i.id }, data: { status: "PAID" } });
+            rem -= Number(i.amount);
+          } else {
+            break;
+          }
+        }
+      }
       for (const itemReturn of itemsToReturn) {
         const inventoryItem = await tx.inventoryItem.findFirst({
           where: { productId: itemReturn.productId }
@@ -2148,19 +2190,39 @@ async function searchOrCreateCustomer(fullName, documentId, phone) {
 }
 async function updateCustomerCredit(id, data) {
   try {
+    const session = await verifySession();
+    if (!session || !isAdminRole(session.role)) {
+      return { success: false, error: "No autorizado. Solo el Administrador puede modificar la configuraci\xF3n de cr\xE9dito." };
+    }
     const customer = await db_default.customer.update({
       where: { id },
-      data
+      data: {
+        hasCredit: data.hasCredit,
+        creditLimit: Number(data.creditLimit) || 0,
+        ...typeof data.interestRate === "number" ? { interestRate: data.interestRate } : {}
+      }
+    });
+    await recordAudit({
+      userId: session.id,
+      userName: session.name,
+      action: "UPDATE",
+      entity: "Customer",
+      entityId: customer.id,
+      description: `Modific\xF3 la configuraci\xF3n de cr\xE9dito del cliente ${customer.fullName} (habilitado: ${customer.hasCredit}, l\xEDmite: C$ ${customer.creditLimit})`,
+      metadata: { hasCredit: customer.hasCredit, creditLimit: customer.creditLimit }
     });
     revalidatePath("/customers/credit");
+    revalidatePath("/customers");
     return { success: true, data: customer };
   } catch (error) {
     console.error("Error updating customer credit:", error);
-    return { success: false, error: "Failed to update credit settings" };
+    return { success: false, error: "No se pudo actualizar la configuraci\xF3n de cr\xE9dito" };
   }
 }
 async function getCustomerStatement(id) {
   try {
+    const session = await verifySession();
+    if (!session) return { success: false, error: "No autorizado" };
     const customer = await db_default.customer.findUnique({
       where: { id },
       include: {
@@ -2169,59 +2231,143 @@ async function getCustomerStatement(id) {
           where: { paymentMethod: "Credito" }
         },
         creditPayment: {
-          orderBy: { timestamp: "desc" }
+          orderBy: { timestamp: "desc" },
+          include: { salesInvoice: { select: { invoiceNumber: true } } }
+        },
+        creditInstallment: {
+          orderBy: { dueDate: "asc" }
         }
       }
     });
-    return { success: true, data: customer };
+    if (!customer) return { success: false, error: "Cliente no encontrado" };
+    const { salesInvoice, creditPayment, creditInstallment, ...rest } = customer;
+    return {
+      success: true,
+      data: {
+        ...rest,
+        sales: salesInvoice,
+        creditPayments: creditPayment,
+        installments: creditInstallment
+      }
+    };
   } catch (error) {
     console.error("Error fetching customer statement:", error);
-    return { success: false, error: "Failed to fetch statement" };
+    return { success: false, error: "No se pudo obtener el estado de cuenta" };
   }
+}
+var round2 = (n) => Math.round(n * 100) / 100;
+async function applyPaymentToInvoices(tx, customerId, amount) {
+  const invoices = await tx.salesInvoice.findMany({
+    where: { customerId, status: "COMPLETED", pendingBalance: { gt: 5e-3 } },
+    orderBy: [{ date: "asc" }, { id: "asc" }],
+    select: { id: true, pendingBalance: true }
+  });
+  const installments = await tx.creditInstallment.findMany({
+    where: { customerId, status: { in: ["PENDING", "OVERDUE"] } },
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    include: { salesInvoice: { select: { id: true } } }
+  });
+  const remainingByInvoice = {};
+  for (const inv of invoices) remainingByInvoice[inv.id] = round2(Number(inv.pendingBalance) || 0);
+  const chunks = [];
+  let remaining = round2(amount);
+  const takeFromInvoice = async (invoiceId, take) => {
+    const bal = remainingByInvoice[invoiceId] ?? 0;
+    if (bal <= 5e-3 || take <= 5e-3) return 0;
+    const applied = Math.min(bal, take);
+    await tx.salesInvoice.update({
+      where: { id: invoiceId },
+      data: { pendingBalance: { decrement: applied } }
+    });
+    remainingByInvoice[invoiceId] = round2(bal - applied);
+    return round2(applied);
+  };
+  for (const inst of installments) {
+    if (remaining <= 5e-3) break;
+    const applied = await takeFromInvoice(inst.saleId, Math.min(Number(inst.amount) || 0, remaining));
+    if (applied <= 5e-3) continue;
+    if (applied >= (Number(inst.amount) || 0) - 5e-3) {
+      await tx.creditInstallment.update({ where: { id: inst.id }, data: { status: "PAID" } });
+    }
+    chunks.push({ invoiceId: inst.saleId, amount: applied });
+    remaining = round2(remaining - applied);
+  }
+  for (const inv of invoices) {
+    if (remaining <= 5e-3) break;
+    const bal = remainingByInvoice[inv.id] ?? 0;
+    if (bal <= 5e-3) continue;
+    const applied = round2(Math.min(bal, remaining));
+    await tx.salesInvoice.update({
+      where: { id: inv.id },
+      data: { pendingBalance: { decrement: applied } }
+    });
+    remainingByInvoice[inv.id] = round2(bal - applied);
+    chunks.push({ invoiceId: inv.id, amount: applied });
+    remaining = round2(remaining - applied);
+  }
+  if (remaining > 5e-3) {
+    chunks.push({ invoiceId: null, amount: remaining });
+  }
+  return chunks;
 }
 async function recordCreditPayment(data) {
   try {
-    return await db_default.$transaction(async (tx) => {
-      const payment = await tx.creditPayment.create({
-        data: {
-          id: generateUUID(),
-          customerId: data.customerId,
-          amount: data.amount,
-          paymentMethod: data.paymentMethod,
-          userId: data.userId,
-          notes: data.notes
-        }
-      });
+    const session = await verifySession();
+    if (!session) return { success: false, error: "No autorizado" };
+    const amount = round2(Number(data.amount));
+    if (!amount || amount <= 0) return { success: false, error: "Monto inv\xE1lido" };
+    const result = await db_default.$transaction(async (tx) => {
+      const customer = await tx.customer.findUnique({ where: { id: data.customerId } });
+      if (!customer) throw new Error("Cliente no encontrado");
+      if (amount > round2(Number(customer.currentBalance) || 0) + 5e-3) {
+        throw new Error(`El monto excede el saldo pendiente del cliente (C$ ${Number(customer.currentBalance).toFixed(2)}).`);
+      }
+      const chunks = await applyPaymentToInvoices(tx, data.customerId, amount);
+      const paymentRows = [];
+      for (const chunk of chunks) {
+        if (chunk.amount <= 5e-3) continue;
+        const payment = await tx.creditPayment.create({
+          data: {
+            id: generateUUID(),
+            customerId: data.customerId,
+            invoiceId: chunk.invoiceId,
+            amount: chunk.amount,
+            paymentMethod: data.paymentMethod,
+            userId: data.userId,
+            notes: data.notes
+          }
+        });
+        paymentRows.push(payment);
+      }
       await tx.customer.update({
         where: { id: data.customerId },
-        data: {
-          currentBalance: { decrement: data.amount }
-        }
+        data: { currentBalance: { decrement: amount } }
       });
+      const bucket = getPaymentBucket(data.paymentMethod);
+      const sessionUpdate = bucket === "card" ? { salesAbonosCard: { increment: amount } } : { salesAbonos: { increment: amount } };
       await tx.cashRegisterSession.update({
         where: { id: data.sessionId },
-        data: {
-          salesAbonos: { increment: data.amount }
-        }
+        data: sessionUpdate
       });
-      const customer = await tx.customer.findUnique({ where: { id: data.customerId } });
       await recordAudit({
-        userId: data.userId,
-        userName: "Cajero",
-        // We should get the real name if possible
+        userId: session.id,
+        userName: session.name,
         action: "CREDIT_PAYMENT",
         entity: "Customer",
         entityId: data.customerId,
-        description: `Recibi\xF3 abono de C$ ${data.amount} del cliente ${customer?.fullName}`,
-        metadata: { amount: data.amount, paymentMethod: data.paymentMethod }
+        description: `Recibi\xF3 abono de C$ ${amount.toFixed(2)} del cliente ${customer.fullName} (${data.paymentMethod})`,
+        metadata: { amount, paymentMethod: data.paymentMethod, invoices: chunks.map((c) => c.invoiceId) }
       });
-      revalidatePath("/customers/credit");
-      revalidatePath("/cash-count");
-      return { success: true, data: payment };
+      return { payment: paymentRows[0] || null, total: amount };
     });
+    revalidatePath("/customers/credit");
+    revalidatePath("/customers");
+    revalidatePath("/cash-count");
+    revalidatePath("/pos");
+    return { success: true, data: result };
   } catch (error) {
     console.error("Error recording credit payment:", error);
-    return { success: false, error: "Failed to record payment" };
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo registrar el abono" };
   }
 }
 async function deleteCustomer(id, userId, userName) {
@@ -3338,10 +3484,10 @@ __export(installments_exports, {
   getOverdueInstallments: () => getOverdueInstallments
 });
 init_db();
-var isAdminRole2 = (role) => role === "admin" || role === "master-admin";
+var canViewOverdueCredits = (role) => role === "admin" || role === "master-admin" || role === "cashier";
 async function getOverdueInstallments() {
   const session = await verifySession();
-  if (!session || !isAdminRole2(session.role)) {
+  if (!session || !canViewOverdueCredits(session.role)) {
     return { success: false, error: "Unauthorized" };
   }
   try {
@@ -5872,12 +6018,12 @@ async function getPurchaseInvoices() {
   try {
     const invoices = await db_default.purchaseInvoice.findMany({
       orderBy: { date: "desc" },
-      include: { supplier: true, items: true, accountsPayable: true }
+      include: { supplier: true, items: true, accountsPayable: true, supplierPayment: true }
     });
     return { success: true, data: invoices };
   } catch (error) {
     console.error("Error fetching purchase invoices:", error);
-    return { success: false, error: "Failed to fetch purchase invoices" };
+    return { success: false, error: "No se pudieron obtener las facturas de compra" };
   }
 }
 async function getPendingInvoicesAlerts(alertDays) {
@@ -5899,19 +6045,19 @@ async function getPendingInvoicesAlerts(alertDays) {
     return { success: true, data: alerts };
   } catch (error) {
     console.error("Error fetching pending invoice alerts:", error);
-    return { success: false, error: "Failed to fetch alerts" };
+    return { success: false, error: "No se pudieron obtener las alertas" };
   }
 }
 async function getPurchaseInvoiceById(id) {
   try {
     const invoice = await db_default.purchaseInvoice.findUnique({
       where: { id },
-      include: { supplier: true, items: true, accountsPayable: true }
+      include: { supplier: true, items: true, accountsPayable: true, supplierPayment: true }
     });
     return { success: true, data: invoice };
   } catch (error) {
     console.error("Error fetching purchase invoice:", error);
-    return { success: false, error: "Failed to fetch purchase invoice" };
+    return { success: false, error: "No se pudo obtener la factura de compra" };
   }
 }
 async function createPurchaseInvoice(data) {
@@ -5923,7 +6069,7 @@ async function createPurchaseInvoice(data) {
     return { success: true, data: invoice };
   } catch (error) {
     console.error("Error creating purchase invoice:", error);
-    return { success: false, error: "Failed to create purchase invoice" };
+    return { success: false, error: "No se pudo crear la factura de compra" };
   }
 }
 async function updatePurchaseInvoice(id, data) {
@@ -5936,7 +6082,7 @@ async function updatePurchaseInvoice(id, data) {
     return { success: true, data: invoice };
   } catch (error) {
     console.error("Error updating purchase invoice:", error);
-    return { success: false, error: "Failed to update purchase invoice" };
+    return { success: false, error: "No se pudo actualizar la factura de compra" };
   }
 }
 async function deletePurchaseInvoice(id) {
@@ -5948,13 +6094,14 @@ async function deletePurchaseInvoice(id) {
     return { success: true };
   } catch (error) {
     console.error("Error deleting purchase invoice:", error);
-    return { success: false, error: "Failed to delete purchase invoice" };
+    return { success: false, error: "No se pudo eliminar la factura de compra" };
   }
 }
 async function createPurchaseInvoiceWithItems(invoiceData, items, userId) {
   try {
     return await db_default.$transaction(async (tx) => {
-      const paymentType = invoiceData.paymentType || invoiceData.purchaseType === "CREDITO" ? "CREDIT" : "CASH";
+      const isCredit = invoiceData.paymentType === "CREDIT" || invoiceData.purchaseType === "CREDITO" || String(invoiceData.paymentType || "").toUpperCase() === "CREDITO";
+      const paymentType = isCredit ? "CREDIT" : "CASH";
       const invoice = await tx.purchaseInvoice.create({
         data: {
           id: generateUUID(),
@@ -6211,20 +6358,25 @@ async function createPurchaseInvoiceWithItems(invoiceData, items, userId) {
     });
   } catch (error) {
     console.error("Error creating purchase invoice with items:", error);
-    return { success: false, error: "Failed to create purchase invoice with items" };
+    return { success: false, error: "No se pudo registrar la compra con sus art\xEDculos" };
   }
 }
 async function recordSupplierPayment(data) {
   try {
-    const amount = Number(data.amount);
-    if (!data.invoiceId || !amount || amount <= 0) {
-      return { success: false, error: "Monto o factura inv\xE1lidos." };
+    if (!data.invoiceId) return { success: false, error: "Factura inv\xE1lida." };
+    const amount = Math.round((Number(data.amount) || 0) * 100) / 100;
+    if (!amount || amount <= 0) {
+      return { success: false, error: "Monto inv\xE1lido." };
     }
     const result = await db_default.$transaction(async (tx) => {
       const invoice = await tx.purchaseInvoice.findUnique({ where: { id: data.invoiceId } });
       if (!invoice) throw new Error("Factura de compra no encontrada");
-      const newPaid = (invoice.paidAmount || 0) + amount;
-      const remaining = invoice.totalAmount - newPaid;
+      const remainingOnInvoice = Math.round((Number(invoice.totalAmount) - Number(invoice.paidAmount) || 0) * 100) / 100;
+      if (amount > remainingOnInvoice + 5e-3) {
+        throw new Error(`El monto excede el saldo pendiente de la factura (C$ ${remainingOnInvoice.toFixed(2)}).`);
+      }
+      const newPaid = Math.round((Number(invoice.paidAmount) || 0) * 100) / 100 + amount;
+      const remaining = Math.round((Number(invoice.totalAmount) - newPaid) * 100) / 100;
       const status = remaining <= 0 ? "Pagada" : newPaid > 0 ? "Pagada Parcialmente" : "Pendiente";
       await tx.purchaseInvoice.update({
         where: { id: invoice.id },
@@ -6232,8 +6384,8 @@ async function recordSupplierPayment(data) {
       });
       const ap = await tx.accountsPayable.findUnique({ where: { invoiceId: invoice.id } });
       if (ap) {
-        const apNewPaid = (ap.paidAmount || 0) + amount;
-        const apRemaining = ap.amount - apNewPaid;
+        const apNewPaid = Math.round((Number(ap.paidAmount) || 0) * 100) / 100 + amount;
+        const apRemaining = Math.round((Number(ap.amount) - apNewPaid) * 100) / 100;
         await tx.accountsPayable.update({
           where: { id: ap.id },
           data: {
@@ -6242,7 +6394,19 @@ async function recordSupplierPayment(data) {
           }
         });
       }
-      if (data.sessionId && /efectivo/i.test(data.paymentMethod)) {
+      await tx.supplierPayment.create({
+        data: {
+          id: generateUUID(),
+          invoiceId: invoice.id,
+          supplierId: invoice.supplierId,
+          amount,
+          paymentMethod: data.paymentMethod,
+          userId: data.userId || "system",
+          sessionId: data.sessionId || null,
+          notes: data.notes || null
+        }
+      });
+      if (data.sessionId && /efectivo|cash/i.test(data.paymentMethod)) {
         const session = await tx.cashRegisterSession.findUnique({ where: { id: data.sessionId } });
         if (session && session.status === "open") {
           await tx.cashOutflow.create({
@@ -6259,10 +6423,11 @@ async function recordSupplierPayment(data) {
     });
     revalidatePath("/purchases");
     revalidatePath("/dashboard");
+    revalidatePath("/cash-count");
     return { success: true, data: result };
   } catch (error) {
     console.error("Error recording supplier payment:", error);
-    return { success: false, error: error?.message || "Failed to record supplier payment" };
+    return { success: false, error: error?.message || "No se pudo registrar el pago al proveedor" };
   }
 }
 
@@ -6560,11 +6725,22 @@ async function cancelQuote(quoteId) {
 // src/lib/actions/reports.ts
 var reports_exports = {};
 __export(reports_exports, {
+  getAgingReport: () => getAgingReport,
   getCashClosingReport: () => getCashClosingReport,
   getCreditPerformanceData: () => getCreditPerformanceData,
   getExpiringProducts: () => getExpiringProducts,
   getLowStockInventory: () => getLowStockInventory,
   getPriceLevelAnalysis: () => getPriceLevelAnalysis,
+  getReportCashiers: () => getReportCashiers,
+  getReportDeadStock: () => getReportDeadStock,
+  getReportFilters: () => getReportFilters,
+  getReportPaymentMethods: () => getReportPaymentMethods,
+  getReportProfitMargin: () => getReportProfitMargin,
+  getReportSalesByCategory: () => getReportSalesByCategory,
+  getReportSalesByHour: () => getReportSalesByHour,
+  getReportSalesByProduct: () => getReportSalesByProduct,
+  getReportSummary: () => getReportSummary,
+  getReportTopSelling: () => getReportTopSelling,
   getSalesData: () => getSalesData,
   getTopProducts: () => getTopProducts
 });
@@ -6873,6 +7049,772 @@ async function getPriceLevelAnalysis(startDate, endDate) {
     }
   };
 }
+function parseDate(v) {
+  if (!v) return void 0;
+  if (v instanceof Date) return v;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? void 0 : d;
+}
+function endOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+function buildInvoiceRange(from, to) {
+  let start = from;
+  let end = to;
+  if (!start) {
+    const now = /* @__PURE__ */ new Date();
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  if (!end) end = /* @__PURE__ */ new Date();
+  if (end < start) end = start;
+  return { start, end: endOfDay(end) };
+}
+async function getExchangeRateValue() {
+  const settings = await db_default.systemSettings.findFirst({ select: { exchangeRate: true } });
+  const rate = parseFloat(settings?.exchangeRate || "36.5");
+  return isNaN(rate) || rate <= 0 ? 36.5 : rate;
+}
+async function fetchInvoicesInRange(from, to, includeUser = true) {
+  const where = { status: "COMPLETED" };
+  if (from || to) {
+    where.date = {};
+    if (from) where.date.gte = from;
+    if (to) where.date.lte = to;
+  }
+  return db_default.salesInvoice.findMany({
+    where,
+    select: {
+      id: true,
+      invoiceNumber: true,
+      date: true,
+      totalAmount: true,
+      paymentMethod: true,
+      userId: true,
+      user: includeUser ? { select: { id: true, name: true, role: true, assignedLocation: true } } : void 0,
+      salesInvoiceItem: {
+        select: {
+          productId: true,
+          productName: true,
+          quantity: true,
+          unitPrice: true,
+          totalPrice: true,
+          presentationFactor: true,
+          baseUnit: true,
+          bulkUnit: true,
+          variantId: true,
+          isEncargo: true,
+          priceLevel: true
+        }
+      }
+    }
+  });
+}
+async function getReportProductCatalog() {
+  const [products, categories] = await Promise.all([
+    db_default.product.findMany({
+      select: {
+        id: true,
+        name: true,
+        barcode: true,
+        costPriceNIO: true,
+        categoryId: true,
+        category: true,
+        inventoryType: true,
+        hasVariants: true
+      }
+    }),
+    db_default.category.findMany({ select: { id: true, name: true, parentId: true, inventoryType: true } })
+  ]);
+  const catById = new Map(categories.map((c) => [c.id, c]));
+  const catByName = new Map(categories.map((c) => [c.name, c]));
+  const productById = /* @__PURE__ */ new Map();
+  for (const p of products) {
+    let cat = p.categoryId ? catById.get(p.categoryId) : void 0;
+    if (!cat && p.category) cat = catByName.get(p.category) || void 0;
+    productById.set(p.id, {
+      id: p.id,
+      name: p.name,
+      barcode: p.barcode || "",
+      cost: p.costPriceNIO || 0,
+      inventoryType: p.inventoryType,
+      hasVariants: p.hasVariants,
+      categoryId: cat?.id || null,
+      categoryName: cat?.name || p.category || "Sin categor\xEDa",
+      parentId: cat?.parentId || null
+    });
+  }
+  return { productById, categories };
+}
+function unitCountFor(item) {
+  const q = Number(item.quantity) || 0;
+  if (q > 0) return Math.abs(q);
+  const unitPrice = Number(item.unitPrice) || 0;
+  const total = Number(item.totalPrice) || 0;
+  if (unitPrice > 0 && total > 0) return Math.abs(total / unitPrice);
+  return 0;
+}
+function safePercent(num, den) {
+  return den > 0 ? num / den * 100 : 0;
+}
+function round22(n) {
+  return Math.round(n * 100) / 100;
+}
+async function getReportSummary(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const rate = await getExchangeRateValue();
+  const { productById } = await getReportProductCatalog();
+  let totalRevenue = 0;
+  let totalUnits = 0;
+  let totalCost = 0;
+  for (const inv of invoices) {
+    totalRevenue += Number(inv.totalAmount) || 0;
+    for (const item of inv.salesInvoiceItem || []) {
+      const units = unitCountFor(item);
+      totalUnits += units;
+      totalCost += (productById.get(item.productId)?.cost || 0) * units;
+    }
+  }
+  const totalProfit = totalRevenue - totalCost;
+  const count = invoices.length;
+  return {
+    totalRevenue: round22(totalRevenue),
+    totalUnits: round22(totalUnits),
+    totalCost: round22(totalCost),
+    totalProfit: round22(totalProfit),
+    marginPct: safePercent(totalProfit, totalRevenue),
+    invoiceCount: count,
+    avgTicket: count > 0 ? round22(totalRevenue / count) : 0,
+    revenueUSD: round22(totalRevenue / rate),
+    profitUSD: round22(totalProfit / rate),
+    exchangeRate: rate
+  };
+}
+async function getReportSalesByCategory(from, to, categoryId) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const { productById } = await getReportProductCatalog();
+  const agg = /* @__PURE__ */ new Map();
+  const ensure = (key, name, parentId, inventoryType) => {
+    let row = agg.get(key);
+    if (!row) {
+      row = { categoryId: key, categoryName: name, parentId, inventoryType, units: 0, revenue: 0, cost: 0, set: /* @__PURE__ */ new Set() };
+      agg.set(key, row);
+    }
+    return row;
+  };
+  for (const inv of invoices) {
+    for (const item of inv.salesInvoiceItem || []) {
+      const p = productById.get(item.productId);
+      const units = unitCountFor(item);
+      const revenue = Number(item.totalPrice) || 0;
+      const cost = (p?.cost || 0) * units;
+      const key = p?.categoryId || (p?.categoryName ? `name:${p.categoryName}` : "sin-categoria");
+      const row = ensure(key, p?.categoryName || "Sin categor\xEDa", p?.parentId || null, p?.inventoryType || "");
+      row.units += units;
+      row.revenue += revenue;
+      row.cost += cost;
+      row.set.add(inv.id);
+    }
+  }
+  let rows = Array.from(agg.values()).map((r) => ({
+    categoryId: r.categoryId,
+    categoryName: r.categoryName,
+    parentId: r.parentId,
+    inventoryType: r.inventoryType,
+    units: round22(r.units),
+    revenue: round22(r.revenue),
+    cost: round22(r.cost),
+    profit: round22(r.revenue - r.cost),
+    marginPct: safePercent(r.revenue - r.cost, r.revenue),
+    invoiceCount: r.set.size
+  })).sort((a, b) => b.revenue - a.revenue);
+  if (categoryId && categoryId !== "all") {
+    rows = rows.filter((r) => r.categoryId === categoryId || r.parentId === categoryId);
+  }
+  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+  rows = rows.map((r) => ({ ...r, sharePct: safePercent(r.revenue, totalRevenue) }));
+  return {
+    rows,
+    subcategories: rows.filter((r) => r.parentId),
+    total: {
+      units: round22(rows.reduce((s, r) => s + r.units, 0)),
+      revenue: round22(totalRevenue),
+      cost: round22(rows.reduce((s, r) => s + r.cost, 0)),
+      profit: round22(rows.reduce((s, r) => s + r.profit, 0)),
+      marginPct: safePercent(rows.reduce((s, r) => s + r.profit, 0), totalRevenue),
+      invoiceCount: new Set(invoices.map((i) => i.id)).size
+    }
+  };
+}
+async function getReportSalesByProduct(from, to, categoryId, location) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const rate = await getExchangeRateValue();
+  const { productById, categories } = await getReportProductCatalog();
+  const organized = categories.filter((c) => !c.parentId);
+  const agg = /* @__PURE__ */ new Map();
+  const locations = /* @__PURE__ */ new Set();
+  const ensureItem = (productId, fallbackName) => {
+    const key = productId || `name:${fallbackName}`;
+    let row = agg.get(key);
+    if (!row) {
+      const p = productId ? productById.get(productId) : void 0;
+      row = {
+        productId: key,
+        productName: p?.name || fallbackName,
+        barcode: p?.barcode || "",
+        categoryId: p?.categoryId || null,
+        categoryName: p?.categoryName || "Sin categor\xEDa",
+        units: 0,
+        revenue: 0,
+        cost: 0,
+        invoices: 0
+      };
+      agg.set(key, row);
+    }
+    return row;
+  };
+  for (const inv of invoices) {
+    const loc = inv.user?.assignedLocation || "Sin ubicaci\xF3n";
+    locations.add(loc);
+    if (location && location !== "all" && loc !== location) continue;
+    for (const item of inv.salesInvoiceItem || []) {
+      const row = ensureItem(item.productId, item.productName);
+      const units = unitCountFor(item);
+      row.units += units;
+      row.revenue += Number(item.totalPrice) || 0;
+      row.cost += (productById.get(item.productId)?.cost || 0) * units;
+      row.invoices += 1;
+    }
+  }
+  let rows = Array.from(agg.values()).map((r) => ({
+    productId: r.productId,
+    productName: r.productName,
+    barcode: r.barcode,
+    categoryId: r.categoryId,
+    categoryName: r.categoryName,
+    units: round22(r.units),
+    revenue: round22(r.revenue),
+    revenueUSD: round22(r.revenue / rate),
+    cost: round22(r.cost),
+    profit: round22(r.revenue - r.cost),
+    profitUSD: round22((r.revenue - r.cost) / rate),
+    marginPct: safePercent(r.revenue - r.cost, r.revenue),
+    avgUnitPrice: r.units > 0 ? round22(r.revenue / r.units) : 0,
+    invoices: r.invoices
+  })).sort((a, b) => b.revenue - a.revenue);
+  if (categoryId && categoryId !== "all") {
+    rows = rows.filter((r) => r.categoryId === categoryId);
+  }
+  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+  return {
+    rows,
+    total: {
+      units: round22(rows.reduce((s, r) => s + r.units, 0)),
+      revenue: round22(totalRevenue),
+      revenueUSD: round22(totalRevenue / rate),
+      cost: round22(rows.reduce((s, r) => s + r.cost, 0)),
+      profit: round22(rows.reduce((s, r) => s + r.profit, 0)),
+      profitUSD: round22(rows.reduce((s, r) => s + r.profit, 0) / rate),
+      marginPct: safePercent(rows.reduce((s, r) => s + r.profit, 0), totalRevenue),
+      invoices: new Set(invoices.map((i) => i.id)).size
+    },
+    locations: Array.from(locations).sort(),
+    exchangeRate: rate,
+    categories: {
+      all: categories.map((c) => ({ id: c.id, name: c.name, parentId: c.parentId })),
+      organized
+    }
+  };
+}
+async function getReportTopSelling(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const rate = await getExchangeRateValue();
+  const { productById } = await getReportProductCatalog();
+  const agg = /* @__PURE__ */ new Map();
+  for (const inv of invoices) {
+    for (const item of inv.salesInvoiceItem || []) {
+      const key = item.productId || `name:${item.productName}`;
+      let row = agg.get(key);
+      if (!row) {
+        const p = item.productId ? productById.get(item.productId) : void 0;
+        row = { productId: key, productName: p?.name || item.productName, units: 0, revenue: 0, cost: 0 };
+        agg.set(key, row);
+      }
+      const units = unitCountFor(item);
+      row.units += units;
+      row.revenue += Number(item.totalPrice) || 0;
+      row.cost += (productById.get(item.productId)?.cost || 0) * units;
+    }
+  }
+  const base = Array.from(agg.values());
+  const totalRevenue = base.reduce((s, r) => s + r.revenue, 0);
+  const totalUnits = base.reduce((s, r) => s + r.units, 0);
+  const byRevenue = base.map((r) => ({ ...r, revenueSharePct: safePercent(r.revenue, totalRevenue) })).sort((a, b) => b.revenue - a.revenue);
+  let cum = 0;
+  let paretoCount = 0;
+  let paretoRevenue = 0;
+  const withCum = byRevenue.map((r) => {
+    cum += r.revenue;
+    const cumulativeSharePct = safePercent(cum, totalRevenue);
+    return { ...r, cumulativeSharePct };
+  });
+  for (const r of withCum) {
+    if (r.cumulativeSharePct <= 80 + 1e-3 || paretoCount === 0) {
+      paretoCount += 1;
+      paretoRevenue += r.revenue;
+      if (r.cumulativeSharePct >= 80) break;
+    } else {
+      break;
+    }
+  }
+  const byUnits = byRevenue.map((r) => ({ ...r, likes: void 0 })).sort((a, b) => b.units - a.units);
+  const unitsRows = byUnits.map((r) => ({
+    productId: r.productId,
+    productName: r.productName,
+    units: round22(r.units),
+    revenue: round22(r.revenue),
+    revenueSharePct: r.revenueSharePct,
+    profit: round22(r.revenue - r.cost)
+  }));
+  const revenueRows = withCum.map((r) => ({
+    productId: r.productId,
+    productName: r.productName,
+    units: round22(r.units),
+    revenue: round22(r.revenue),
+    revenueSharePct: r.revenueSharePct,
+    cumulativeSharePct: round22(r.cumulativeSharePct),
+    isPareto80: r.cumulativeSharePct <= 80.001 || false,
+    profit: round22(r.revenue - r.cost)
+  }));
+  return {
+    byUnits: unitsRows,
+    byRevenue: revenueRows.map((r, i) => ({ ...r, isPareto80: i < paretoCount })),
+    totalRevenue: round22(totalRevenue),
+    totalUnits: round22(totalUnits),
+    exchangeRate: rate,
+    pareto: {
+      count: paretoCount,
+      revenue: round22(paretoRevenue),
+      revenueSharePct: safePercent(paretoRevenue, totalRevenue),
+      headCount: Math.max(1, Math.round(base.length * 0.2))
+    }
+  };
+}
+var normalizeText = (value) => (value || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+function paymentBucket(paymentMethod) {
+  const m = normalizeText(paymentMethod);
+  const isUsd = /USD|DOLAR/.test(m) || m.includes("$") && !m.includes("C$");
+  if (isUsd) return { key: "usd", label: "D\xF3lares (USD)" };
+  if (/CREDIT|FIADO/.test(m)) return { key: "credito", label: "Cr\xE9dito / Abonos" };
+  if (/CASH|EFECTIVO|CONTADO/.test(m)) return { key: "efectivo", label: "Efectivo" };
+  if (/TRANSF|SINPE|PAGO MOVIL|PAGO MOVIL|YOMPAGO|LIGA|BANCO|TELER|MOVIL/.test(m)) return { key: "transferencia", label: "Transferencia" };
+  if (/CARD|TARJETA|TC\b|DEBIT/.test(m)) return { key: "tarjeta", label: "Tarjeta" };
+  return { key: "otro", label: "Otro" };
+}
+async function getReportPaymentMethods(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end, false);
+  const rate = await getExchangeRateValue();
+  const buckets = {};
+  for (const inv of invoices) {
+    const { key, label } = paymentBucket(inv.paymentMethod);
+    const b = buckets[key] ||= { key, label, count: 0, total: 0, sets: /* @__PURE__ */ new Set() };
+    b.count += 1;
+    b.total += Number(inv.totalAmount) || 0;
+    b.sets.add(inv.id);
+  }
+  const total = invoices.reduce((s, i) => s + (Number(i.totalAmount) || 0), 0);
+  const rows = Object.values(buckets).map((b) => ({
+    key: b.key,
+    label: b.label,
+    count: b.count,
+    total: round22(b.total),
+    sharePct: safePercent(b.total, total),
+    transactions: b.sets.size
+  })).sort((a, b) => b.total - a.total);
+  return {
+    rows,
+    total: round22(total),
+    totalUSD: round22(total / rate),
+    exchangeRate: rate
+  };
+}
+async function getReportCashiers(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const rate = await getExchangeRateValue();
+  const perUser = /* @__PURE__ */ new Map();
+  const ensureUser = (userId, name) => {
+    if (!perUser.has(userId)) {
+      perUser.set(userId, {
+        userId,
+        name: name || "Cajero",
+        invoiceCount: 0,
+        revenue: 0,
+        units: 0,
+        cost: 0
+      });
+    }
+    return perUser.get(userId);
+  };
+  for (const inv of invoices) {
+    const u = inv.user;
+    const userId = u?.id || inv.userId;
+    const row = ensureUser(userId, u?.name || "Cajero");
+    row.invoiceCount += 1;
+    row.revenue += Number(inv.totalAmount) || 0;
+    for (const item of inv.salesInvoiceItem || []) {
+      row.units += unitCountFor(item);
+    }
+  }
+  const whereSession = { status: "closed" };
+  if (start || end) {
+    whereSession.openingTime = {};
+    if (start) whereSession.openingTime.gte = start.toISOString();
+    if (end) whereSession.openingTime.lte = end.toISOString();
+  }
+  const sessions = await db_default.cashRegisterSession.findMany({
+    where: whereSession,
+    select: {
+      id: true,
+      cashierId: true,
+      cashierName: true,
+      difference: true,
+      differenceUSD: true,
+      actualCash: true,
+      actualUSD: true,
+      totalSales: true
+    }
+  });
+  const sessionAgg = /* @__PURE__ */ new Map();
+  for (const s of sessions) {
+    const row = sessionAgg.get(s.cashierId) || { sessions: 0, difference: 0, differenceUSD: 0 };
+    row.sessions += 1;
+    row.difference += Number(s.difference) || 0;
+    row.differenceUSD += Number(s.differenceUSD) || 0;
+    sessionAgg.set(s.cashierId, row);
+  }
+  for (const [cid, s] of sessionAgg) {
+    ensureUser(cid, sessions.find((x) => x.cashierId === cid)?.cashierName || "Cajero");
+  }
+  const rows = Array.from(perUser.values()).map((r) => {
+    const s = sessionAgg.get(r.userId);
+    return {
+      userId: r.userId,
+      name: r.name,
+      invoiceCount: r.invoiceCount,
+      revenue: round22(r.revenue),
+      revenueUSD: round22(r.revenue / rate),
+      units: round22(r.units),
+      avgTicket: r.invoiceCount > 0 ? round22(r.revenue / r.invoiceCount) : 0,
+      sessions: s?.sessions || 0,
+      difference: round22(s?.difference || 0),
+      differenceUSD: round22(s?.differenceUSD || 0)
+    };
+  }).sort((a, b) => b.revenue - a.revenue);
+  return {
+    rows,
+    total: {
+      revenue: round22(rows.reduce((s, r) => s + r.revenue, 0)),
+      revenueUSD: round22(rows.reduce((s, r) => s + r.revenueUSD, 0)),
+      units: round22(rows.reduce((s, r) => s + r.units, 0)),
+      invoices: rows.reduce((s, r) => s + r.invoiceCount, 0),
+      difference: round22(rows.reduce((s, r) => s + r.difference, 0))
+    },
+    exchangeRate: rate
+  };
+}
+async function getReportSalesByHour(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end, false);
+  const hours = Array.from({ length: 24 }, (_, h) => {
+    const hourLabel = `${String(h).padStart(2, "0")}:00`;
+    return { hour: h, label: hourLabel, count: 0, sales: 0 };
+  });
+  for (const inv of invoices) {
+    const d = new Date(inv.date);
+    const h = d.getHours();
+    hours[h].count += 1;
+    hours[h].sales += Number(inv.totalAmount) || 0;
+  }
+  const totalSales = hours.reduce((s, h) => s + h.sales, 0);
+  const peak = [...hours].sort((a, b) => b.sales - a.sales)[0];
+  return {
+    hours: hours.map((h) => ({ ...h, sales: round22(h.sales), sharePct: safePercent(h.sales, totalSales) })),
+    peak: peak ? { hour: peak.hour, label: peak.label, sales: round22(peak.sales), count: peak.count } : null,
+    totalSales: round22(totalSales)
+  };
+}
+async function getReportDeadStock(days, to) {
+  const window2 = Math.max(1, Math.min(3650, Number(days) || 90));
+  const end = parseDate(to) || /* @__PURE__ */ new Date();
+  const cutoff = new Date(end.getTime() - window2 * 864e5);
+  const soldItems = await db_default.salesInvoiceItem.findMany({
+    where: {
+      salesInvoice: { status: "COMPLETED", date: { gte: cutoff } },
+      quantity: { gt: 0 }
+    },
+    select: { productId: true }
+  });
+  const soldIdSet = new Set(soldItems.map((s) => s.productId));
+  const inventory = await db_default.inventoryItem.findMany({
+    where: { quantity: { gt: 0 } },
+    select: { productId: true, quantity: true }
+  });
+  const stockByProduct = /* @__PURE__ */ new Map();
+  for (const i of inventory) {
+    stockByProduct.set(i.productId, (stockByProduct.get(i.productId) || 0) + (Number(i.quantity) || 0));
+  }
+  const products = await db_default.product.findMany({
+    select: {
+      id: true,
+      name: true,
+      barcode: true,
+      costPriceNIO: true,
+      category: true,
+      categoryId: true
+    }
+  });
+  const catById = /* @__PURE__ */ new Map();
+  const cats = await db_default.category.findMany({ select: { id: true, name: true, parentId: true } });
+  for (const c of cats) catById.set(c.id, c);
+  const rows = [];
+  for (const p of products) {
+    const stock = stockByProduct.get(p.id) || 0;
+    if (stock <= 0) continue;
+    if (soldIdSet.has(p.id)) continue;
+    const cat = p.categoryId ? catById.get(p.categoryId) : void 0;
+    rows.push({
+      productId: p.id,
+      productName: p.name,
+      barcode: p.barcode || "",
+      categoryName: cat?.name || p.category || "Sin categor\xEDa",
+      stockQuantity: stock,
+      costNIO: round22(stock * (p.costPriceNIO || 0)),
+      days,
+      status: "Sin ventas"
+    });
+  }
+  rows.sort((a, b) => a.stockQuantity - b.stockQuantity || b.costNIO - a.costNIO);
+  return {
+    rows,
+    days: window2,
+    count: rows.length,
+    stockInactiveUnits: rows.reduce((s, r) => s + r.stockQuantity, 0),
+    costValueInactive: round22(rows.reduce((s, r) => s + r.costNIO, 0))
+  };
+}
+async function getReportProfitMargin(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const rate = await getExchangeRateValue();
+  const { productById } = await getReportProductCatalog();
+  const agg = /* @__PURE__ */ new Map();
+  for (const inv of invoices) {
+    for (const item of inv.salesInvoiceItem || []) {
+      const key = item.productId || `name:${item.productName}`;
+      let row = agg.get(key);
+      if (!row) {
+        const p = item.productId ? productById.get(item.productId) : void 0;
+        row = { productId: key, productName: p?.name || item.productName, units: 0, revenue: 0, cost: 0, invoices: 0 };
+        agg.set(key, row);
+      }
+      const units = unitCountFor(item);
+      row.units += units;
+      row.revenue += Number(item.totalPrice) || 0;
+      row.cost += (productById.get(item.productId)?.cost || 0) * units;
+      row.invoices += 1;
+    }
+  }
+  const items = Array.from(agg.values()).map((r) => ({
+    productId: r.productId,
+    productName: r.productName,
+    units: round22(r.units),
+    avgUnitPrice: r.units > 0 ? round22(r.revenue / r.units) : 0,
+    avgUnitCost: r.units > 0 ? round22(r.cost / r.units) : 0,
+    totalRevenue: round22(r.revenue),
+    totalCost: round22(r.cost),
+    profit: round22(r.revenue - r.cost),
+    profitUSD: round22((r.revenue - r.cost) / rate),
+    marginPct: safePercent(r.revenue - r.cost, r.revenue),
+    invoices: r.invoices
+  })).sort((a, b) => b.profit - a.profit);
+  const totalRevenue = items.reduce((s, r) => s + r.totalRevenue, 0);
+  const totalCost = items.reduce((s, r) => s + r.totalCost, 0);
+  const totalProfit = totalRevenue - totalCost;
+  const bandsDef = [
+    { min: -Infinity, max: 0, label: "P\xE9rdida" },
+    { min: 0, max: 10, label: "0 \u2013 10%" },
+    { min: 10, max: 20, label: "10 \u2013 20%" },
+    { min: 20, max: 30, label: "20 \u2013 30%" },
+    { min: 30, max: 50, label: "30 \u2013 50%" },
+    { min: 50, max: Infinity, label: "+ 50%" }
+  ];
+  const bands = bandsDef.map((b) => ({
+    label: b.label,
+    count: items.filter((r) => r.marginPct >= b.min && r.marginPct < b.max).length
+  }));
+  return {
+    items,
+    topByProfit: items.slice(0, 15),
+    summary: {
+      totalRevenue: round22(totalRevenue),
+      totalRevenueUSD: round22(totalRevenue / rate),
+      totalCost: round22(totalCost),
+      totalProfit: round22(totalProfit),
+      totalProfitUSD: round22(totalProfit / rate),
+      marginPct: safePercent(totalProfit, totalRevenue),
+      invoiceCount: new Set(invoices.map((i) => i.id)).size,
+      units: round22(items.reduce((s, r) => s + r.units, 0)),
+      positiveProducts: items.filter((r) => r.profit > 0).length,
+      negativeProducts: items.filter((r) => r.profit < 0).length
+    },
+    bands,
+    exchangeRate: rate
+  };
+}
+async function getReportFilters() {
+  const { categories } = await getReportProductCatalog();
+  const users = await db_default.user.findMany({
+    where: { role: { in: ["cashier", "dispatcher", "admin", "master-admin"] } },
+    select: { id: true, name: true, role: true, assignedLocation: true },
+    orderBy: { name: "asc" }
+  });
+  const locations = Array.from(new Set(users.map((u) => u.assignedLocation || "Sin ubicaci\xF3n"))).sort();
+  return {
+    categories: categories.map((c) => ({ id: c.id, name: c.name, parentId: c.parentId, inventoryType: c.inventoryType })),
+    locations,
+    cashiers: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
+    defaultExchangeRate: 36.5
+  };
+}
+function agingBucketOf(reference, now) {
+  const days = Math.floor((now.getTime() - reference.getTime()) / 864e5);
+  if (days <= 30) return "current";
+  if (days <= 60) return "d31_60";
+  if (days <= 90) return "d61_90";
+  return "d90plus";
+}
+function emptyAgingTotals() {
+  return { current: 0, d31_60: 0, d61_90: 0, d90plus: 0, total: 0, count: 0 };
+}
+function addToTotals(totals, bucket, amount, count = 1) {
+  totals[bucket] = Math.round((Number(totals[bucket]) + amount) * 100) / 100;
+  totals.total = Math.round((Number(totals.total) + amount) * 100) / 100;
+  totals.count += count;
+}
+function parseDateString(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+async function getAgingReport() {
+  try {
+    const now = /* @__PURE__ */ new Date();
+    const rate = await getExchangeRateValue();
+    const round23 = (n) => Math.round(n * 100) / 100;
+    const creditInvoices = await db_default.salesInvoice.findMany({
+      where: { status: "COMPLETED", pendingBalance: { gt: 5e-3 } },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        date: true,
+        totalAmount: true,
+        pendingBalance: true,
+        customerId: true,
+        customer: { select: { id: true, fullName: true, phone: true, documentId: true } }
+      },
+      orderBy: { date: "asc" }
+    });
+    const cxcByCustomer = /* @__PURE__ */ new Map();
+    const cxcTotals = emptyAgingTotals();
+    for (const inv of creditInvoices) {
+      const amount = round23(Number(inv.pendingBalance) || 0);
+      const bucket = agingBucketOf(inv.date, now);
+      addToTotals(cxcTotals, bucket, amount, 1);
+      const cust = inv.customer || { id: inv.customerId, fullName: "(Cliente eliminado)", phone: null, documentId: null };
+      const custId = cust.id ?? "SIN_CLIENTE";
+      if (!cxcByCustomer.has(custId)) {
+        cxcByCustomer.set(custId, {
+          customerId: cust.id,
+          customerName: cust.fullName,
+          phone: cust.phone,
+          documentId: cust.documentId,
+          invoiceCount: 0,
+          ...emptyAgingTotals(),
+          detail: []
+        });
+      }
+      const row = cxcByCustomer.get(custId);
+      row.invoiceCount += 1;
+      addToTotals(row, bucket, amount, 0);
+      row.detail.push({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        date: inv.date,
+        totalAmount: round23(Number(inv.totalAmount) || 0),
+        pendingBalance: amount,
+        bucket
+      });
+    }
+    const cxcRows = Array.from(cxcByCustomer.values()).sort((a, b) => b.total - a.total);
+    const payables = await db_default.accountsPayable.findMany({
+      where: { status: "PENDING", amount: { gt: 0 } },
+      include: {
+        supplier: { select: { id: true, name: true } },
+        purchaseInvoice: { select: { id: true, invoiceNumber: true, date: true, dueDate: true } }
+      },
+      orderBy: { dueDate: "asc" }
+    });
+    const cxpBySupplier = /* @__PURE__ */ new Map();
+    const cxpTotals = emptyAgingTotals();
+    for (const ap of payables) {
+      const remaining = round23((Number(ap.amount) || 0) - (Number(ap.paidAmount) || 0));
+      if (remaining <= 5e-3) continue;
+      const reference = parseDateString(ap.purchaseInvoice?.dueDate) || parseDateString(ap.purchaseInvoice?.date) || ap.createdAt;
+      const bucket = agingBucketOf(reference, now);
+      addToTotals(cxpTotals, bucket, remaining, 1);
+      if (!cxpBySupplier.has(ap.supplierId)) {
+        cxpBySupplier.set(ap.supplierId, {
+          supplierId: ap.supplierId,
+          supplierName: ap.supplier?.name || "(Proveedor eliminado)",
+          invoiceCount: 0,
+          ...emptyAgingTotals(),
+          detail: []
+        });
+      }
+      const row = cxpBySupplier.get(ap.supplierId);
+      row.invoiceCount += 1;
+      addToTotals(row, bucket, remaining, 0);
+      row.detail.push({
+        invoiceId: ap.invoiceId,
+        invoiceNumber: ap.purchaseInvoice?.invoiceNumber,
+        date: ap.purchaseInvoice?.date,
+        dueDate: ap.purchaseInvoice?.dueDate,
+        amount: round23(Number(ap.amount) || 0),
+        paidAmount: round23(Number(ap.paidAmount) || 0),
+        remaining,
+        bucket
+      });
+    }
+    const cxpRows = Array.from(cxpBySupplier.values()).sort((a, b) => b.total - a.total);
+    return {
+      success: true,
+      data: {
+        cxc: { rows: cxcRows, totals: cxcTotals },
+        cxp: { rows: cxpRows, totals: cxpTotals },
+        generatedAt: now.toISOString(),
+        exchangeRate: rate
+      }
+    };
+  } catch (error) {
+    console.error("Error generating aging report:", error);
+    return { success: false, error: "No se pudo generar el reporte de antig\xFCedad de saldos" };
+  }
+}
 
 // src/lib/actions/sales.ts
 var sales_exports = {};
@@ -6914,7 +7856,13 @@ var resolvePresentationFactor = (product, presentation, presentationName, presen
 };
 
 // src/lib/actions/sales.ts
-async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId, financing) {
+var CreditAuthRequiredError = class extends Error {
+  constructor() {
+    super(...arguments);
+    this.requiresAdmin = true;
+  }
+};
+async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId, financing, adminAuthorized) {
   console.log("--- DEBUG createSale ---");
   console.log("paymentMethod:", paymentMethod);
   console.log("customerId:", customerId);
@@ -6923,7 +7871,7 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
   try {
     const isJewelry = await BusinessGuard.isJewelryMode();
     if (isJewelry && !customerId) {
-      return { success: false, error: "El cliente es obligatorio para realizar ventas en modo Joyer\xC3\xADa." };
+      return { success: false, error: "El cliente es obligatorio para realizar ventas en modo Joyer\xEDa." };
     }
     const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
     const roundedTotalAmount = Math.round(totalAmount * 100) / 100;
@@ -6973,8 +7921,10 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
         let remainingToSell = physicalUnits;
         for (const invItem of inventoryItems) {
           if (remainingToSell <= 0) break;
+          if (invItem.quantity <= 0) continue;
           const quantityToTake = Math.min(invItem.quantity, remainingToSell);
           const invQtyToTake = item.product.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
+          if (invQtyToTake <= 0) continue;
           const updatedInvItem = await tx.inventoryItem.update({
             where: { id: invItem.id },
             data: {
@@ -7092,21 +8042,38 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
       });
       createdInvoiceNumber = salesInvoice.invoiceNumber;
       if (isCreditPayment(paymentMethod)) {
-        if (!customerId) throw new Error("Cliente es requerido para venta al cr\xC3\xA9dito");
-        const customer = await tx.customer.findUnique({ where: { id: customerId } });
-        if (!customer || !customer.hasCredit) throw new Error("El cliente no tiene habilitado el cr\xC3\xA9dito");
+        if (!customerId) throw new Error("El cliente es obligatorio para la venta al cr\xE9dito");
+        const customer = await tx.customer.findUnique({
+          where: { id: customerId },
+          include: {
+            creditInstallment: {
+              where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { lt: /* @__PURE__ */ new Date() } },
+              select: { id: true }
+            }
+          }
+        });
+        if (!customer || !customer.hasCredit) throw new Error("El cliente no tiene habilitado el cr\xE9dito");
         let financedTotal = roundedTotalAmount;
         if (financing && financing.installments > 0) {
           const interestRate = Number(financing.interestRate) || 0;
           financedTotal = Math.round((roundedTotalAmount + roundedTotalAmount * interestRate / 100) * 100) / 100;
         }
+        const overdueCount = customer.creditInstallment?.length || 0;
         const newBalance = customer.currentBalance + financedTotal;
-        if (customer.creditLimit > 0 && newBalance > customer.creditLimit) {
-          throw new Error(`L\xC3\xADmite de cr\xC3\xA9dito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`);
+        const exceedsLimit = customer.creditLimit > 0 && newBalance > customer.creditLimit;
+        if ((overdueCount > 0 || exceedsLimit) && !adminAuthorized) {
+          const reason = overdueCount > 0 ? "El cliente tiene cuotas vencidas (mora)." : `L\xEDmite de cr\xE9dito excedido. Disponible: C$ ${(customer.creditLimit - customer.currentBalance).toFixed(2)}`;
+          throw new CreditAuthRequiredError(
+            `${reason} Se requiere autorizaci\xF3n del Administrador para completar la venta a cr\xE9dito.`
+          );
         }
         await tx.customer.update({
           where: { id: customerId },
           data: { currentBalance: { increment: financedTotal } }
+        });
+        await tx.salesInvoice.update({
+          where: { id: salesInvoice.id },
+          data: { pendingBalance: { increment: financedTotal } }
         });
         if (financing && financing.installments > 0) {
           const totalInstallments = Math.max(1, Math.floor(Number(financing.installments) || 1));
@@ -7164,7 +8131,7 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
         action: "CREATE",
         entity: "Sale",
         entityId: `FACTURA-${createdInvoiceNumber}`,
-        description: `Registr\xC3\xB3 una venta por C$${roundedTotalAmount.toFixed(2)} (factura #${createdInvoiceNumber})`,
+        description: `Registr\xF3 una venta por C$${roundedTotalAmount.toFixed(2)} (factura #${createdInvoiceNumber})`,
         metadata: { invoiceNumber: createdInvoiceNumber, totalAmount: roundedTotalAmount, paymentMethod, items: items.length }
       });
     } catch (auditError) {
@@ -7173,6 +8140,9 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
     return { success: true, invoiceNumber: createdInvoiceNumber };
   } catch (error) {
     console.error("Error creating sale:", error);
+    if (error instanceof CreditAuthRequiredError) {
+      return { success: false, error: error.message, requiresAdmin: true };
+    }
     return { success: false, error: error instanceof Error ? error.message : "Error al procesar la venta" };
   }
 }
@@ -7301,7 +8271,11 @@ async function getSettings() {
       emailNotificationsEnabled: false,
       invoiceAlertDays: 5,
       importProductsInDollars: false,
-      creditFinancingEnabled: false
+      creditFinancingEnabled: false,
+      allowCreditSales: true,
+      enableRecipes: false,
+      enableBatchAndExpiration: false,
+      enableKitchenPrinter: false
     };
   }
   return {
@@ -7339,7 +8313,11 @@ async function getSettings() {
     licenseStatus: settings.licenseStatus,
     invoiceAlertDays: settings.invoiceAlertDays,
     importProductsInDollars: settings.importProductsInDollars,
-    creditFinancingEnabled: settings.creditFinancingEnabled
+    creditFinancingEnabled: settings.creditFinancingEnabled,
+    allowCreditSales: settings.allowCreditSales,
+    enableRecipes: settings.enableRecipes,
+    enableBatchAndExpiration: settings.enableBatchAndExpiration,
+    enableKitchenPrinter: settings.enableKitchenPrinter
   };
 }
 async function updateSettings(data) {
@@ -7382,7 +8360,11 @@ async function updateSettings(data) {
         licenseStatus: data.licenseStatus,
         invoiceAlertDays: data.invoiceAlertDays,
         importProductsInDollars: data.importProductsInDollars,
-        creditFinancingEnabled: data.creditFinancingEnabled
+        creditFinancingEnabled: data.creditFinancingEnabled,
+        allowCreditSales: data.allowCreditSales,
+        enableRecipes: data.enableRecipes,
+        enableBatchAndExpiration: data.enableBatchAndExpiration,
+        enableKitchenPrinter: data.enableKitchenPrinter
       }
     });
   } else {
@@ -7420,7 +8402,11 @@ async function updateSettings(data) {
         licenseStatus: data.licenseStatus || "unregistered",
         invoiceAlertDays: data.invoiceAlertDays || 5,
         importProductsInDollars: data.importProductsInDollars || false,
-        creditFinancingEnabled: data.creditFinancingEnabled || false
+        creditFinancingEnabled: data.creditFinancingEnabled || false,
+        allowCreditSales: data.allowCreditSales ?? true,
+        enableRecipes: data.enableRecipes ?? false,
+        enableBatchAndExpiration: data.enableBatchAndExpiration ?? false,
+        enableKitchenPrinter: data.enableKitchenPrinter ?? false
       }
     });
   }
@@ -7440,7 +8426,7 @@ __export(suppliers_exports, {
 init_db();
 async function getSuppliers() {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   try {
     const suppliers = await db_default.supplier.findMany({
       orderBy: { name: "asc" }
@@ -7448,12 +8434,12 @@ async function getSuppliers() {
     return { success: true, data: suppliers };
   } catch (error) {
     console.error("Error fetching suppliers:", error);
-    return { success: false, error: "Failed to fetch suppliers" };
+    return { success: false, error: "No se pudieron obtener los proveedores" };
   }
 }
 async function getSupplierById(id) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   try {
     const supplier = await db_default.supplier.findUnique({
       where: { id }
@@ -7461,12 +8447,12 @@ async function getSupplierById(id) {
     return { success: true, data: supplier };
   } catch (error) {
     console.error("Error fetching supplier:", error);
-    return { success: false, error: "Failed to fetch supplier" };
+    return { success: false, error: "No se pudo obtener el proveedor" };
   }
 }
 async function createSupplier(data) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   try {
     const supplier = await db_default.supplier.create({
       data: {
@@ -7479,12 +8465,12 @@ async function createSupplier(data) {
     return { success: true, data: supplier };
   } catch (error) {
     console.error("Error creating supplier:", error);
-    return { success: false, error: "Failed to create supplier" };
+    return { success: false, error: "No se pudo crear el proveedor" };
   }
 }
 async function updateSupplier(id, data) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   try {
     const supplier = await db_default.supplier.update({
       where: { id },
@@ -7495,12 +8481,12 @@ async function updateSupplier(id, data) {
     return { success: true, data: supplier };
   } catch (error) {
     console.error("Error updating supplier:", error);
-    return { success: false, error: "Failed to update supplier" };
+    return { success: false, error: "No se pudo actualizar el proveedor" };
   }
 }
 async function deleteSupplier(id) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sesi\xF3n no autorizada" };
   try {
     await db_default.supplier.delete({
       where: { id }
@@ -7510,7 +8496,7 @@ async function deleteSupplier(id) {
     return { success: true };
   } catch (error) {
     console.error("Error deleting supplier:", error);
-    return { success: false, error: "Failed to delete supplier" };
+    return { success: false, error: "No se pudo eliminar el proveedor" };
   }
 }
 

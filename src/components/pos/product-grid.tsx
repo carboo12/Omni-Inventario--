@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Product } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -366,17 +366,26 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
                         {/* Navigation View */}
                         {viewContent.type === 'navigation' && (
                             <>
-                                {viewContent.categories.map(cat => (
-                                    <div
-                                        key={cat.id}
-                                        onClick={() => handleCategoryClick(cat.id)}
-                                        className="aspect-square bg-[#673AB7] hover:bg-[#5E35B1] text-white p-4 cursor-pointer rounded-sm flex flex-col items-center justify-center text-center transition-colors group"
-                                    >
-                                        <Folder className="w-12 h-12 mb-2 group-hover:scale-110 transition-transform" />
-                                        <span className="font-bold text-lg uppercase leading-tight line-clamp-2">{cat.name}</span>
-                                        {cat._count && <span className="text-xs opacity-70 mt-1">{cat._count.product} prod</span>}
-                                    </div>
-                                ))}
+                                {viewContent.categories.map(cat => {
+                                    const len = cat.name.trim().length;
+                                    const fontSizeClass = len > 14 ? 'text-[10px] sm:text-xs font-black break-all'
+                                        : len > 10 ? 'text-xs sm:text-sm font-bold break-all'
+                                        : len > 7 ? 'text-sm sm:text-base font-bold break-words'
+                                        : 'text-base sm:text-lg font-bold break-words';
+                                    return (
+                                        <div
+                                            key={cat.id}
+                                            onClick={() => handleCategoryClick(cat.id)}
+                                            className="aspect-square bg-[#673AB7] hover:bg-[#5E35B1] text-white p-2 sm:p-3 cursor-pointer rounded-sm flex flex-col items-center justify-center text-center transition-colors group overflow-hidden min-w-0"
+                                        >
+                                            <Folder className="w-10 h-10 sm:w-12 sm:h-12 mb-1 sm:mb-2 shrink-0 group-hover:scale-110 transition-transform" />
+                                            <span className={cn("uppercase leading-tight line-clamp-2 px-1 w-full overflow-hidden text-ellipsis text-center", fontSizeClass)}>
+                                                {cat.name}
+                                            </span>
+                                            {cat._count && <span className="text-[10px] sm:text-xs opacity-70 mt-1 shrink-0">{cat._count.product} prod</span>}
+                                        </div>
+                                    );
+                                })}
 
                                 {viewContent.attributeFolders && (
                                     <>

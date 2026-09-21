@@ -1,4 +1,4 @@
-﻿
+
 "use client";
 
 import React, { useState } from 'react';
@@ -250,6 +250,40 @@ export default function SettingsPage() {
                                     <Label htmlFor="dispatcher-cashier">Despachador y Cajero</Label>
                                 </div>
                             </RadioGroup>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Configuración del Negocio</CardTitle>
+                            <CardDescription>
+                                Habilita características adicionales según el giro de tu empresa.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="allow-credit-sales" checked={settings.allowCreditSales} onCheckedChange={(c) => handleCheckboxChange('allowCreditSales', !!c)} />
+                                <Label htmlFor="allow-credit-sales" className="text-sm font-normal">
+                                    Ventas al Crédito y Cuentas por Cobrar (CxC)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-recipes" checked={settings.enableRecipes} onCheckedChange={(c) => handleCheckboxChange('enableRecipes', !!c)} />
+                                <Label htmlFor="enable-recipes" className="text-sm font-normal">
+                                    Módulo de Recetas (Descuento automático de insumos)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-batch-expiration" checked={settings.enableBatchAndExpiration} onCheckedChange={(c) => handleCheckboxChange('enableBatchAndExpiration', !!c)} />
+                                <Label htmlFor="enable-batch-expiration" className="text-sm font-normal">
+                                    Control de Lotes y Fechas de Vencimiento
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-kitchen-printer" checked={settings.enableKitchenPrinter} onCheckedChange={(c) => handleCheckboxChange('enableKitchenPrinter', !!c)} />
+                                <Label htmlFor="enable-kitchen-printer" className="text-sm font-normal">
+                                    Impresión de Comandas (Cocina/Barra)
+                                </Label>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>

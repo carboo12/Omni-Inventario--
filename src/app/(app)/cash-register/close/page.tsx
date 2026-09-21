@@ -133,6 +133,12 @@ export default function CloseSessionPage() {
             <span>Abonos a Creditos:</span>
             <span>C${reportData.salesAbonos?.toFixed(2) || "0.00"}</span>
           </div>
+          {reportData.salesAbonosCard > 0 && (
+            <div className="flex justify-between font-semibold mb-2 text-slate-400">
+              <span>Abonos Tarjeta (no entra al efectivo):</span>
+              <span>C${reportData.salesAbonosCard?.toFixed(2)}</span>
+            </div>
+          )}
           {reportData.salesServices > 0 && (
             <div className="flex justify-between font-semibold mb-2 text-purple-600">
               <span>Servicios Joyeria:</span>
@@ -255,12 +261,14 @@ export default function CloseSessionPage() {
   const salesUSD = session?.salesUSD || 0;
   const salesServices = session?.salesServices || 0;
   const salesAbonos = (session as any)?.salesAbonos || 0;
+  const salesAbonosCard = (session as any)?.salesAbonosCard || 0;
   const initialAmount = session?.initialAmount || 0;
   const totalReturns = session?.totalReturns || 0;
 
   // === FORMULA: Expected Cash in Drawer (C$) ===
-  // Initial Fund + Cash Sales + Credit Abonos - Outflows - Returns
-  const expectedCashInDrawer = initialAmount + salesCash + salesAbonos - totalOutflows - totalReturns;
+  // Initial Fund + Cash Sales + Credit Abonos (Efectivo) - Outflows - Returns
+  // (los abonos por TARJETA se descuentan porque no entran al efectivo)
+  const expectedCashInDrawer = initialAmount + salesCash + (salesAbonos - salesAbonosCard) - totalOutflows - totalReturns;
   // Diferencia = Efectivo FÃ­sico Declarado - Total Esperado en Caja
   const difference = effectiveActualCash - expectedCashInDrawer;
 
@@ -281,9 +289,10 @@ export default function CloseSessionPage() {
     const tUsd = totals?.salesUSD ?? salesUSD;
     const tServices = totals?.salesServices ?? salesServices;
     const tAbonos = totals?.salesAbonos ?? salesAbonos;
+    const tAbonosCard = totals?.salesAbonosCard ?? salesAbonosCard;
     const tReturns = totals?.totalReturns ?? totalReturns;
     const tTotal = totals?.totalSales ?? session?.totalSales ?? 0;
-    const expected = initialAmount + tCash + tAbonos - totalOutflows - tReturns;
+    const expected = initialAmount + tCash + (tAbonos - tAbonosCard) - totalOutflows - tReturns;
     const expectedUsd = (session?.initialAmountUSD || 0) + tUsd;
     return {
       ...(session ?? {}),
@@ -300,6 +309,7 @@ export default function CloseSessionPage() {
       salesCard: tCard,
       salesUSD: tUsd,
       salesAbonos: tAbonos,
+      salesAbonosCard: tAbonosCard,
       salesServices: tServices,
       totalOutflows,
       totalReturns: tReturns,
@@ -781,6 +791,12 @@ export default function CloseSessionPage() {
                 <span>(+) Abonos a Creditos</span>
                 <span className="font-medium">+{salesAbonos.toLocaleString('es-NI', { minimumFractionDigits: 2 })}</span>
               </div>
+              {salesAbonosCard > 0 && (
+                <div className="flex justify-between items-center text-slate-400 line-through">
+                  <span>(-) Abonos por Tarjeta (no entran al efectivo)</span>
+                  <span className="font-medium">-{salesAbonosCard.toLocaleString('es-NI', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center text-red-500">
                 <span>(-) Egresos / Salidas de Caja</span>
                 <span className="font-medium">-{totalOutflows.toLocaleString('es-NI', { minimumFractionDigits: 2 })}</span>

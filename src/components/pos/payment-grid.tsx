@@ -140,18 +140,20 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
                     )}
 
                     {/* Crédito */}
-                    <div 
-                        className={cn(
-                            "col-span-1 min-h-[110px] text-white rounded-lg p-4 transition-colors flex flex-col justify-center",
-                            customerName && customerName !== 'ANONIM' 
-                                ? "bg-[#673AB7] hover:bg-[#5E35B1] cursor-pointer" 
-                                : "bg-gray-300 cursor-not-allowed opacity-50"
-                        )}
-                        onClick={() => (customerName && customerName !== 'ANONIM') && handleMethodSelect('Credito')}
-                    >
-                        <span className="font-bold text-lg block">CRÉDITO</span>
-                        <span className="text-sm opacity-80 block mt-1">{customerName && customerName !== 'ANONIM' ? 'F2' : 'Sin Cliente'}</span>
-                    </div>
+                    {settings.allowCreditSales !== false && (
+                        <div 
+                            className={cn(
+                                "col-span-1 min-h-[110px] text-white rounded-lg p-4 transition-colors flex flex-col justify-center",
+                                customerName && customerName !== 'ANONIM' 
+                                    ? "bg-[#673AB7] hover:bg-[#5E35B1] cursor-pointer" 
+                                    : "bg-gray-300 cursor-not-allowed opacity-50"
+                            )}
+                            onClick={() => (customerName && customerName !== 'ANONIM') && handleMethodSelect('Credito')}
+                        >
+                            <span className="font-bold text-lg block">CRÉDITO</span>
+                            <span className="text-sm opacity-80 block mt-1">{customerName && customerName !== 'ANONIM' ? 'F2' : 'Sin Cliente'}</span>
+                        </div>
+                    )}
 
                     {/* Tarjeta */}
                     {settings.allowCard && (

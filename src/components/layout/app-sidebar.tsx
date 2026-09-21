@@ -1,4 +1,4 @@
-﻿
+
 "use client";
 
 import React, { useCallback, useEffect, useMemo } from 'react';
@@ -44,8 +44,8 @@ import { useBusinessMode } from "@/hooks/use-business-mode";
 import { Gem } from "lucide-react";
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Panel", icon: LayoutDashboard, roles: ["master-admin", "admin", "cashier", "rutero"] },
-  { href: "/pos", label: "Punto de Venta", icon: ShoppingCart, roles: ["master-admin", "admin", "cashier", "dispatcher"] },
+  { href: "/dashboard", label: "Panel", icon: LayoutDashboard, roles: ["master-admin", "admin", "rutero"] },
+  { href: "/pos", label: "Punto de Venta", icon: ShoppingCart, roles: ["cashier", "dispatcher"] },
   { href: "/cash-count", label: "Cuadre de Caja", icon: Coins, roles: ["master-admin", "admin", "cashier"] },
   { href: "/inventory", label: "Inventario", icon: Boxes, roles: ["master-admin", "admin"] },
   { href: "/categories", label: "Categorías", icon: FolderTree, roles: ["master-admin", "admin"] },
@@ -174,7 +174,7 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
 
   if (!user) return null;
 
-  const homeHref = user.role === 'dispatcher' ? '/pos' : '/dashboard';
+  const homeHref = user.role === 'dispatcher' || user.role === 'cashier' ? '/pos' : '/dashboard';
 
   return (
     <Sidebar className="border-r bg-sidebar/95" collapsible={collapsible} variant="sidebar">

@@ -16,7 +16,7 @@ export function usePOSData(initialProducts?: Product[], initialInventory?: Inven
         },
         initialData: initialProducts,
         retry: 2,
-        staleTime: 30_000,
+        staleTime: 2_000,
     });
 
     const inventoryQuery = useQuery({
@@ -27,7 +27,7 @@ export function usePOSData(initialProducts?: Product[], initialInventory?: Inven
         },
         initialData: initialInventory,
         retry: 2,
-        staleTime: 30_000,
+        staleTime: 2_000,
     });
 
     return { productsQuery, inventoryQuery };

@@ -41,7 +41,9 @@ export default function ZReportPage() {
         window.print();
     };
 
-    const expectedCash = (session.initialAmount || 0) + (session.salesCash || 0) + ((session as any).salesAbonos || 0) - totalOutflows - (session.totalReturns || 0);
+    const salesAbonos = Number((session as any)?.salesAbonos || 0);
+    const salesAbonosCard = Number((session as any)?.salesAbonosCard || 0);
+    const expectedCash = (session.initialAmount || 0) + (session.salesCash || 0) + (salesAbonos - salesAbonosCard) - totalOutflows - (session.totalReturns || 0);
 
     return (
         <div className="flex flex-col items-center p-6 space-y-6">
@@ -106,6 +108,18 @@ export default function ZReportPage() {
                             <span>VENTAS DOLARES:</span>
                             <span>{session.salesUSD?.toFixed(2) || "0.00"}</span>
                         </div>
+                        {salesAbonos > 0 && (
+                            <div className="flex justify-between">
+                                <span>ABONOS EFECTIVO:</span>
+                                <span>{salesAbonos.toFixed(2)}</span>
+                            </div>
+                        )}
+                        {salesAbonosCard > 0 && (
+                            <div className="flex justify-between">
+                                <span>ABONOS TARJETA:</span>
+                                <span>{salesAbonosCard.toFixed(2)}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between">
                             <span>SALIDAS/RECIBOS:</span>
                             <span>-{totalOutflows.toFixed(2)}</span>

@@ -57,11 +57,23 @@ const getAvailablePOSProducts = (products: Product[], inventory: InventoryItem[]
   const productMap = new Map<string, Product>();
   products.forEach(p => productMap.set(p.id, p));
 
+  const stockByProduct = new Map<string, number>();
+  inventory
+    .filter(item => item.inventoryType === inventoryType)
+    .forEach(item => {
+      stockByProduct.set(item.productId, (stockByProduct.get(item.productId) || 0) + item.quantity);
+    });
+
   const simpleProducts = inventory
-    .filter(item => item.inventoryType === inventoryType && item.quantity > 0)
+    .filter(item => item.inventoryType === inventoryType && (stockByProduct.get(item.productId) || 0) > 0)
     .reduce<Product[]>((acc, item) => {
       const product = productMap.get(item.productId);
-      if (product && !(product as any).variantId) acc.push(product);
+      if (product && !(product as any).variantId) {
+        acc.push({
+          ...product,
+          stock: stockByProduct.get(product.id) || 0
+        });
+      }
       return acc;
     }, []);
 
@@ -76,8 +88,8 @@ const getAvailablePOSProducts = (products: Product[], inventory: InventoryItem[]
 
 const getPOSProductStock = (product: Product, inventory: InventoryItem[], inventoryType: string) => {
   if ((product as any).variantId) return Number((product as any).stock || 0);
-  const invItem = inventory.find(i => i.productId === product.id && i.inventoryType === inventoryType);
-  return invItem?.quantity || 0;
+  const matchingItems = inventory.filter(i => i.productId === product.id && i.inventoryType === inventoryType);
+  return matchingItems.reduce((sum, item) => sum + item.quantity, 0);
 };
 
 export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
@@ -494,13 +506,14 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
                 key={cat.name}
                 onClick={() => setActiveCategory(activeCategory === cat.name ? null : cat.name)}
                 className={cn(
-                  'h-10 shrink-0 rounded-full px-4 text-sm font-bold transition-colors',
+                  'h-10 shrink-0 rounded-full px-3 sm:px-4 text-xs sm:text-sm font-bold transition-colors max-w-[200px] truncate',
                   activeCategory === cat.name
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-slate-100 text-slate-600 active:bg-slate-200'
                 )}
+                title={cat.name}
               >
-                {cat.name} <span className="opacity-60">({cat.count})</span>
+                <span className="truncate">{cat.name}</span> <span className="opacity-60">({cat.count})</span>
               </button>
             ))}
           </div>

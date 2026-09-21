@@ -26,6 +26,7 @@ export interface CashRegisterSessionData {
     actualUSD?: number | null;
     difference?: number | null;
     differenceUSD?: number | null;
+    salesAbonosCard?: number;
     status: 'open' | 'closed';
 }
 
@@ -37,6 +38,7 @@ export interface SessionSalesBreakdown {
     salesCredit: number;
     salesServices: number;
     salesAbonos: number;
+    salesAbonosCard: number;
     totalReturns: number;
 }
 
@@ -62,6 +64,7 @@ export interface CloseCashSessionReport {
     salesCredit: number;
     salesServices: number;
     salesAbonos: number;
+    salesAbonosCard: number;
     totalReturns: number;
     totalOutflows: number;
     initialAmount: number;
@@ -102,7 +105,7 @@ async function computeSessionBreakdown(client: any, sessionId: string): Promise<
         }),
         client.cashRegisterSession.findUnique({
             where: { id: sessionId },
-            select: { totalReturns: true, salesAbonos: true },
+            select: { totalReturns: true, salesAbonos: true, salesAbonosCard: true },
         }),
     ]);
 
@@ -146,6 +149,7 @@ async function computeSessionBreakdown(client: any, sessionId: string): Promise<
         salesCredit: round2(salesCredit),
         salesServices: round2(salesServices),
         salesAbonos: Number(sessionRow?.salesAbonos) || 0,
+        salesAbonosCard: Number((sessionRow as any)?.salesAbonosCard) || 0,
         totalReturns: Number(sessionRow?.totalReturns) || 0,
     };
 }
@@ -182,6 +186,7 @@ export async function getSessions(): Promise<CashRegisterSessionData[]> {
             salesServices: row.salesServices ?? 0,
             salesCredit: row.salesCredit ?? 0,
             salesAbonos: row.salesAbonos ?? 0,
+            salesAbonosCard: (row as any).salesAbonosCard ?? 0,
             totalReturns: row.totalReturns,
             actualCash: row.actualCash,
             actualUSD: row.actualUSD ?? 0,
@@ -264,7 +269,10 @@ export async function closeCashSession(
         const totalOutflows = Number(outflowsAgg._sum.amount) || 0;
 
         // 3) Esperados y diferencias (misma fórmula que el reporte local).
-        const expectedCash = round2((session.initialAmount || 0) + breakdown.salesCash + breakdown.salesAbonos - totalOutflows - breakdown.totalReturns);
+        //    Los abonos de crédito por TARJETA no entran al efectivo esperado;
+        //    se descuentan vía salesAbonosCard.
+        const abonosCash = Math.round((breakdown.salesAbonos - breakdown.salesAbonosCard) * 100) / 100;
+        const expectedCash = round2((session.initialAmount || 0) + breakdown.salesCash + abonosCash - totalOutflows - breakdown.totalReturns);
         const expectedUSD = round2((session.initialAmountUSD || 0) + breakdown.salesUSD);
         const finalAmount = expectedCash;
         const difference = round2(actualCash - expectedCash);
@@ -289,6 +297,7 @@ export async function closeCashSession(
                 salesCredit: breakdown.salesCredit,
                 salesServices: breakdown.salesServices,
                 salesAbonos: breakdown.salesAbonos,
+                salesAbonosCard: breakdown.salesAbonosCard,
             },
         });
 
@@ -311,6 +320,7 @@ export async function closeCashSession(
             salesCredit: breakdown.salesCredit,
             salesServices: breakdown.salesServices,
             salesAbonos: breakdown.salesAbonos,
+            salesAbonosCard: breakdown.salesAbonosCard,
             totalReturns: breakdown.totalReturns,
             totalOutflows,
         };

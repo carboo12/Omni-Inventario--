@@ -21,6 +21,7 @@ interface CreditFinancingDialogProps {
   isOpen: boolean;
   onClose: () => void;
   total: number;
+  defaultInterestRate?: number;
   onConfirm: (financing: SaleFinancing) => void;
 }
 
@@ -30,7 +31,7 @@ const FREQUENCIES = [
   { value: 'MENSUAL', label: 'Mensual' },
 ];
 
-export function CreditFinancingDialog({ isOpen, onClose, total, onConfirm }: CreditFinancingDialogProps) {
+export function CreditFinancingDialog({ isOpen, onClose, total, defaultInterestRate = 0, onConfirm }: CreditFinancingDialogProps) {
   const [installments, setInstallments] = useState(3);
   const [frequency, setFrequency] = useState<'SEMANAL' | 'QUINCENAL' | 'MENSUAL'>('SEMANAL');
   const [interestRate, setInterestRate] = useState('0');
@@ -40,10 +41,10 @@ export function CreditFinancingDialog({ isOpen, onClose, total, onConfirm }: Cre
     if (isOpen) {
       setInstallments(3);
       setFrequency('SEMANAL');
-      setInterestRate('0');
+      setInterestRate(String(defaultInterestRate ?? 0));
       setIsConfirming(false);
     }
-  }, [isOpen]);
+  }, [isOpen, defaultInterestRate]);
 
   const summary = useMemo(() => {
     const baseTotal = Number(total) || 0;

@@ -23,6 +23,7 @@ export interface SelectedClient {
     name: string;
     phone?: string;
     priceLevel?: number;
+    interestRate?: number;
 }
 
 interface AssignClientDialogProps {
@@ -51,7 +52,8 @@ export function AssignClientDialog({
         phone: '',
         address: '',
         hasCredit: false,
-        creditLimit: 0
+        creditLimit: 0,
+        interestRate: 0,
     });
 
     useEffect(() => {
@@ -65,7 +67,8 @@ export function AssignClientDialog({
                 phone: '',
                 address: '',
                 hasCredit: false,
-                creditLimit: 0
+                creditLimit: 0,
+                interestRate: 0,
             });
         }
     }, [isOpen, currentName]);
@@ -94,6 +97,7 @@ export function AssignClientDialog({
             name: customer.fullName,
             phone: customer.phone || undefined,
             priceLevel: customer.priceLevel || 1,
+            interestRate: typeof customer.interestRate === 'number' ? customer.interestRate : 0,
         });
         onClose();
     };
@@ -111,6 +115,7 @@ export function AssignClientDialog({
                 name: res.fullName,
                 phone: res.phone || undefined,
                 priceLevel: (res as any).priceLevel || 1,
+                interestRate: typeof (res as any).interestRate === 'number' ? (res as any).interestRate : 0,
             });
             toast({ title: "✅ Éxito", description: "Cliente guardado y asignado" });
             onClose();
@@ -251,15 +256,28 @@ export function AssignClientDialog({
                                     </div>
 
                                     {formData.hasCredit && (
-                                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                                            <Label className="text-xs font-black uppercase text-slate-500">Límite de Crédito (C$)</Label>
-                                            <Input 
-                                                type="number"
-                                                placeholder="0.00" 
-                                                className="h-11 border-primary/30"
-                                                value={formData.creditLimit}
-                                                onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})}
-                                            />
+                                        <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs font-black uppercase text-slate-500">Límite Crédito (C$)</Label>
+                                                <Input 
+                                                    type="number"
+                                                    placeholder="0.00" 
+                                                    className="h-11 border-primary/30"
+                                                    value={formData.creditLimit}
+                                                    onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})}
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs font-black uppercase text-slate-500">Tasa Interés (%)</Label>
+                                                <Input 
+                                                    type="number"
+                                                    step="0.1"
+                                                    placeholder="Ej: 5" 
+                                                    className="h-11 border-primary/30"
+                                                    value={formData.interestRate}
+                                                    onChange={(e) => setFormData({...formData, interestRate: parseFloat(e.target.value) || 0})}
+                                                />
+                                            </div>
                                         </div>
                                     )}
                                 </div>

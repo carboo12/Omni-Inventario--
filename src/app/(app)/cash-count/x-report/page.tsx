@@ -37,7 +37,8 @@ export default function XReportPage() {
 
     const totalOutflows = outflows.reduce((acc, o) => acc + Number(o.amount || 0), 0);
     const totalReturns = session?.totalReturns || 0;
-    const expectedCash = (session?.initialAmount || 0) + (session?.salesCash || 0) + ((session as any)?.salesAbonos || 0) - totalOutflows - totalReturns;
+    const salesAbonosCard = Number((session as any)?.salesAbonosCard) || 0;
+    const expectedCash = (session?.initialAmount || 0) + (session?.salesCash || 0) + (((session as any)?.salesAbonos || 0) - salesAbonosCard) - totalOutflows - totalReturns;
 
     return (
         <div className="flex flex-col items-center p-6 space-y-6">
@@ -101,6 +102,18 @@ export default function XReportPage() {
                             <span>VENTAS DOLARES:</span>
                             <span>{session.salesUSD?.toFixed(2) || "0.00"}</span>
                         </div>
+                        {(session as any)?.salesAbonos > 0 && (
+                            <div className="flex justify-between">
+                                <span>ABONOS EFECTIVO:</span>
+                                <span>{Number((session as any)?.salesAbonos || 0).toFixed(2)}</span>
+                            </div>
+                        )}
+                        {salesAbonosCard > 0 && (
+                            <div className="flex justify-between">
+                                <span>ABONOS TARJETA:</span>
+                                <span>{salesAbonosCard.toFixed(2)}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between text-red-500">
                             <span>SALIDAS / RETIROS:</span>
                             <span>-{totalOutflows.toFixed(2)}</span>

@@ -1,33 +1,25 @@
-Corregir tarjetas transparentes/en blanco en la barra de botones del POS (debajo de Limpiar/Espera/Retiro).
+Solucionar error Cannot read properties of undefined (reading 'totalRevenue') en la página /reports.
 
-Problema Detectado:
-En la interfaz del POS (/pos), la fila de acciones secundarias (donde aparece el botón fucsia COTIZACIÓN) muestra 2 espacios en blanco/transparentes que mantienen la estructura del grid pero sin texto, ícono ni color de fondo.
+Problema:
+Al ingresar a la vista de reportes (/reports), la aplicación se rompe mostrando una pantalla de error no capturado (unhandled exception) debido al intento de acceder a totalRevenue cuando el objeto de datos de la API aún no se ha cargado o es undefined.
 
-Causas a Revisar y Corregir:
+Requerimientos de Solución:
 
-Definición de Acciones Faltantes:
+Protección y Valores por Defecto en el Frontend:
 
-Revisa el archivo del componente POS donde se renderiza esta barra (ej. src/components/pos/action-buttons.tsx o pos/page.tsx).
+Inspecciona el componente que renderiza la vista /reports (ej. src/pages/reports.tsx o src/app/reports/page.tsx).
 
-Asegúrate de que las acciones destinadas a esos dos espacios (ej. ABONO / CUOTA, REIMPRIMIR, DESCUENTO o DEVOLUCIÓN) tengan asignados explícitamente sus textos (labels), íconos (Lucide React / Heroicons) y colores de fondo (clases Tailwind como bg-blue-600, bg-purple-600, etc.).
-
-Si estas acciones dependen de la base de datos o de i18n/traducciones, añade valores de respaldo (fallbacks) en texto directo en español para que no queden en blanco si la propiedad viene como undefined.
-
-Renderizado Condicional del Grid:
-
-Si una acción no tiene permisos habilitados o el botón es null, la interfaz NO debe renderizar el contenedor <div> vacío.
-
-Modifica el .map() para filtrar elementos nulos antes de renderizar:
+Aplica encadenamiento opcional (optional chaining) y valores de respaldo (fallbacks) en todas las lecturas de propiedades del objeto de métricas:
 
 TypeScript
-// Filtrar botones válidos antes de mapear
-const visibleButtons = actionButtons.filter(btn => btn && btn.label && btn.enabled);
-Asegúrate de que el contenedor use grid-cols-3 o flex flex-wrap fluido para que el botón de COTIZACIÓN (y los que estén activos) se ajusten limpiamente sin dejar huecos en blanco.
+// Ejemplo de protección segura:
+const totalRevenue = data?.totalRevenue ?? 0;
+Agrega validación de estado de carga (loading state) o skeletons mientras la petición a la API se completa para prevenir renderizados prematuros.
 
-REGLAS ESTRICTAS:
+Manejo Seguro de Errores de API:
 
-Conserva intacto el botón COTIZACIÓN (color fucsia #e91e63 / bg-pink-600 con ícono de documento).
+Si la petición a la API falla o retorna null, el componente debe mostrar un estado controlado en español (ej. "No se pudieron cargar las métricas de reportes") en lugar de tumbar la interfaz completa.
 
-No modifiques el botón verde COBRAR ni la fila superior (LIMPIAR, ESPERA, RETIRO/SALIDA).
+Verificación de Endpoint Backend:
 
-Todos los textos hardcodeados o de fallback deben estar en español.
+Revisa el controlador/servicio de reportes que responde a esta ruta y confirma que el JSON retornado incluya siempre la propiedad totalRevenue (incluso si no hay ventas registradas, devolviendo 0).

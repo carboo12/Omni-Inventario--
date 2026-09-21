@@ -9,12 +9,12 @@ export async function getPurchaseInvoices() {
     try {
         const invoices = await db.purchaseInvoice.findMany({
             orderBy: { date: 'desc' },
-            include: { supplier: true, items: true, accountsPayable: true }
+            include: { supplier: true, items: true, accountsPayable: true, supplierPayment: true }
         });
         return { success: true, data: invoices };
     } catch (error) {
         console.error('Error fetching purchase invoices:', error);
-        return { success: false, error: 'Failed to fetch purchase invoices' };
+        return { success: false, error: 'No se pudieron obtener las facturas de compra' };
     }
 }
 
@@ -41,7 +41,7 @@ export async function getPendingInvoicesAlerts(alertDays: number) {
         return { success: true, data: alerts };
     } catch (error) {
         console.error('Error fetching pending invoice alerts:', error);
-        return { success: false, error: 'Failed to fetch alerts' };
+        return { success: false, error: 'No se pudieron obtener las alertas' };
     }
 }
 
@@ -49,12 +49,12 @@ export async function getPurchaseInvoiceById(id: string) {
     try {
         const invoice = await db.purchaseInvoice.findUnique({
             where: { id },
-            include: { supplier: true, items: true, accountsPayable: true }
+            include: { supplier: true, items: true, accountsPayable: true, supplierPayment: true }
         });
         return { success: true, data: invoice };
     } catch (error) {
         console.error('Error fetching purchase invoice:', error);
-        return { success: false, error: 'Failed to fetch purchase invoice' };
+        return { success: false, error: 'No se pudo obtener la factura de compra' };
     }
 }
 
@@ -67,7 +67,7 @@ export async function createPurchaseInvoice(data: Omit<PurchaseInvoice, 'id'>) {
         return { success: true, data: invoice };
     } catch (error) {
         console.error('Error creating purchase invoice:', error);
-        return { success: false, error: 'Failed to create purchase invoice' };
+        return { success: false, error: 'No se pudo crear la factura de compra' };
     }
 }
 
@@ -81,7 +81,7 @@ export async function updatePurchaseInvoice(id: string, data: Partial<PurchaseIn
         return { success: true, data: invoice };
     } catch (error) {
         console.error('Error updating purchase invoice:', error);
-        return { success: false, error: 'Failed to update purchase invoice' };
+        return { success: false, error: 'No se pudo actualizar la factura de compra' };
     }
 }
 
@@ -94,7 +94,7 @@ export async function deletePurchaseInvoice(id: string) {
         return { success: true };
     } catch (error) {
         console.error('Error deleting purchase invoice:', error);
-        return { success: false, error: 'Failed to delete purchase invoice' };
+        return { success: false, error: 'No se pudo eliminar la factura de compra' };
     }
 }
 export async function createPurchaseInvoiceWithItems(
@@ -135,7 +135,12 @@ export async function createPurchaseInvoiceWithItems(
     try {
         return await db.$transaction(async (tx) => {
             // 1. Create the Invoice (Encabezado)
-            const paymentType = invoiceData.paymentType || (invoiceData as any).purchaseType === 'CREDITO' ? 'CREDIT' : 'CASH';
+            // FIX: evalúa crédito ANTES del ternario: con `paymentType: 'CASH'` el
+            // valor es truthy y el `||` anterior forzaba 'CREDIT' (bug de precedencia).
+            const isCredit = (invoiceData.paymentType === 'CREDIT') ||
+                (invoiceData as any).purchaseType === 'CREDITO' ||
+                String(invoiceData.paymentType || '').toUpperCase() === 'CREDITO';
+            const paymentType = isCredit ? 'CREDIT' : 'CASH';
             const invoice = await tx.purchaseInvoice.create({
                 data: {
                     id: generateUUID(),
@@ -446,7 +451,7 @@ revalidatePath('/purchases');
         });
     } catch (error) {
         console.error('Error creating purchase invoice with items:', error);
-        return { success: false, error: 'Failed to create purchase invoice with items' };
+        return { success: false, error: 'No se pudo registrar la compra con sus artículos' };
     }
 }
 
@@ -460,17 +465,24 @@ export async function recordSupplierPayment(data: {
     notes?: string;
 }) {
     try {
-        const amount = Number(data.amount);
-        if (!data.invoiceId || !amount || amount <= 0) {
-            return { success: false, error: 'Monto o factura inválidos.' };
+        if (!data.invoiceId) return { success: false, error: 'Factura inválida.' };
+        const amount = Math.round((Number(data.amount) || 0) * 100) / 100;
+        if (!amount || amount <= 0) {
+            return { success: false, error: 'Monto inválido.' };
         }
 
         const result = await db.$transaction(async (tx) => {
             const invoice = await tx.purchaseInvoice.findUnique({ where: { id: data.invoiceId } });
             if (!invoice) throw new Error('Factura de compra no encontrada');
 
-            const newPaid = (invoice.paidAmount || 0) + amount;
-            const remaining = invoice.totalAmount - newPaid;
+            // Protección server-side contra sobrepago.
+            const remainingOnInvoice = Math.round((Number(invoice.totalAmount) - Number(invoice.paidAmount) || 0) * 100) / 100;
+            if (amount > remainingOnInvoice + 0.005) {
+                throw new Error(`El monto excede el saldo pendiente de la factura (C$ ${remainingOnInvoice.toFixed(2)}).`);
+            }
+
+            const newPaid = Math.round((Number(invoice.paidAmount) || 0) * 100) / 100 + amount;
+            const remaining = Math.round((Number(invoice.totalAmount) - newPaid) * 100) / 100;
             const status = remaining <= 0 ? 'Pagada' : (newPaid > 0 ? 'Pagada Parcialmente' : 'Pendiente');
 
             await tx.purchaseInvoice.update({
@@ -481,8 +493,8 @@ export async function recordSupplierPayment(data: {
             // Actualizar la cuenta por pagar asociada (saldo + estado).
             const ap = await tx.accountsPayable.findUnique({ where: { invoiceId: invoice.id } });
             if (ap) {
-                const apNewPaid = (ap.paidAmount || 0) + amount;
-                const apRemaining = ap.amount - apNewPaid;
+                const apNewPaid = Math.round((Number(ap.paidAmount) || 0) * 100) / 100 + amount;
+                const apRemaining = Math.round((Number(ap.amount) - apNewPaid) * 100) / 100;
                 await tx.accountsPayable.update({
                     where: { id: ap.id },
                     data: {
@@ -492,8 +504,22 @@ export async function recordSupplierPayment(data: {
                 });
             }
 
+            // Historial de pagos al proveedor (trazabilidad CxP).
+            await tx.supplierPayment.create({
+                data: {
+                    id: generateUUID(),
+                    invoiceId: invoice.id,
+                    supplierId: invoice.supplierId,
+                    amount,
+                    paymentMethod: data.paymentMethod,
+                    userId: data.userId || 'system',
+                    sessionId: data.sessionId || null,
+                    notes: data.notes || null,
+                } as any
+            });
+
             // Si el pago es en efectivo y hay una caja activa, registrar el egreso.
-            if (data.sessionId && /efectivo/i.test(data.paymentMethod)) {
+            if (data.sessionId && /efectivo|cash/i.test(data.paymentMethod)) {
                 const session = await tx.cashRegisterSession.findUnique({ where: { id: data.sessionId } });
                 if (session && session.status === 'open') {
                     await tx.cashOutflow.create({
@@ -512,9 +538,10 @@ export async function recordSupplierPayment(data: {
 
         revalidatePath('/purchases');
         revalidatePath('/dashboard');
+        revalidatePath('/cash-count');
         return { success: true, data: result };
     } catch (error: any) {
         console.error('Error recording supplier payment:', error);
-        return { success: false, error: error?.message || 'Failed to record supplier payment' };
+        return { success: false, error: error?.message || 'No se pudo registrar el pago al proveedor' };
     }
 }

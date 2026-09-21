@@ -12,7 +12,7 @@ import {
     DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
+import { differenceInCalendarDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useRouter } from '@/lib/router-nav';
 
@@ -47,7 +47,7 @@ export function OverdueInstallmentAlerts() {
     const [hasChecked, setHasChecked] = useState(false);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    const isAdmin = user?.role === 'admin' || user?.role === 'master-admin';
+    const canView = user?.role === 'admin' || user?.role === 'master-admin' || user?.role === 'cashier';
 
     const checkAlerts = useCallback(async () => {
         try {
@@ -65,7 +65,7 @@ export function OverdueInstallmentAlerts() {
     }, []);
 
     useEffect(() => {
-        if (!isAdmin) return;
+        if (!canView) return;
         if (!hasChecked) {
             checkAlerts();
             setHasChecked(true);
@@ -74,9 +74,9 @@ export function OverdueInstallmentAlerts() {
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, [isAdmin, hasChecked, checkAlerts]);
+    }, [canView, hasChecked, checkAlerts]);
 
-    if (!isAdmin || alerts.length === 0) return null;
+    if (!canView || alerts.length === 0) return null;
 
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -94,7 +94,9 @@ export function OverdueInstallmentAlerts() {
                 </DialogHeader>
 
                 <div className="py-4 space-y-3 max-h-[40vh] overflow-y-auto pr-2">
-                    {alerts.map(installment => (
+                    {alerts.map(installment => {
+                        const daysLate = differenceInCalendarDays(new Date(), new Date(installment.dueDate));
+                        return (
                         <div key={installment.id} className="p-3 rounded-lg border-l-4 border-red-600 bg-red-50">
                             <div className="flex justify-between items-start">
                                 <div>
@@ -106,12 +108,13 @@ export function OverdueInstallmentAlerts() {
                                 <div className="text-right">
                                     <p className="font-black text-primary">C$ {installment.amount.toFixed(2)}</p>
                                     <p className="text-xs font-bold text-red-600">
-                                        Venció: {format(new Date(installment.dueDate), 'dd/MM/yyyy', { locale: es })}
+                                        {daysLate > 0 ? `${daysLate} ${daysLate === 1 ? 'día' : 'días'} de retraso` : 'Vence hoy'} · {format(new Date(installment.dueDate), 'dd/MM/yyyy', { locale: es })}
                                     </p>
                                 </div>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 <DialogFooter className="flex gap-2 sm:justify-between border-t pt-4">
@@ -126,7 +129,7 @@ export function OverdueInstallmentAlerts() {
                         }}
                     >
                         <AlertTriangle className="h-4 w-4 mr-2" />
-                        Ver Clientes
+                        Ver Cliente / Abonar
                     </Button>
                 </DialogFooter>
             </DialogContent>

@@ -48,6 +48,11 @@ export interface SystemSettingsData {
     invoiceAlertDays?: number;
     importProductsInDollars?: boolean;
     creditFinancingEnabled?: boolean;
+
+    allowCreditSales?: boolean;
+    enableRecipes?: boolean;
+    enableBatchAndExpiration?: boolean;
+    enableKitchenPrinter?: boolean;
 }
 
 import { verifySession } from '../session';
@@ -111,7 +116,11 @@ export async function getSettings(): Promise<SystemSettingsData> {
             emailNotificationsEnabled: false,
             invoiceAlertDays: 5,
             importProductsInDollars: false,
-            creditFinancingEnabled: false
+            creditFinancingEnabled: false,
+            allowCreditSales: true,
+            enableRecipes: false,
+            enableBatchAndExpiration: false,
+            enableKitchenPrinter: false
         };
     }
 
@@ -150,7 +159,11 @@ export async function getSettings(): Promise<SystemSettingsData> {
         licenseStatus: settings.licenseStatus,
         invoiceAlertDays: settings.invoiceAlertDays,
         importProductsInDollars: settings.importProductsInDollars,
-        creditFinancingEnabled: settings.creditFinancingEnabled
+        creditFinancingEnabled: settings.creditFinancingEnabled,
+        allowCreditSales: settings.allowCreditSales,
+        enableRecipes: settings.enableRecipes,
+        enableBatchAndExpiration: settings.enableBatchAndExpiration,
+        enableKitchenPrinter: settings.enableKitchenPrinter
     };
 }
 
@@ -196,7 +209,11 @@ export async function updateSettings(data: SystemSettingsData) {
                 licenseStatus: data.licenseStatus,
                 invoiceAlertDays: data.invoiceAlertDays,
                 importProductsInDollars: data.importProductsInDollars,
-                creditFinancingEnabled: data.creditFinancingEnabled
+                creditFinancingEnabled: data.creditFinancingEnabled,
+                allowCreditSales: data.allowCreditSales,
+                enableRecipes: data.enableRecipes,
+                enableBatchAndExpiration: data.enableBatchAndExpiration,
+                enableKitchenPrinter: data.enableKitchenPrinter
             }
         });
     } else {
@@ -234,7 +251,11 @@ export async function updateSettings(data: SystemSettingsData) {
                 licenseStatus: data.licenseStatus || 'unregistered',
                 invoiceAlertDays: data.invoiceAlertDays || 5,
                 importProductsInDollars: data.importProductsInDollars || false,
-                creditFinancingEnabled: data.creditFinancingEnabled || false
+                creditFinancingEnabled: data.creditFinancingEnabled || false,
+                allowCreditSales: data.allowCreditSales ?? true,
+                enableRecipes: data.enableRecipes ?? false,
+                enableBatchAndExpiration: data.enableBatchAndExpiration ?? false,
+                enableKitchenPrinter: data.enableKitchenPrinter ?? false
             } as any
         });
     }
