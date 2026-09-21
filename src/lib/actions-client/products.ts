@@ -23,3 +23,11 @@ export async function updateProduct(...args: any[]): Promise<any> {
 export async function deleteProduct(...args: any[]): Promise<any> {
   return callAction('products', 'deleteProduct', args);
 }
+
+export async function getRecipeItems(...args: any[]): Promise<any> {
+  return callAction('products', 'getRecipeItems', args);
+}
+
+export async function saveRecipe(...args: any[]): Promise<any> {
+  return callAction('products', 'saveRecipe', args);
+}

@@ -1,1 +1,0 @@
-import{a1 as e}from"./index-DKqHx3fv.js";async function r(...t){return e("delivery-routes","createDeliveryRoute",t)}async function a(...t){return e("delivery-routes","updateRouteStatus",t)}async function o(...t){return e("delivery-routes","updateStopStatus",t)}async function s(...t){return e("delivery-routes","getRuteros",t)}export{o as a,r as c,s as g,a as u};

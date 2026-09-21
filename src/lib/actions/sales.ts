@@ -24,6 +24,129 @@ class CreditAuthRequiredError extends Error {
     requiresAdmin = true;
 }
 
+/** Consume la materia prima (INGREDIENT) de una receta dentro de la transacción
+ * de venta de un platillo preparado (RECIPE_ITEM). Reproduce el descuento FIFO
+ * por vencimiento + Kardex del producto estándar, pero aplicado al inventario
+ * del insumo. Se permite stock negativo (encargo) por consistencia con el
+ * ticket, igual que los productos normales.
+ *
+ * NO ALTERA el comportamiento de los productos STANDARD: solo se invoca para
+ * RECIPE_ITEM y únicamente cuando `enableRecipes === true`. */
+async function consumeIngredientStock(
+    tx: any,
+    ingredient: { id: string; name: string; isFractional?: boolean | null },
+    requiredUnits: number,
+    transactionId: string,
+    userId: string,
+    inventoryType: string
+) {
+    if (requiredUnits <= 0) return;
+
+    const inventoryItems = await tx.inventoryItem.findMany({
+        where: { productId: ingredient.id, inventoryType },
+        orderBy: { expiryDate: 'asc' }
+    });
+
+    let remaining = requiredUnits;
+
+    for (const invItem of inventoryItems) {
+        if (remaining <= 0) break;
+        if (invItem.quantity <= 0) continue;
+
+        const quantityToTake = Math.min(invItem.quantity, remaining);
+        const invQtyToTake = ingredient.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
+        if (invQtyToTake <= 0) continue;
+
+        const updatedInvItem = await tx.inventoryItem.update({
+            where: { id: invItem.id },
+            data: { quantity: { decrement: invQtyToTake } }
+        });
+
+        if (updatedInvItem.quantity < 0) {
+            throw new Error(`Stock insuficiente para la materia prima: ${ingredient.name} (carrera de datos)`);
+        }
+
+        const newQuantity = updatedInvItem.quantity;
+        const status = newQuantity <= 0 ? 'Agotado' : (newQuantity < 10 ? 'Stock Bajo' : 'En Stock');
+
+        if (updatedInvItem.status !== status) {
+            await tx.inventoryItem.update({
+                where: { id: invItem.id },
+                data: { status }
+            });
+        }
+
+        const currentStockRecords = await tx.inventoryItem.findMany({
+            where: { productId: ingredient.id, inventoryType }
+        });
+        const currentTotal = currentStockRecords.reduce((sum: number, i: any) => sum + i.quantity, 0);
+        const previousTotal = currentTotal + invQtyToTake;
+
+        await tx.inventoryMovement.create({
+            data: {
+                id: generateUUID(),
+                timestamp: new Date().toISOString(),
+                productName: ingredient.name,
+                movementType: 'Salida',
+                movementId: transactionId,
+                quantityChange: -(ingredient.isFractional ? quantityToTake : invQtyToTake),
+                previousQuantity: previousTotal,
+                newQuantity: currentTotal,
+                userId: userId,
+                inventoryType: inventoryType
+            } as any
+        });
+
+        remaining -= quantityToTake;
+    }
+
+    // ENCARGO: si el stock del insumo es insuficiente, se permite la venta
+    // llevando el Kardex del insumo a negativo (igual que un producto normal).
+    if (remaining > 0) {
+        const encQty = ingredient.isFractional ? Math.ceil(remaining) : remaining;
+        const currentRecords = await tx.inventoryItem.findMany({
+            where: { productId: ingredient.id, inventoryType }
+        });
+        const totalBefore = currentRecords.reduce((sum: number, i: any) => sum + i.quantity, 0);
+
+        let target = inventoryItems[inventoryItems.length - 1];
+        if (!target) {
+            target = await tx.inventoryItem.create({
+                data: {
+                    id: generateUUID(),
+                    productId: ingredient.id,
+                    productName: ingredient.name,
+                    inventoryType: inventoryType as any,
+                    batch: 'ENCARGO',
+                    quantity: 0,
+                    expiryDate: '2099-12-31',
+                    status: 'Agotado'
+                } as any
+            });
+        }
+
+        await tx.inventoryItem.update({
+            where: { id: target.id },
+            data: { quantity: { decrement: encQty } }
+        });
+
+        await tx.inventoryMovement.create({
+            data: {
+                id: generateUUID(),
+                timestamp: new Date().toISOString(),
+                productName: ingredient.name,
+                movementType: 'Salida',
+                movementId: transactionId,
+                quantityChange: -remaining,
+                previousQuantity: totalBefore,
+                newQuantity: totalBefore - remaining,
+                userId: userId,
+                inventoryType: inventoryType
+            } as any
+        });
+    }
+}
+
 export async function createSale(
     items: CartItem[],
     sessionId: string,
@@ -49,6 +172,11 @@ export async function createSale(
         }
 
         const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        // Recetas (BOM): bandera global de configuración. Solo cuando está
+        // habilitada y el producto es RECIPE_ITEM se descuentan insumos.
+        const sysSettings = await db.systemSettings.findFirst({ select: { enableRecipes: true } });
+        const enableRecipes = !!sysSettings?.enableRecipes;
 
         // Round totalAmount to 2 decimal places to ensure accounting accuracy
         const roundedTotalAmount = Math.round(totalAmount * 100) / 100;
@@ -76,11 +204,31 @@ await db.$transaction(async (tx) => {
                 // presentaciÃ³n). Ej: 2 Ristras (factor 3) descontarÃ­an 2 Ã— 3 = 6.
                 const factor = resolvePresentationFactor(item.product, item.presentation, item.presentationName, item.presentationFactor);
                 const physicalUnits = item.quantity * factor;
-                // Precio unitario efectivo: el congelado en el carrito (nivel de
-                // precio Ã— presentaciÃ³n); fallback al precio de detalle.
+// Precio unitario efectivo: el congelado en el carrito (nivel de
+                // precio × presentación); fallback al precio de detalle.
                 const unitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0
                     ? item.unitPrice
                     : item.product.priceNIO;
+
+                // RECETAS (BOM): si está habilitado y el producto es un platillo
+                // preparado (RECIPE_ITEM), no se descuenta su propio stock: se
+                // descuentan los insumos de la receta (cantidad vendida × cantidad
+                // de cada insumo por platillo). Si la receta está vacía, cae al
+                // comportamiento estándar.
+                const productType = (item.product as any).type || 'STANDARD';
+                if (enableRecipes && productType === 'RECIPE_ITEM') {
+                    const recipeLines = await tx.recipeItem.findMany({
+                        where: { productId: parentProductId },
+                        include: { ingredient: { select: { id: true, name: true, isFractional: true } } }
+                    });
+                    if (recipeLines.length > 0) {
+                        for (const line of recipeLines) {
+                            const needed = physicalUnits * line.quantity;
+                            await consumeIngredientStock(tx, line.ingredient, needed, transactionId, userId, inventoryType);
+                        }
+                        continue;
+                    }
+                }
 
                 if (variantId) {
                     const updatedVariant = await tx.productVariant.update({

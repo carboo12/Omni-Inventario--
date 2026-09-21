@@ -397,6 +397,7 @@ model Notification {
 model Product {
   id                String              @id
   name              String
+  type              ProductType         @default(STANDARD)
   priceNIO          Float
   price2            Float?
   price3            Float?
@@ -443,9 +444,34 @@ isFractional      Boolean             @default(false)
   customerOrderItem CustomerOrderItem[]
   purchaseInvoiceItem PurchaseInvoiceItem[]
   quoteItem           QuoteItem[]
+  recipeItem          RecipeItem[]        @relation("RecipeProduct")
+  recipeIngredients   RecipeItem[]        @relation("RecipeIngredient")
 
   @@index([categoryId], map: "Product_categoryId_fkey")
   @@map("product")
+}
+
+model RecipeItem {
+  id           String  @id
+  productId    String
+  ingredientId String
+  quantity     Float
+  unit         String?
+
+  product    Product @relation("RecipeProduct", fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  ingredient Product @relation("RecipeIngredient", fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([productId], map: "RecipeItem_productId_fkey")
+  @@index([ingredientId], map: "RecipeItem_ingredientId_fkey")
+  @@map("recipeitem")
+}
+
+enum ProductType {
+  STANDARD
+  INGREDIENT
+  RECIPE_ITEM
+
+  @@map("product_type")
 }
 
 model PurchaseInvoice {

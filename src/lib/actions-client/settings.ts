@@ -46,6 +46,11 @@ export interface SystemSettingsData {
     invoiceAlertDays?: number;
     importProductsInDollars?: boolean;
     creditFinancingEnabled?: boolean;
+
+    allowCreditSales?: boolean;
+    enableRecipes?: boolean;
+    enableBatchAndExpiration?: boolean;
+    enableKitchenPrinter?: boolean;
 }
 
 export async function getSettings(...args: any[]): Promise<any> {

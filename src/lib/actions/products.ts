@@ -201,3 +201,69 @@ export async function deleteProduct(id: string) {
         return { success: false, error: 'Failed to delete product' };
     }
 }
+
+/** Devuelve la receta (insumos) de un platillo preparado (RECIPE_ITEM).
+ *  Cada fila incluye los datos del producto insumo para calcular el costeo. */
+export async function getRecipeItems(productId: string) {
+    try {
+        const items = await db.recipeItem.findMany({
+            where: { productId },
+            include: {
+                ingredient: {
+                    select: {
+                        name: true,
+                        unitOfMeasure: true,
+                        costPriceNIO: true,
+                        barcode: true,
+                        type: true
+                    }
+                }
+            },
+            orderBy: { id: 'asc' }
+        });
+
+        const data = items.map((item: any) => ({
+            id: item.id,
+            ingredientId: item.ingredientId,
+            quantity: item.quantity,
+            unit: item.unit || 'unidad',
+            name: item.ingredient?.name || '',
+            unitOfMeasure: item.ingredient?.unitOfMeasure || 'unit',
+            costPriceNIO: item.ingredient?.costPriceNIO ?? 0
+        }));
+
+        return { success: true, data };
+    } catch (error) {
+        console.error('Error fetching recipe items:', error);
+        return { success: false, error: 'No se pudo obtener la receta' };
+    }
+}
+
+/** Guarda la receta (BOM) de un platillo: remplaza por completo los insumos.
+ *  Se ejecuta en una transacción para evitar recetas a medias. */
+export async function saveRecipe(productId: string, items: Array<{ ingredientId: string; quantity: number; unit?: string }>) {
+    try {
+        await db.$transaction(async (tx) => {
+            await tx.recipeItem.deleteMany({ where: { productId } });
+
+            if (items.length > 0) {
+                await tx.recipeItem.createMany({
+                    data: items.map((it) => ({
+                        id: generateUUID(),
+                        productId,
+                        ingredientId: it.ingredientId,
+                        quantity: Number(it.quantity) || 0,
+                        unit: it.unit || 'unidad'
+                    }))
+                });
+            }
+        });
+
+        revalidatePath('/inventory');
+        revalidatePath('/pos');
+        return { success: true };
+    } catch (error) {
+        console.error('Error saving recipe:', error);
+        return { success: false, error: 'No se pudo guardar la receta' };
+    }
+}

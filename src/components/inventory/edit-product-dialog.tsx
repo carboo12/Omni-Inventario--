@@ -28,7 +28,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { CategoryCombobox } from '@/components/ui/category-combobox';
-import { CalendarIcon, Loader2 } from 'lucide-react';
+import { CalendarIcon, Loader2, Search } from 'lucide-react';
 import { Calendar } from '../ui/calendar';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
@@ -37,12 +37,14 @@ import { ScrollArea } from '../ui/scroll-area';
 import type { Product, InventoryItem } from '@/lib/types';
 import { Separator } from '../ui/separator';
 import { getCategories, CategoryWithChildren } from '@/lib/actions/categories';
+import { getRecipeItems } from '@/lib/actions/products';
 import { ImagePicker } from './image-picker';
 import { useSettings } from '@/hooks/use-settings';
 
 const formSchema = z.object({
   // Product fields
   name: z.string().min(2, { message: "El nombre debe tener al menos 2 caracteres." }),
+  type: z.enum(['STANDARD', 'INGREDIENT', 'RECIPE_ITEM']).default('STANDARD'),
   barcode: z.string().optional(),
   unitOfMeasure: z.enum(['unit', 'bulk', 'box', 'blister']).default('unit'),
   costPriceNIO: z.coerce.number().min(0, { message: "El precio de costo no puede ser negativo." }),
@@ -108,12 +110,13 @@ type FormValues = z.infer<typeof formSchema>;
 interface EditProductDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: Product & { quantity: number; batch: string; expiryDate: string; categoryId?: string }) => Promise<void>;
+  onSave: (data: Product & { quantity: number; batch: string; expiryDate: string; categoryId?: string; type?: string; recipeItems?: Array<{ ingredientId: string; quantity: number; unit: string }> }) => Promise<void>;
   product: Product;
   inventoryItem: InventoryItem;
+  existingProducts?: Product[];
 }
 
-export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryItem }: EditProductDialogProps) {
+export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryItem, existingProducts = [] }: EditProductDialogProps) {
   const { mode } = useBusinessMode();
   const { toast } = useToast();
   const { settings } = useSettings();
@@ -138,6 +141,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
     if (product && inventoryItem) {
       form.reset({
         name: product.name,
+        type: (product as any).type ?? 'STANDARD',
         barcode: product.barcode ?? undefined,
         unitOfMeasure: product.unitOfMeasure as any,
         costPriceNIO: product.costPriceNIO ?? 0,
@@ -175,6 +179,98 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
     }
     setIsSaving(false);
   }, [product, inventoryItem, form, isOpen]);
+
+  // ── Módulo Opcional de Recetas (BOM) ─────────────────────────────────────
+  const enableRecipes = !!settings.enableRecipes;
+
+  const [ingredientQuery, setIngredientQuery] = useState('');
+  const [showIngredientResults, setShowIngredientResults] = useState(false);
+  const [recipeLines, setRecipeLines] = useState<Array<{
+    ingredientId: string;
+    name: string;
+    unitOfMeasure?: string | null;
+    costPriceNIO?: number | null;
+    quantity: number;
+    unit: string;
+  }>>([]);
+  const [marginPct, setMarginPct] = useState(40);
+
+  // Cargar la receta existente del platillo al abrir el diálogo.
+  useEffect(() => {
+    if (isOpen && (product as any).type === 'RECIPE_ITEM') {
+      getRecipeItems(product.id).then((res) => {
+        if (res.success && res.data) {
+          setRecipeLines(
+            (res.data as any[]).map(l => ({
+              ingredientId: l.ingredientId,
+              name: l.name ?? '',
+              unitOfMeasure: l.unitOfMeasure ?? null,
+              costPriceNIO: Number(l.costPriceNIO) || 0,
+              quantity: Number(l.quantity) || 0,
+              unit: String(l.unit ?? 'unidad'),
+            }))
+          );
+        }
+      });
+    }
+  }, [isOpen, product]);
+
+  const ingredientResults = React.useMemo(() => {
+    if (!ingredientQuery) return [];
+    const lowerSearch = ingredientQuery.toLowerCase();
+    // No se puede buscar otros productos aquí sin traerlos; el límite se maneja
+    // en client.tsx vía prop existentes. Aquí usamos la propia lista (el platillo
+    // no se lista como insumo de sí mismo).
+    return existingProducts.filter(p =>
+      (p as any).type === 'INGREDIENT' &&
+      (p.name.toLowerCase().includes(lowerSearch) || (p.barcode && p.barcode.toLowerCase().includes(lowerSearch)))
+    );
+  }, [ingredientQuery, existingProducts]);
+
+  const addIngredient = (p: Product) => {
+    setRecipeLines((prev) => {
+      const existing = prev.find(l => l.ingredientId === p.id);
+      if (existing) {
+        return prev.map(l => l.ingredientId === p.id ? { ...l, quantity: l.quantity + 1 } : l);
+      }
+      return [...prev, {
+        ingredientId: p.id,
+        name: p.name,
+        unitOfMeasure: p.unitOfMeasure ?? null,
+        costPriceNIO: p.costPriceNIO ?? 0,
+        quantity: 1,
+        unit: 'unidad'
+      }];
+    });
+    setIngredientQuery('');
+    setShowIngredientResults(false);
+  };
+
+  const updateRecipeLine = (idx: number, patch: Partial<{ quantity: number; unit: string }>) => {
+    setRecipeLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  };
+
+  const removeRecipeLine = (idx: number) => {
+    setRecipeLines((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const recipeTotalCost = recipeLines.reduce((sum, l) => sum + (l.quantity || 0) * (l.costPriceNIO || 0), 0);
+
+  const suggestedPrice = marginPct >= 100 || marginPct < 0
+    ? null
+    : recipeTotalCost > 0
+      ? recipeTotalCost / (1 - marginPct / 100)
+      : null;
+
+  const applySuggestedPrice = () => {
+    if (suggestedPrice == null || suggestedPrice <= 0) return;
+    form.setValue('priceNIO', Math.round(suggestedPrice * 100) / 100);
+    toast({
+      title: 'Precio sugerido aplicado',
+      description: `Precio de venta establecido en C$ ${(Math.round(suggestedPrice * 100) / 100).toFixed(2)}.`,
+    });
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Autocalcule NIO Prices when USD original prices or currency change
   const currentCurrency = form.watch('purchaseCurrency');
@@ -223,6 +319,12 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
       await onSave({
         ...product,
         ...productValues,
+        type: values.type,
+        recipeItems: recipeLines.filter(l => l.ingredientId && l.quantity > 0).map(l => ({
+          ingredientId: l.ingredientId,
+          quantity: Number(l.quantity) || 0,
+          unit: l.unit.trim() || 'unidad'
+        })),
         quantity: finalQuantity,
         minStock: finalMinStock,
         bulkUnit: values.isFractional ? values.bulkUnit : undefined,
@@ -391,6 +493,32 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                     </FormItem>
                   )}
                 />
+
+                {/* Tipo de Producto: solo visible cuando la Configuración "Recetas" está habilitada */}
+                {enableRecipes && (
+                  <FormField
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Tipo de Producto</FormLabel>
+                        <FormControl>
+                          <Tabs onValueChange={field.onChange} value={field.value || 'STANDARD'} className="w-full">
+                            <TabsList className="grid w-full grid-cols-3">
+                              <TabsTrigger value="STANDARD">Reventa (Estándar)</TabsTrigger>
+                              <TabsTrigger value="INGREDIENT">Materia Prima</TabsTrigger>
+                              <TabsTrigger value="RECIPE_ITEM">Platillo Preparado</TabsTrigger>
+                            </TabsList>
+                          </Tabs>
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          La materia prima (INGREDIENT) se descuenta del inventario al vender platillos preparados en el POS.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 {isBoutique && (
                   <div className="grid grid-cols-2 gap-4">
@@ -734,6 +862,131 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                     )}
                   />
                 </div>
+
+                {/* Receta / Costeo: solo para platillos preparados y cuando la Configuración
+                    "Recetas" esté habilitada */}
+                {enableRecipes && form.watch('type') === 'RECIPE_ITEM' && (
+                  <>
+                    <Separator className='my-6' />
+                    <h4 className='text-sm font-semibold text-primary'>Receta / Costeo</h4>
+                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 space-y-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                        <Search className="h-4 w-4" />
+                        <span>Buscar materia prima</span>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          placeholder="Buscar insumo (INGREDIENT) por nombre o código..."
+                          value={ingredientQuery}
+                          onChange={(e) => {
+                            setIngredientQuery(e.target.value);
+                            setShowIngredientResults(true);
+                          }}
+                          onFocus={() => setShowIngredientResults(true)}
+                          disabled={isSaving}
+                        />
+                        {showIngredientResults && ingredientResults.length > 0 && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                            {ingredientResults.map(p => (
+                              <div
+                                key={p.id}
+                                className="px-3 py-2 text-sm hover:bg-slate-100 cursor-pointer flex flex-col border-b last:border-0"
+                                onMouseDown={(e) => { e.preventDefault(); addIngredient(p); }}
+                              >
+                                <span className="font-medium text-slate-800">{p.name}</span>
+                                <span className="text-xs text-slate-500">
+                                  {p.costPriceNIO ? `Costo: C$ ${p.costPriceNIO}` : 'Sin costo'} {p.barcode ? `| Cod: ${p.barcode}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {recipeLines.length > 0 ? (
+                        <div className="space-y-2">
+                          {recipeLines.map((line, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-white border border-slate-200 rounded-md p-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{line.name}</p>
+                                <p className="text-xs text-slate-500">Costo: C$ {line.costPriceNIO ?? 0} / unidad</p>
+                              </div>
+                              <Input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={line.quantity}
+                                className="w-20 h-8 text-sm"
+                                onChange={(e) => updateRecipeLine(idx, { quantity: Number(e.target.value) || 0 })}
+                                placeholder="Cant."
+                              />
+                              <Input
+                                value={line.unit}
+                                className="w-24 h-8 text-sm"
+                                onChange={(e) => updateRecipeLine(idx, { unit: e.target.value })}
+                                placeholder="unidad"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-500 whitespace-nowrap"
+                                onClick={() => removeRecipeLine(idx)}
+                              >
+                                Quitar
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Aún no hay insumos. Busque y agregue la materia prima que consume cada platillo.
+                        </p>
+                      )}
+
+                      <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
+                        <span className="text-sm font-semibold text-slate-700">Costo Total del Platillo</span>
+                        <span className="text-lg font-bold text-primary">C$ {recipeTotalCost.toFixed(2)}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-slate-500">Porcentaje de Ganancia Deseado (%)</p>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="99"
+                            value={marginPct}
+                            onChange={(e) => setMarginPct(Number(e.target.value) || 0)}
+                            placeholder="Ej: 40"
+                          />
+                          <p className="text-[11px] text-slate-400">Precio = Costo / (1 − Margen%)</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-slate-500">Precio de Venta Sugerido (C$)</p>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={suggestedPrice ? suggestedPrice.toFixed(2) : ''}
+                              readOnly
+                              className="bg-slate-100"
+                              placeholder="—"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="whitespace-nowrap"
+                              onClick={applySuggestedPrice}
+                              disabled={!suggestedPrice || suggestedPrice <= 0}
+                            >
+                              Aplicar Precio Sugerido
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* Solo se muestran los campos de stock cuando el artículo está sujeto a inventario */}
                 {form.watch('trackInventory') && (

@@ -211,6 +211,7 @@ const CashierPOS = ({ products, inventory }: POSComponentProps) => {
     const { addSaleToSession } = useCashRegisterSessions();
     const { toast } = useToast();
     const { settings } = useSettings();
+    const enableRecipes = !!settings.enableRecipes;
 const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unlockPendingSale, addPendingSale, deletePendingSale } = usePendingSales();
     const { cart, setCart, customerName, setCustomerName } = usePersistedCart();
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -569,8 +570,23 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 || placeholderImages.placeholderImages.find(img => img.id === 'product-default');
             result.push({ ...product, imageUrl: image?.imageUrl, stock: stockByProduct.get(product.id) || 0 });
         });
+
+        // MÓDULO DE RECETAS (BOM): los platillos preparados (RECIPE_ITEM) no llevan
+        // registro propio de inventario; se incluyen siempre que el módulo esté activo.
+        if (enableRecipes) {
+            products.forEach(product => {
+                if ((product as any).type === 'RECIPE_ITEM' && !seen.has(product.id)) {
+                    seen.add(product.id);
+                    const categoryHint = product.category.toLowerCase().split(' ')[0];
+                    const image = placeholderImages.placeholderImages.find(img => img.id === `product-${categoryHint}`)
+                        || placeholderImages.placeholderImages.find(img => img.id === 'product-default');
+                    result.push({ ...product, imageUrl: image?.imageUrl, stock: 1 });
+                }
+            });
+        }
+
         return result;
-    }, [userInventoryType, products, inventory]);
+    }, [userInventoryType, products, inventory, enableRecipes]);
 
 const addToCart = (product: Product) => {
         // Abre el wizard compartido (presentación → cantidad → nivel de precio).
@@ -1195,6 +1211,7 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
     const { addSaleToSession } = useCashRegisterSessions();
     const { toast } = useToast();
     const { settings } = useSettings();
+    const enableRecipes = !!settings.enableRecipes;
     const { addPendingSale, removePendingSale, deletePendingSale, lockPendingSale } = usePendingSales();
     const { cart, setCart, customerName, setCustomerName } = usePersistedCart();
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -1367,8 +1384,23 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
                 || placeholderImages.placeholderImages.find(img => img.id === 'product-default');
             result.push({ ...product, imageUrl: image?.imageUrl, stock: stockByProduct.get(product.id) || 0 });
         });
+
+        // MÓDULO DE RECETAS (BOM): los platillos preparados (RECIPE_ITEM) no llevan
+        // registro propio de inventario; se incluyen siempre que el módulo esté activo.
+        if (enableRecipes) {
+            products.forEach(product => {
+                if ((product as any).type === 'RECIPE_ITEM' && !seen.has(product.id)) {
+                    seen.add(product.id);
+                    const categoryHint = product.category.toLowerCase().split(' ')[0];
+                    const image = placeholderImages.placeholderImages.find(img => img.id === `product-${categoryHint}`)
+                        || placeholderImages.placeholderImages.find(img => img.id === 'product-default');
+                    result.push({ ...product, imageUrl: image?.imageUrl, stock: 1 });
+                }
+            });
+        }
+
         return result;
-    }, [userInventoryType, products, inventory]);
+    }, [userInventoryType, products, inventory, enableRecipes]);
 
     const addToCart = (product: Product) => {
         // Abre el wizard compartido (presentación → cantidad → nivel de precio).

@@ -21,7 +21,7 @@ import { PlusCircle, Database, Upload, Search, Trash2, Eye, Pencil, ArrowUpDown,
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { updateInventoryItem, createInventoryItem, createInventoryMovement, getInventory } from '@/lib/actions/inventory';
-import { updateProduct, createProduct, getProducts } from '@/lib/actions/products';
+import { updateProduct, createProduct, getProducts, saveRecipe } from '@/lib/actions/products';
 import { useBusinessMode } from '@/hooks/use-business-mode';
 import { bulkImportInventory } from '@/lib/actions/inventory';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -341,7 +341,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
         setDialogAction(null);
     };
 
-    const handleProductUpdate = async (updatedProductData: Product & { quantity: number; batch: string; expiryDate: string }) => {
+    const handleProductUpdate = async (updatedProductData: Product & { quantity: number; batch: string; expiryDate: string; type?: string; recipeItems?: Array<{ ingredientId: string; quantity: number; unit: string }> }) => {
         // Optimistic update
         const updatedProducts = products.map(p =>
             p.id === updatedProductData.id ? { ...p, ...updatedProductData } : p
@@ -368,6 +368,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
         try {
             await updateProduct(updatedProductData.id, {
                 name: updatedProductData.name,
+                type: updatedProductData.type ?? (updatedProductData as any).type ?? 'STANDARD',
                 priceNIO: updatedProductData.priceNIO,
                 costPriceNIO: updatedProductData.costPriceNIO,
                 category: updatedProductData.category,
@@ -413,6 +414,20 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                     inventoryType: updatedProductData.inventoryType
                 });
             }
+
+            // RECETAS (BOM): guardar insumos del platillo (o limpiar si se dejó sin receta).
+            if (updatedProductData.type === 'RECIPE_ITEM') {
+                const recipeRes = await saveRecipe(updatedProductData.id, (updatedProductData.recipeItems ?? []));
+                if (!recipeRes.success) {
+                    console.error("No se pudo guardar la receta:", recipeRes.error);
+                    toast({
+                        title: "Receta no guardada",
+                        variant: "destructive",
+                        description: recipeRes.error || 'Ocurrió un error al guardar la receta.',
+                    });
+                }
+            }
+
             toast({ title: "Producto actualizado" });
             queryClient.invalidateQueries({ queryKey: ['inventory'] });
             queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -444,6 +459,8 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
         price4?: number | null;
         hasVariants?: boolean;
         variantsData?: VariantData[];
+        type?: 'STANDARD' | 'INGREDIENT' | 'RECIPE_ITEM';
+        recipeItems?: Array<{ ingredientId: string; quantity: number; unit: string }>;
     }): Promise<{ success: boolean; error?: string }> => {
         try {
             let product;
@@ -463,6 +480,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
             if (!product) {
                 const newProductResult = await createProduct({
                     name: newItemData.productName,
+                    type: newItemData.type ?? 'STANDARD',
                     priceNIO: newItemData.priceNIO,
                     costPriceNIO: newItemData.costPriceNIO || 0,
                     minStock: newItemData.minStock,
@@ -505,6 +523,19 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                     product = newProduct;
                     productId = newProduct.id;
                     setProducts([...products, newProduct]);
+
+                    // RECETAS (BOM): guardar insumos del platillo si el módulo está activo.
+                    if (newItemData.type === 'RECIPE_ITEM' && newItemData.recipeItems && newItemData.recipeItems.length > 0) {
+                        const recipeRes = await saveRecipe(newProduct.id, newItemData.recipeItems);
+                        if (!recipeRes.success) {
+                            console.error("No se pudo guardar la receta:", recipeRes.error);
+                            toast({
+                                title: "Receta no guardada",
+                                variant: "destructive",
+                                description: recipeRes.error || 'Ocurrió un error al guardar la receta.',
+                            });
+                        }
+                    }
                 } else {
                     throw new Error("Failed to create product");
                 }
@@ -895,6 +926,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                     isOpen={dialogAction === 'edit-product'}
                     onClose={closeDialogs}
                     onSave={handleProductUpdate}
+                    existingProducts={products}
                 />
             )}
             <AddInventoryItemDialog

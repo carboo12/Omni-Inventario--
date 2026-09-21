@@ -3,6 +3,7 @@
 export type UserRole = "master-admin" | "admin" | "dispatcher" | "cashier" | "rutero";
 export type InventoryType = "pharmacy" | "general" | "jewelry";
 export type UnitOfMeasure = "unit" | "bulk" | "box" | "blister";
+export type ProductType = "STANDARD" | "INGREDIENT" | "RECIPE_ITEM";
 
 export type User = {
   id: string;
@@ -78,6 +79,18 @@ export type Product = {
   hasExtraDetails?: boolean;
   description2?: string | null;
   description3?: string | null;
+  /** Tipo de producto: STANDARD (reventa), INGREDIENT (materia prima) o RECIPE_ITEM (platillo preparado). */
+  type?: ProductType;
+};
+
+/** Línea de receta (BOM): un insumo que consume un platillo preparado. */
+export type RecipeLine = {
+  ingredientId: string;
+  name: string;
+  unitOfMeasure?: string | null;
+  costPriceNIO?: number | null;
+  quantity: number;
+  unit: string;
 };
 
 export type InventoryItem = {

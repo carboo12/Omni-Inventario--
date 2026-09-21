@@ -1,1 +1,0 @@
-import{a1 as e}from"./index-DKqHx3fv.js";async function a(...r){return e("orders","getOrders",r)}async function n(...r){return e("orders","createOrder",r)}async function s(...r){return e("orders","updateOrderStatus",r)}async function u(...r){return e("orders","queueOrderForPOS",r)}export{n as c,a as g,u as q,s as u};

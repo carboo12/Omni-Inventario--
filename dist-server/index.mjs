@@ -5464,6 +5464,8 @@ __export(products_exports, {
   deleteProduct: () => deleteProduct,
   getProductById: () => getProductById,
   getProducts: () => getProducts,
+  getRecipeItems: () => getRecipeItems,
+  saveRecipe: () => saveRecipe,
   updateProduct: () => updateProduct
 });
 init_db();
@@ -5629,6 +5631,62 @@ async function deleteProduct(id) {
   } catch (error) {
     console.error("Error deleting product:", error);
     return { success: false, error: "Failed to delete product" };
+  }
+}
+async function getRecipeItems(productId) {
+  try {
+    const items = await db_default.recipeItem.findMany({
+      where: { productId },
+      include: {
+        ingredient: {
+          select: {
+            name: true,
+            unitOfMeasure: true,
+            costPriceNIO: true,
+            barcode: true,
+            type: true
+          }
+        }
+      },
+      orderBy: { id: "asc" }
+    });
+    const data = items.map((item) => ({
+      id: item.id,
+      ingredientId: item.ingredientId,
+      quantity: item.quantity,
+      unit: item.unit || "unidad",
+      name: item.ingredient?.name || "",
+      unitOfMeasure: item.ingredient?.unitOfMeasure || "unit",
+      costPriceNIO: item.ingredient?.costPriceNIO ?? 0
+    }));
+    return { success: true, data };
+  } catch (error) {
+    console.error("Error fetching recipe items:", error);
+    return { success: false, error: "No se pudo obtener la receta" };
+  }
+}
+async function saveRecipe(productId, items) {
+  try {
+    await db_default.$transaction(async (tx) => {
+      await tx.recipeItem.deleteMany({ where: { productId } });
+      if (items.length > 0) {
+        await tx.recipeItem.createMany({
+          data: items.map((it) => ({
+            id: generateUUID(),
+            productId,
+            ingredientId: it.ingredientId,
+            quantity: Number(it.quantity) || 0,
+            unit: it.unit || "unidad"
+          }))
+        });
+      }
+    });
+    revalidatePath("/inventory");
+    revalidatePath("/pos");
+    return { success: true };
+  } catch (error) {
+    console.error("Error saving recipe:", error);
+    return { success: false, error: "No se pudo guardar la receta" };
   }
 }
 
@@ -7862,6 +7920,96 @@ var CreditAuthRequiredError = class extends Error {
     this.requiresAdmin = true;
   }
 };
+async function consumeIngredientStock(tx, ingredient, requiredUnits, transactionId, userId, inventoryType) {
+  if (requiredUnits <= 0) return;
+  const inventoryItems = await tx.inventoryItem.findMany({
+    where: { productId: ingredient.id, inventoryType },
+    orderBy: { expiryDate: "asc" }
+  });
+  let remaining = requiredUnits;
+  for (const invItem of inventoryItems) {
+    if (remaining <= 0) break;
+    if (invItem.quantity <= 0) continue;
+    const quantityToTake = Math.min(invItem.quantity, remaining);
+    const invQtyToTake = ingredient.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
+    if (invQtyToTake <= 0) continue;
+    const updatedInvItem = await tx.inventoryItem.update({
+      where: { id: invItem.id },
+      data: { quantity: { decrement: invQtyToTake } }
+    });
+    if (updatedInvItem.quantity < 0) {
+      throw new Error(`Stock insuficiente para la materia prima: ${ingredient.name} (carrera de datos)`);
+    }
+    const newQuantity = updatedInvItem.quantity;
+    const status = newQuantity <= 0 ? "Agotado" : newQuantity < 10 ? "Stock Bajo" : "En Stock";
+    if (updatedInvItem.status !== status) {
+      await tx.inventoryItem.update({
+        where: { id: invItem.id },
+        data: { status }
+      });
+    }
+    const currentStockRecords = await tx.inventoryItem.findMany({
+      where: { productId: ingredient.id, inventoryType }
+    });
+    const currentTotal = currentStockRecords.reduce((sum, i) => sum + i.quantity, 0);
+    const previousTotal = currentTotal + invQtyToTake;
+    await tx.inventoryMovement.create({
+      data: {
+        id: generateUUID(),
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        productName: ingredient.name,
+        movementType: "Salida",
+        movementId: transactionId,
+        quantityChange: -(ingredient.isFractional ? quantityToTake : invQtyToTake),
+        previousQuantity: previousTotal,
+        newQuantity: currentTotal,
+        userId,
+        inventoryType
+      }
+    });
+    remaining -= quantityToTake;
+  }
+  if (remaining > 0) {
+    const encQty = ingredient.isFractional ? Math.ceil(remaining) : remaining;
+    const currentRecords = await tx.inventoryItem.findMany({
+      where: { productId: ingredient.id, inventoryType }
+    });
+    const totalBefore = currentRecords.reduce((sum, i) => sum + i.quantity, 0);
+    let target = inventoryItems[inventoryItems.length - 1];
+    if (!target) {
+      target = await tx.inventoryItem.create({
+        data: {
+          id: generateUUID(),
+          productId: ingredient.id,
+          productName: ingredient.name,
+          inventoryType,
+          batch: "ENCARGO",
+          quantity: 0,
+          expiryDate: "2099-12-31",
+          status: "Agotado"
+        }
+      });
+    }
+    await tx.inventoryItem.update({
+      where: { id: target.id },
+      data: { quantity: { decrement: encQty } }
+    });
+    await tx.inventoryMovement.create({
+      data: {
+        id: generateUUID(),
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        productName: ingredient.name,
+        movementType: "Salida",
+        movementId: transactionId,
+        quantityChange: -remaining,
+        previousQuantity: totalBefore,
+        newQuantity: totalBefore - remaining,
+        userId,
+        inventoryType
+      }
+    });
+  }
+}
 async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId, financing, adminAuthorized) {
   console.log("--- DEBUG createSale ---");
   console.log("paymentMethod:", paymentMethod);
@@ -7874,6 +8022,8 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
       return { success: false, error: "El cliente es obligatorio para realizar ventas en modo Joyer\xEDa." };
     }
     const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
+    const sysSettings = await db_default.systemSettings.findFirst({ select: { enableRecipes: true } });
+    const enableRecipes = !!sysSettings?.enableRecipes;
     const roundedTotalAmount = Math.round(totalAmount * 100) / 100;
     const lineTotals = items.reduce((sum, item) => {
       const unitPrice = typeof item.unitPrice === "number" && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO;
@@ -7889,6 +8039,20 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
         const factor = resolvePresentationFactor(item.product, item.presentation, item.presentationName, item.presentationFactor);
         const physicalUnits = item.quantity * factor;
         const unitPrice = typeof item.unitPrice === "number" && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO;
+        const productType = item.product.type || "STANDARD";
+        if (enableRecipes && productType === "RECIPE_ITEM") {
+          const recipeLines = await tx.recipeItem.findMany({
+            where: { productId: parentProductId },
+            include: { ingredient: { select: { id: true, name: true, isFractional: true } } }
+          });
+          if (recipeLines.length > 0) {
+            for (const line of recipeLines) {
+              const needed = physicalUnits * line.quantity;
+              await consumeIngredientStock(tx, line.ingredient, needed, transactionId, userId, inventoryType);
+            }
+            continue;
+          }
+        }
         if (variantId) {
           const updatedVariant = await tx.productVariant.update({
             where: { id: variantId },
