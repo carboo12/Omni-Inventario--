@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useToast } from '@/hooks/use-toast';
+import { useSettings } from '@/hooks/use-settings';
 import { Check, ChevronsUpDown, Plus, Search, Trash2, ArrowLeft, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from '@/lib/router-nav';
@@ -32,6 +33,7 @@ interface OrderItem {
 export default function NewOrderClient({ suppliers, products }: NewOrderClientProps) {
     const router = useRouter();
     const { toast } = useToast();
+    const { settings } = useSettings();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [supplierId, setSupplierId] = useState('');
@@ -188,7 +190,9 @@ export default function NewOrderClient({ suppliers, products }: NewOrderClientPr
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="CASH">Al Contado</SelectItem>
+                                        {settings.enableAccountsPayable !== false && (
                                         <SelectItem value="CREDIT">A Crédito (Cuentas por Pagar)</SelectItem>
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>

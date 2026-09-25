@@ -3463,7 +3463,16 @@ async function getInitialAppData() {
       licenseStatus: settingsRow.licenseStatus,
       invoiceAlertDays: settingsRow.invoiceAlertDays,
       importProductsInDollars: settingsRow.importProductsInDollars,
-      creditFinancingEnabled: settingsRow.creditFinancingEnabled || false
+      creditFinancingEnabled: settingsRow.creditFinancingEnabled || false,
+      allowCreditSales: settingsRow.allowCreditSales ?? true,
+      enableRecipes: settingsRow.enableRecipes ?? false,
+      enableBatchAndExpiration: settingsRow.enableBatchAndExpiration ?? false,
+      enableKitchenPrinter: settingsRow.enableKitchenPrinter ?? true,
+      enableMultiCurrency: settingsRow.enableMultiCurrency ?? true,
+      enableWholesalePrices: settingsRow.enableWholesalePrices ?? false,
+      enableAccountsPayable: settingsRow.enableAccountsPayable ?? true,
+      enablePettyCashExpenses: settingsRow.enablePettyCashExpenses ?? true,
+      enableSerialNumbers: settingsRow.enableSerialNumbers ?? false
     } : null,
     businessMode,
     sessions,
@@ -8439,7 +8448,12 @@ async function getSettings() {
       allowCreditSales: true,
       enableRecipes: false,
       enableBatchAndExpiration: false,
-      enableKitchenPrinter: false
+      enableKitchenPrinter: true,
+      enableMultiCurrency: true,
+      enableWholesalePrices: false,
+      enableAccountsPayable: true,
+      enablePettyCashExpenses: true,
+      enableSerialNumbers: false
     };
   }
   return {
@@ -8481,7 +8495,12 @@ async function getSettings() {
     allowCreditSales: settings.allowCreditSales,
     enableRecipes: settings.enableRecipes,
     enableBatchAndExpiration: settings.enableBatchAndExpiration,
-    enableKitchenPrinter: settings.enableKitchenPrinter
+    enableKitchenPrinter: settings.enableKitchenPrinter,
+    enableMultiCurrency: settings.enableMultiCurrency,
+    enableWholesalePrices: settings.enableWholesalePrices,
+    enableAccountsPayable: settings.enableAccountsPayable,
+    enablePettyCashExpenses: settings.enablePettyCashExpenses,
+    enableSerialNumbers: settings.enableSerialNumbers
   };
 }
 async function updateSettings(data) {
@@ -8528,7 +8547,12 @@ async function updateSettings(data) {
         allowCreditSales: data.allowCreditSales,
         enableRecipes: data.enableRecipes,
         enableBatchAndExpiration: data.enableBatchAndExpiration,
-        enableKitchenPrinter: data.enableKitchenPrinter
+        enableKitchenPrinter: data.enableKitchenPrinter,
+        enableMultiCurrency: data.enableMultiCurrency,
+        enableWholesalePrices: data.enableWholesalePrices,
+        enableAccountsPayable: data.enableAccountsPayable,
+        enablePettyCashExpenses: data.enablePettyCashExpenses,
+        enableSerialNumbers: data.enableSerialNumbers
       }
     });
   } else {
@@ -8570,7 +8594,12 @@ async function updateSettings(data) {
         allowCreditSales: data.allowCreditSales ?? true,
         enableRecipes: data.enableRecipes ?? false,
         enableBatchAndExpiration: data.enableBatchAndExpiration ?? false,
-        enableKitchenPrinter: data.enableKitchenPrinter ?? false
+        enableKitchenPrinter: data.enableKitchenPrinter ?? true,
+        enableMultiCurrency: data.enableMultiCurrency ?? true,
+        enableWholesalePrices: data.enableWholesalePrices ?? false,
+        enableAccountsPayable: data.enableAccountsPayable ?? true,
+        enablePettyCashExpenses: data.enablePettyCashExpenses ?? true,
+        enableSerialNumbers: data.enableSerialNumbers ?? false
       }
     });
   }

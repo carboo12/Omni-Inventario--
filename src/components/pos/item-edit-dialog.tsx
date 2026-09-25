@@ -14,10 +14,12 @@ import {
 import { cn, formatCurrency } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { getBulkPresentationOptions } from '@/lib/presentations';
+import { useSettings } from '@/hooks/use-settings';
 
 // Niveles de precio del producto (las presentaciones fijas no tienen precios propios).
-const getProductPriceLevels = (product: Product): Array<{ level: number; label: string; price: number }> => {
+const getProductPriceLevels = (product: Product, wholesaleEnabled: boolean = true): Array<{ level: number; label: string; price: number }> => {
   const levels = [{ level: 1, label: 'Detalle', price: product.priceNIO }];
+  if (!wholesaleEnabled) return levels;
   const p2 = Number((product as any).price2);
   const p3 = Number((product as any).price3);
   const p4 = Number((product as any).price4);
@@ -28,7 +30,8 @@ const getProductPriceLevels = (product: Product): Array<{ level: number; label: 
 };
 
 // Precio directo del nivel elegido del producto.
-const getProductPrice = (product: Product, priceLevel: number): number => {
+const getProductPrice = (product: Product, priceLevel: number, wholesaleEnabled: boolean = true): number => {
+  if (!wholesaleEnabled) return product.priceNIO;
   if (priceLevel === 2 && Number((product as any).price2) > 0) return Number((product as any).price2);
   if (priceLevel === 3 && Number((product as any).price3) > 0) return Number((product as any).price3);
   if (priceLevel === 4 && Number((product as any).price4) > 0) return Number((product as any).price4);
@@ -51,6 +54,7 @@ interface ItemEditDialogProps {
 }
 
 export function ItemEditDialog({ item, onClose, onSave, onRemove }: ItemEditDialogProps) {
+  const { settings } = useSettings();
   const [qtyText, setQtyText] = useState('');
   const [priceLevel, setPriceLevel] = useState(1);
   const [presentationId, setPresentationId] = useState<string>('unit');
@@ -71,8 +75,8 @@ export function ItemEditDialog({ item, onClose, onSave, onRemove }: ItemEditDial
   if (!item) return null;
 
   const bulkOptions = getBulkPresentationOptions(item.product);
-  const levels = getProductPriceLevels(item.product);
-  const unitPrice = getProductPrice(item.product, priceLevel);
+  const levels = getProductPriceLevels(item.product, settings.enableWholesalePrices !== false);
+  const unitPrice = getProductPrice(item.product, priceLevel, settings.enableWholesalePrices !== false);
   const hasMultiLevel = levels.length > 1;
 
   const handleSave = () => {

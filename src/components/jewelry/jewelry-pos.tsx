@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -141,6 +141,9 @@ export function JewelryPOS({ availablePieces }: JewelryPOSProps) {
 
     const confirmPayment = async () => {
         if (!paymentData) return;
+        // BLINDAJE: cerrar el modal de resumen INMEDIATAMENTE de forma síncrona.
+        // No depender del flujo async de pago para desmontar el modal.
+        setIsPaymentSummaryOpen(false);
         await handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
     };
 

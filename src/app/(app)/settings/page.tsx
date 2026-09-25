@@ -178,6 +178,7 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
 
+                    {settings.enableAccountsPayable !== false && (
                     <Card>
                         <CardHeader>
                             <CardTitle>Cuentas por Pagar</CardTitle>
@@ -205,6 +206,7 @@ export default function SettingsPage() {
                             </div>
                         </CardContent>
                     </Card>
+                    )}
 
                     <Card>
                         <CardHeader>
@@ -282,6 +284,36 @@ export default function SettingsPage() {
                                 <Checkbox id="enable-kitchen-printer" checked={settings.enableKitchenPrinter} onCheckedChange={(c) => handleCheckboxChange('enableKitchenPrinter', !!c)} />
                                 <Label htmlFor="enable-kitchen-printer" className="text-sm font-normal">
                                     Impresión de Comandas (Cocina/Barra)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-multi-currency" checked={settings.enableMultiCurrency} onCheckedChange={(c) => handleCheckboxChange('enableMultiCurrency', !!c)} />
+                                <Label htmlFor="enable-multi-currency" className="text-sm font-normal">
+                                    Moneda Dólar (Ventas y pagos en $)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-wholesale-prices" checked={settings.enableWholesalePrices} onCheckedChange={(c) => handleCheckboxChange('enableWholesalePrices', !!c)} />
+                                <Label htmlFor="enable-wholesale-prices" className="text-sm font-normal">
+                                    Precios al Mayor (Niveles 2, 3 y 4)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-accounts-payable" checked={settings.enableAccountsPayable} onCheckedChange={(c) => handleCheckboxChange('enableAccountsPayable', !!c)} />
+                                <Label htmlFor="enable-accounts-payable" className="text-sm font-normal">
+                                    Cuentas por Pagar (Compras al crédito)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-petty-cash-expenses" checked={settings.enablePettyCashExpenses} onCheckedChange={(c) => handleCheckboxChange('enablePettyCashExpenses', !!c)} />
+                                <Label htmlFor="enable-petty-cash-expenses" className="text-sm font-normal">
+                                    Caja Chica (Retiros y salidas de efectivo)
+                                </Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="enable-serial-numbers" checked={settings.enableSerialNumbers} onCheckedChange={(c) => handleCheckboxChange('enableSerialNumbers', !!c)} />
+                                <Label htmlFor="enable-serial-numbers" className="text-sm font-normal">
+                                    Números de Serie (IMEI/SKU individual)
                                 </Label>
                             </div>
                         </CardContent>

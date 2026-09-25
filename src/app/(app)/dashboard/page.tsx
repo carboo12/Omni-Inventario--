@@ -7,6 +7,7 @@ import { DollarSign, Package, ShoppingCart, AlertTriangle, Coins, CreditCard, La
 import { useQuery } from "@tanstack/react-query";
 import { getDashboardStats, DashboardStats } from "@/lib/actions/dashboard";
 import { useBusinessMode } from "@/hooks/use-business-mode";
+import { useSettings } from "@/hooks/use-settings";
 import { formatNumber } from "@/lib/utils";
 
 const EXCHANGE_RATE = 36.5;
@@ -14,6 +15,7 @@ const EXCHANGE_RATE = 36.5;
 export default function DashboardPage() {
   const { user } = useAuth();
   const { mode } = useBusinessMode();
+  const { settings } = useSettings();
 
   const effectiveInventoryType = mode === 'JEWELRY' ? 'jewelry' : mode === 'DISTRIBUIDORA' ? 'general' : (user?.inventoryType || 'pharmacy');
 
@@ -117,7 +119,7 @@ export default function DashboardPage() {
       ];
     } else {
       if (user?.role === 'master-admin') currentStats = masterAdminStats;
-      if (user?.role === 'admin') currentStats = adminStats;
+      if (user?.role === 'admin') currentStats = settings.enableAccountsPayable === false ? adminStats.filter(s => s.title !== 'Cuentas por Pagar') : adminStats;
       if (user?.role === 'dispatcher') currentStats = dispatcherStats;
       if (user?.role === 'cashier') currentStats = cashierStats;
       if (user?.role === 'rutero') currentStats = ruteroStats;

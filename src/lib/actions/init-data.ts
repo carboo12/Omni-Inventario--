@@ -39,6 +39,15 @@ export interface InitialAppData {
     invoiceAlertDays: number | null;
     importProductsInDollars: boolean | null;
     creditFinancingEnabled: boolean;
+    allowCreditSales: boolean;
+    enableRecipes: boolean;
+    enableBatchAndExpiration: boolean;
+    enableKitchenPrinter: boolean;
+    enableMultiCurrency: boolean;
+    enableWholesalePrices: boolean;
+    enableAccountsPayable: boolean;
+    enablePettyCashExpenses: boolean;
+    enableSerialNumbers: boolean;
   } | null;
   businessMode: BusinessMode;
   sessions: Array<{
@@ -178,6 +187,15 @@ export async function getInitialAppData(): Promise<InitialAppData> {
           invoiceAlertDays: settingsRow.invoiceAlertDays,
           importProductsInDollars: settingsRow.importProductsInDollars,
           creditFinancingEnabled: settingsRow.creditFinancingEnabled || false,
+          allowCreditSales: settingsRow.allowCreditSales ?? true,
+          enableRecipes: settingsRow.enableRecipes ?? false,
+          enableBatchAndExpiration: settingsRow.enableBatchAndExpiration ?? false,
+          enableKitchenPrinter: settingsRow.enableKitchenPrinter ?? true,
+          enableMultiCurrency: settingsRow.enableMultiCurrency ?? true,
+          enableWholesalePrices: settingsRow.enableWholesalePrices ?? false,
+          enableAccountsPayable: settingsRow.enableAccountsPayable ?? true,
+          enablePettyCashExpenses: settingsRow.enablePettyCashExpenses ?? true,
+          enableSerialNumbers: settingsRow.enableSerialNumbers ?? false,
         }
       : null,
     businessMode,

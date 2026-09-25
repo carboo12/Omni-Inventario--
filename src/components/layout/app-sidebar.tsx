@@ -66,6 +66,7 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
   const { isCashRegisterOpen } = useCashRegister();
   const { mode } = useBusinessMode();
   const { toast } = useToast();
+  const { settings } = useSettings();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -78,7 +79,12 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
     // 2. Filter by user role first to have a clean starting point
     items = items.filter(item => item.roles.includes(user.role));
 
-    // 3. Handle Jewelry Mode specifically
+    // 3. Oculta módulos condicionales según la Configuración del Negocio
+    if (settings.allowCreditSales === false) {
+      items = items.filter(item => item.href !== '/customers/credit');
+    }
+
+    // 4. Handle Jewelry Mode specifically
     if (mode === 'JEWELRY') {
       // Remove pharmacy-specific modules
       const pharmacyHrefs = ['/pos', '/inventory', '/categories', '/purchases', '/cash-management', '/suppliers'];
@@ -106,7 +112,7 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
       }
     }
 
-    // 4. Handle Distribuidora Mode specifically
+    // 5. Handle Distribuidora Mode specifically
     if (mode === 'DISTRIBUIDORA') {
       // Remove items not relevant for a distribution company
       const distribuidoraHrefs = ['/cash-management'];
@@ -127,7 +133,7 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
     }
 
     return items;
-  }, [mode, user]);
+  }, [mode, user, settings]);
 
   const prefetchRoute = useCallback((href: string) => {
     router.prefetch(href);

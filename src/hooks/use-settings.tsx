@@ -43,11 +43,17 @@ interface Settings {
   licenseStatus?: string;
   invoiceAlertDays: number;
   creditFinancingEnabled: boolean;
+  importProductsInDollars: boolean;
   currency: string;
   allowCreditSales: boolean;
   enableRecipes: boolean;
   enableBatchAndExpiration: boolean;
   enableKitchenPrinter: boolean;
+  enableMultiCurrency: boolean;
+  enableWholesalePrices: boolean;
+  enableAccountsPayable: boolean;
+  enablePettyCashExpenses: boolean;
+  enableSerialNumbers: boolean;
 }
 
 interface SettingsContextType {
@@ -92,11 +98,17 @@ const defaultSettings: Settings = {
   licenseStatus: "unregistered",
   invoiceAlertDays: 5,
   creditFinancingEnabled: false,
+  importProductsInDollars: false,
   currency: "NIO",
   allowCreditSales: true,
   enableRecipes: false,
   enableBatchAndExpiration: false,
-  enableKitchenPrinter: false,
+  enableKitchenPrinter: true,
+  enableMultiCurrency: true,
+  enableWholesalePrices: false,
+  enableAccountsPayable: true,
+  enablePettyCashExpenses: true,
+  enableSerialNumbers: false,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -105,7 +117,7 @@ import { updateSettings, SystemSettingsData } from "@/lib/actions/settings";
 import { useToast } from "@/hooks/use-toast";
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { data: initialData, loading: initialLoading } = useInitialData();
+  const { data: initialData, loading: initialLoading, refresh } = useInitialData();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const { toast } = useToast();
@@ -159,7 +171,12 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         allowCreditSales: dbSettings.allowCreditSales ?? true,
         enableRecipes: dbSettings.enableRecipes ?? false,
         enableBatchAndExpiration: dbSettings.enableBatchAndExpiration ?? false,
-        enableKitchenPrinter: dbSettings.enableKitchenPrinter ?? false,
+        enableKitchenPrinter: dbSettings.enableKitchenPrinter ?? true,
+        enableMultiCurrency: dbSettings.enableMultiCurrency ?? true,
+        enableWholesalePrices: dbSettings.enableWholesalePrices ?? false,
+        enableAccountsPayable: dbSettings.enableAccountsPayable ?? true,
+        enablePettyCashExpenses: dbSettings.enablePettyCashExpenses ?? true,
+        enableSerialNumbers: dbSettings.enableSerialNumbers ?? false,
       }));
     }
     setSettingsLoaded(true);
@@ -205,15 +222,24 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         enableRecipes: settings.enableRecipes,
         enableBatchAndExpiration: settings.enableBatchAndExpiration,
         enableKitchenPrinter: settings.enableKitchenPrinter,
+        enableMultiCurrency: settings.enableMultiCurrency,
+        enableWholesalePrices: settings.enableWholesalePrices,
+        enableAccountsPayable: settings.enableAccountsPayable,
+        enablePettyCashExpenses: settings.enablePettyCashExpenses,
+        enableSerialNumbers: settings.enableSerialNumbers,
       };
 
       await updateSettings(dataToSave);
+      // Revalidación global: se recargan los datos iniciales (incluye Settings)
+      // para que el estado de toda la app refleje inmediatamente los cambios
+      // guardados sin necesidad de reiniciar el servidor.
+      await refresh();
       toast({ title: "Éxito", description: "Configuraciones guardadas correctamente." });
     } catch (error) {
       console.error("Error saving settings:", error);
       toast({ title: "Error", description: "No se pudieron guardar las configuraciones.", variant: "destructive" });
     }
-  }, [settings, toast]);
+  }, [settings, toast, refresh]);
 
   const loading = initialLoading || !settingsLoaded;
 

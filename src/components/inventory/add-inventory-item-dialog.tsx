@@ -270,6 +270,7 @@ export function AddInventoryItemDialog({ isOpen, onClose, onSave, existingProduc
 
   // ── Módulo Opcional de Recetas (BOM) ─────────────────────────────────────
   const enableRecipes = !!settings.enableRecipes;
+  const batchExpiryEnabled = !!settings.enableBatchAndExpiration;
 
   const [ingredientQuery, setIngredientQuery] = useState('');
   const [showIngredientResults, setShowIngredientResults] = useState(false);
@@ -410,7 +411,7 @@ bulkUnit: '',
   const handleSubmit = async (values: FormValues) => {
     if (isSaving) return;
 
-    if (mode === 'PHARMACY') {
+    if (mode === 'PHARMACY' && batchExpiryEnabled) {
       let hasError = false;
       if (!values.batch) {
         form.setError('batch', { message: 'El lote es requerido en Farmacia.' });
@@ -833,6 +834,8 @@ bulkUnit: '',
                     </div>
                   )}
 
+                  {settings.enableWholesalePrices !== false && (
+                  <>
                   {/* Niveles de Precio siempre visibles */}
                   <div className="border-t border-slate-200 pt-4 space-y-3">
                     <p className="text-xs font-semibold text-slate-500 uppercase">Niveles de Precio</p>
@@ -878,6 +881,8 @@ bulkUnit: '',
                       />
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
 
                 {/* Presentación base / unidad de medida (obligatoria) */}
@@ -1208,7 +1213,7 @@ bulkUnit: '',
                 </>
                 )}
 
-                {mode === 'PHARMACY' && (
+                {mode === 'PHARMACY' && batchExpiryEnabled && (
                   <>
                     <FormField
                       control={form.control}

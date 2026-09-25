@@ -37,6 +37,7 @@ import { createPurchaseInvoiceWithItems } from '@/lib/actions/purchases';
 import { useToast } from '@/hooks/use-toast';
 import { useBusinessMode } from '@/hooks/use-business-mode';
 import { useAuth } from '@/hooks/use-auth';
+import { useSettings } from '@/hooks/use-settings';
 import {
     Table,
     TableBody,
@@ -244,8 +245,8 @@ export default function NewPurchaseClient({ initialSuppliers }: NewPurchaseClien
     const { toast } = useToast();
     const { mode } = useBusinessMode();
     const { user } = useAuth();
-    // Currency dynamic symbol
-    const { settings } = { settings: { importProductsInDollars: false } }; // Placeholder if useSettings not imported, or wait, let's use it properly
+    // Moneda dinámica del sistema (source of truth real de configuración)
+    const { settings } = useSettings();
     const currencySymbol = settings.importProductsInDollars ? '$' : 'C$';
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -555,7 +556,9 @@ export default function NewPurchaseClient({ initialSuppliers }: NewPurchaseClien
                                                     </FormControl>
                                                     <SelectContent>
                                                         <SelectItem value="CONTADO">Al Contado</SelectItem>
+                                                        {settings.enableAccountsPayable !== false && (
                                                         <SelectItem value="CREDITO">Al Crédito (Cuentas por Pagar)</SelectItem>
+                                                        )}
                                                     </SelectContent>
                                                 </Select>
                                                 <FormMessage />

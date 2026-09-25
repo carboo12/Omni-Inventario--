@@ -18,6 +18,8 @@
 - **Rutas de Distribución & Ruteros**: Gestión de pedidos de clientes, asignación de rutas de entrega, control de visitas por dirección y cobro en campo.
 - **Granos Básicos & Venta Fraccionada**: Ventas por unidad/libra o por empaque (paca/saco/quintal), precios por niveles (Detalle/Mayorista/Paca/Quintal), cantidades decimales y descuento de stock por factores de conversión.
 - **Flujo Despachador → Cajero**: Vista mobile-first del despachador para toma de comandas (`HeldSale`) con botón `COBRAR (C$ total)`, cliente opcional (por defecto "CLIENTE GENERAL"), y listado de pendientes en caja con `Comanda #`, despachador, total, hora/fecha y cliente.
+- **Crédito & Cuentas por Cobrar (CxC)**: Ventas a crédito con **autorización de administrador** en caja, saldo pendiente por cliente, abonos con recibo impreso y reporte de **Antigüedad de Cuentas por Cobrar** (cartera por rangos de días) con tarjeta de abonos en el reporte de ventas.
+- **Módulo Opcional de Recetas (BOM)**: Productos clasificados como **Materia Prima (`INGREDIENT`)** o **Platillo Preparado (`RECIPE_ITEM`)** con receta/costeo de insumos, calculadora de margen y precio sugerido, y descuento automático de la materia prima al vender platillos en el POS (controlado por `enableRecipes`).
 - **Seguridad & Auditoría Inmutable**: Control de Acceso Basado en Roles (RBAC) por rutas, hash de contraseñas Bcrypt, tokens JWT y registro de auditoría (`AuditLog`) de acciones sensibles.
 - **SPA Ligera + API desacoplada**: Frontend React compilado con Vite y API REST (Hono) reutilizando la lógica de acciones de negocio mediante un dispatcher genérico.
 
@@ -235,6 +237,14 @@ $$ \text{Total USD} = \text{Round}\left(\frac{\text{Total a Pagar (C\$)}}{\text{
 - El parser (`validateRow` en `import-inventory-dialog.tsx`) acepta las columnas nuevas (con compatibilidad hacia atrás), y `bulkImportInventory` persiste los niveles de precio y los campos de empaque/conversión en `Product`.
 - **Venta fraccionada**: si `Es_Fraccionable` es TRUE, el POS permite cantidades decimales (0.5 quintal, 0.5 bidón, 2.5 lb); el stock maestro siempre se descuenta en `Unidad_Base` (`cantidad × Cantidad_Por_Empaque`, ej. 0.5 bidón × 20 = 10 litros) y el precio se calcula con el Nivel de Precio seleccionado × cantidad (o fracción × factor de empaque).
 
+#### Módulo Opcional de Recetas / BOM (`enableRecipes`)
+- Activado desde **Configuración → Recetas** (`SystemSettings.enableRecipes`). Con el módulo **apagado**, todos los productos se comportan como `STANDARD` (Reventa) y el POS funciona igual que siempre; el selector de tipo no se muestra.
+- `Product.type` (`ProductType`): `STANDARD` (Reventa), `INGREDIENT` (Materia Prima) y `RECIPE_ITEM` (Platillo Preparado).
+- **`RecipeItem`** (tabla `recipeitem`): relación platillo→insumo (`productId → ingredientId`, `quantity`, `unit`), con FK de eliminación en cascada por platillo y restricción en el insumo.
+- **Costeo en el formulario de producto** (crear y editar): buscador de insumos, costo total del platillo, porcentaje de ganancia deseado y botón **"Aplicar Precio Sugerido"** (`precio = costo / (1 − margen%)`).
+- **Descuento automático en la venta**: al vender un `RECIPE_ITEM`, `createSale` descuenta la materia prima por FIFO/vencimiento (Kardex `Salida`, saldos negativos como ENCARGO) multiplicando `cantidad vendida × quantity de cada línea`; si la receta está vacía, cae al flujo estándar. La lógica de productos `STANDARD` **no se toca**.
+- El catálogo del POS incluye los `RECIPE_ITEM` aunque no tengan lote propio (condición **aditiva**, solo con el módulo activo).
+
 ---
 
 ### 5.4. Compras a Proveedores (Encabezado + Detalle) (`src/app/(app)/purchases`)
@@ -254,6 +264,7 @@ $$ \text{Total USD} = \text{Round}\left(\frac{\text{Total a Pagar (C\$)}}{\text{
 ### 5.5. Clientes, Crédito & Logística de Rutas (`src/app/(app)/delivery-routes`)
 
 - **Gestión de Clientes (`Customer`)**: Registro de datos de contacto, documento de identidad, asignación de crédito habilitado (`hasCredit`), límite de crédito y saldo pendiente.
+- **Ventas a Crédito (CxC)**: `SalesInvoice` con saldo a crédito; en caja, la venta a cliente con crédito requiere **autorización de administrador** (`requiresAdmin` en las acciones de caja/abonos); el saldo se refleja en la ficha del cliente y en el **Reporte de Antigüedad de Cuentas por Cobrar** (saldos por rangos de días, consolidado en la tarjeta "Abonos" del reporte de ventas).
 - **Abonos a Crédito (`CreditPayment`)**: Registro de pagos a cuentas por cobrar con comprobante de recibo impreso.
 - **Logística de Rutas de Entrega (`DeliveryRoute`, `DeliveryRouteStop`)**:
   - Creación de rutas de distribución asignadas a un rutero/cobrador (`User`).
@@ -272,6 +283,7 @@ $$ \text{Total USD} = \text{Round}\left(\frac{\text{Total a Pagar (C\$)}}{\text{
 - **Sesiones aisladas**: `verifySession()` decodifica el JWT de la cookie real de cada petición (caché por-request vía AsyncLocalStorage), y la cookie `session` se emite `HttpOnly` (Secure solo en producción), se sobrescribe en login y se limpia en logout.
 - **Registro de Auditoría (`AuditLog`)**: Captura inmutable de acciones críticas (IP, usuario, tipo de entidad, ID, descripción y metadatos JSON).
 - **Sistema de Licenciamiento (`SystemSettings`)**: Validación de activación mediante claves, control de fecha de vencimiento de licencia y estado de activación del sistema (`isActivated`, `isPremium`).
+- **Configuración Operativa (`SystemSettings`)**: `enableRecipes` (activa/desactiva el módulo de recetas BOM) y ajustes paramétricos de crédito/abonos desde `/settings`.
 - **Activación automática**: si se detectan datos previos (usuarios, piezas o productos) sin `SystemSettings` activado, el sistema se auto-activa para evitar bloqueos.
 
 ---
@@ -289,13 +301,17 @@ erDiagram
     Customer ||--o{ Layaway : "reserva"
     Customer ||--o{ RepairOrder : "solicita"
     Customer ||--o{ CustomerOrder : "solicita pedido"
-    
+    Customer ||--o{ CreditPayment : "abona a crédito"
+
     CashRegisterSession ||--o{ SalesInvoice : "registra"
     CashRegisterSession ||--o{ CashOutflow : "egresa"
     CashRegisterSession ||--o{ CreditNote : "emite"
+    SalesInvoice ||--o{ CreditPayment : "recibe abonos"
     
     Product ||--o{ ProductVariant : "tiene"
     Product ||--o{ InventoryItem : "posee lotes"
+    Product ||--o{ RecipeItem : "platillo con insumos"
+    RecipeItem }o--|| Product : "usa materia prima INGREDIENT"
     Category ||--o{ Product : "clasifica"
     
     Size ||--o{ ProductVariant : "pertenece"
@@ -355,6 +371,9 @@ erDiagram
 - [x] **Venta Multi-Empaque y Fraccionada**: niveles de precio (Detalle/Mayorista/Paca/Quintal), unidades/conversión (`unitsPerBox`, `baseUnit`, `bulkUnit`, `isFractional`), cantidades decimales en POS y descuento de stock por conversión.
 - [x] **Compras Encabezado + Detalle**: `PurchaseInvoice` + `PurchaseInvoiceItem` + `AccountsPayable` en transacción atómica con conversión de empaques y Kardex.
 - [x] **Importación Excel avanzada**: plantilla con `Precio_Nivel_1..4`, `Unidad_Base/Presentacion_Empaque/Cantidad_Por_Empaque` y `Es_Fraccionable`; parser con validación, deduplicación de categorías y venta fraccionada (medios quintales/bidones).
+- [x] **Crédito & Cuentas por Cobrar (CxC/CxP)**: ventas a crédito con autorización de administrador en caja, abonos con recibo, saldos de clientes y reporte de Antigüedad de Cuentas por Cobrar con tarjeta de abonos en el reporte de ventas.
+- [x] **Módulo Opcional de Recetas (BOM)**: tipos de producto `INGREDIENT`/`RECIPE_ITEM`, receta/costeo de insumos con margen y "Aplicar Precio Sugerido", y descuento automático de materia prima (FIFO) al vender platillos en el POS — activable/desactivable desde Configuración.
+- [x] **Errores de dominio en español**: mensajes de error coherentes en acciones de inventario, proveedores, cobranzas y recetas.
 
 ### Q4 2026
 - [ ] ⚖️ **Integración Hardware**: Lectura directa de balanzas digitales de precisión vía puerto Serial/USB para captura de peso en tiempo real.

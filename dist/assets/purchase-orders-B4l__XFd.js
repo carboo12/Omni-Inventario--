@@ -1,1 +1,0 @@
-import{a1 as e}from"./index-De3GkcG2.js";async function c(...r){return e("purchase-orders","createPurchaseOrder",r)}async function s(...r){return e("purchase-orders","updatePurchaseOrderStatus",r)}async function u(...r){return e("purchase-orders","receivePurchaseOrder",r)}export{c,u as r,s as u};

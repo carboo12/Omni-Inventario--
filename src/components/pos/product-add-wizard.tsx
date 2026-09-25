@@ -26,14 +26,16 @@ interface PendingAdd {
 interface ProductAddWizardProps {
   product: Product | null;
   defaultPriceLevel?: number;
+  wholesaleEnabled?: boolean;
   onConfirm: (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => void;
   onClose: () => void;
 }
 
 // Niveles de precio del producto (las presentaciones fijas no tienen precios propios).
-const getAvailablePriceLevels = (product: Product | null): Array<{ level: number; label: string; price: number }> => {
+const getAvailablePriceLevels = (product: Product | null, wholesaleEnabled: boolean = true): Array<{ level: number; label: string; price: number }> => {
   if (!product) return [];
   const levels = [{ level: 1, label: 'Detalle', price: product.priceNIO }];
+  if (!wholesaleEnabled) return levels;
   const p2 = Number((product as any).price2);
   const p3 = Number((product as any).price3);
   const p4 = Number((product as any).price4);
@@ -46,6 +48,7 @@ const getAvailablePriceLevels = (product: Product | null): Array<{ level: number
 export function ProductAddWizard({
   product,
   defaultPriceLevel = 1,
+  wholesaleEnabled = true,
   onConfirm,
   onClose,
 }: ProductAddWizardProps) {
@@ -88,7 +91,7 @@ export function ProductAddWizard({
     if (!pending) return;
     const { product: prod, quantity } = pending;
     if (quantity <= 0) return;
-    if (getAvailablePriceLevels(prod).length > 1) {
+    if (getAvailablePriceLevels(prod, wholesaleEnabled).length > 1) {
       setPending(prev => prev ? { ...prev, step: 'priceLevel' } : prev);
       return;
     }
@@ -203,7 +206,7 @@ export function ProductAddWizard({
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-3">
-            {pending && getAvailablePriceLevels(pending.product).map(({ level, label, price }) => {
+            {pending && getAvailablePriceLevels(pending.product, wholesaleEnabled).map(({ level, label, price }) => {
               const isDefault = level === pending.priceLevel;
               return (
                 <button

@@ -1,1 +1,0 @@
-import{a1 as e}from"./index-De3GkcG2.js";async function o(...t){return e("quotations","createQuote",t)}async function u(...t){return e("quotations","getPendingQuotes",t)}async function a(...t){return e("quotations","getQuoteByNumber",t)}async function c(...t){return e("quotations","cancelQuote",t)}export{c as a,u as b,o as c,a as g};

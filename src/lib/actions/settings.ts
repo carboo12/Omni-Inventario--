@@ -53,6 +53,11 @@ export interface SystemSettingsData {
     enableRecipes?: boolean;
     enableBatchAndExpiration?: boolean;
     enableKitchenPrinter?: boolean;
+    enableMultiCurrency?: boolean;
+    enableWholesalePrices?: boolean;
+    enableAccountsPayable?: boolean;
+    enablePettyCashExpenses?: boolean;
+    enableSerialNumbers?: boolean;
 }
 
 import { verifySession } from '../session';
@@ -120,7 +125,12 @@ export async function getSettings(): Promise<SystemSettingsData> {
             allowCreditSales: true,
             enableRecipes: false,
             enableBatchAndExpiration: false,
-            enableKitchenPrinter: false
+            enableKitchenPrinter: true,
+            enableMultiCurrency: true,
+            enableWholesalePrices: false,
+            enableAccountsPayable: true,
+            enablePettyCashExpenses: true,
+            enableSerialNumbers: false
         };
     }
 
@@ -163,7 +173,12 @@ export async function getSettings(): Promise<SystemSettingsData> {
         allowCreditSales: settings.allowCreditSales,
         enableRecipes: settings.enableRecipes,
         enableBatchAndExpiration: settings.enableBatchAndExpiration,
-        enableKitchenPrinter: settings.enableKitchenPrinter
+        enableKitchenPrinter: settings.enableKitchenPrinter,
+        enableMultiCurrency: settings.enableMultiCurrency,
+        enableWholesalePrices: settings.enableWholesalePrices,
+        enableAccountsPayable: settings.enableAccountsPayable,
+        enablePettyCashExpenses: settings.enablePettyCashExpenses,
+        enableSerialNumbers: settings.enableSerialNumbers
     };
 }
 
@@ -213,7 +228,12 @@ export async function updateSettings(data: SystemSettingsData) {
                 allowCreditSales: data.allowCreditSales,
                 enableRecipes: data.enableRecipes,
                 enableBatchAndExpiration: data.enableBatchAndExpiration,
-                enableKitchenPrinter: data.enableKitchenPrinter
+                enableKitchenPrinter: data.enableKitchenPrinter,
+                enableMultiCurrency: data.enableMultiCurrency,
+                enableWholesalePrices: data.enableWholesalePrices,
+                enableAccountsPayable: data.enableAccountsPayable,
+                enablePettyCashExpenses: data.enablePettyCashExpenses,
+                enableSerialNumbers: data.enableSerialNumbers
             }
         });
     } else {
@@ -255,7 +275,12 @@ export async function updateSettings(data: SystemSettingsData) {
                 allowCreditSales: data.allowCreditSales ?? true,
                 enableRecipes: data.enableRecipes ?? false,
                 enableBatchAndExpiration: data.enableBatchAndExpiration ?? false,
-                enableKitchenPrinter: data.enableKitchenPrinter ?? false
+                enableKitchenPrinter: data.enableKitchenPrinter ?? true,
+                enableMultiCurrency: data.enableMultiCurrency ?? true,
+                enableWholesalePrices: data.enableWholesalePrices ?? false,
+                enableAccountsPayable: data.enableAccountsPayable ?? true,
+                enablePettyCashExpenses: data.enablePettyCashExpenses ?? true,
+                enableSerialNumbers: data.enableSerialNumbers ?? false
             } as any
         });
     }

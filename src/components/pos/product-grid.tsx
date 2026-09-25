@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Product } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,8 @@ import { useSettings } from '@/hooks/use-settings';
 export interface ProductGridHandle {
     /** Limpia el filtro, reinicia el catálogo y deja el buscador listo para el siguiente producto. */
     resetCatalog: () => void;
+    /** Devuelve el cursor al input Buscar: [ Nombre/Code ] (auto-enfoque persistente). */
+    focusSearch: () => void;
 }
 
 export interface ProductGridProps {
@@ -37,6 +39,21 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
     const searchInputRef = useRef<HTMLInputElement>(null);
     const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
+    // Auto-enfoque persistente e inteligente: devuelve el cursor al buscador
+    // (Buscar: [ Nombre/Code ]) tras imprimir, cobrar, limpiar el carrito,
+    // seleccionar cliente o cerrar cualquier diálogo/modal.
+    const focusSearchInput = useCallback(() => {
+        setTimeout(() => {
+            searchInputRef.current?.focus();
+        }, 100);
+    }, []);
+
+    // Enfoque inicial al montar el catálogo (al cargar o volver al POS).
+    useEffect(() => {
+        const t = setTimeout(() => searchInputRef.current?.focus(), 100);
+        return () => clearTimeout(t);
+    }, []);
+
     // Expone un manejador para que el padre (POS/Despacho) limpie el filtro y el
     // catálogo justo después de confirmar y añadir un ítem a la venta.
     useImperativeHandle(ref, () => ({
@@ -50,6 +67,9 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
             viewport?.scrollTo?.({ top: 0, behavior: 'auto' });
             // Enfocar de inmediato para la siguiente búsqueda.
             window.setTimeout(() => searchInputRef.current?.focus(), 0);
+        },
+        focusSearch() {
+            focusSearchInput();
         },
     }));
 
@@ -83,6 +103,7 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
             if (exactBarcodeMatch) {
                 onProductSelect(exactBarcodeMatch);
                 setSearchTerm('');
+                focusSearchInput();
             }
         }
     }, [searchTerm, products, onProductSelect]);
@@ -323,6 +344,7 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
                                     if (exactMatch) {
                                         onProductSelect(exactMatch);
                                         setSearchTerm('');
+                                        focusSearchInput();
                                         return;
                                     }
                                     
@@ -330,6 +352,7 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
                                     if (viewContent.type === 'search' && viewContent.items.length === 1) {
                                         onProductSelect(viewContent.items[0]);
                                         setSearchTerm('');
+                                        focusSearchInput();
                                     }
                                 }
                             }}
@@ -500,7 +523,7 @@ const ProductCard = ({ product, onSelect, priceLevel = 1, getProductPrice }: { p
                 <div className="font-black text-lg text-primary tracking-tight">
                     C$ {formatNumber(getProductPrice ? getProductPrice(product, priceLevel) : product.priceNIO)}
                 </div>
-                {settings.allowDollars && (
+                {settings.allowDollars && settings.enableMultiCurrency !== false && (
                     <div className="text-[11px] font-bold text-green-600 flex items-center justify-end gap-1">
                         {isUSDOrig && <span className="text-[8px] bg-green-100 px-1 rounded uppercase">Oríg.</span>}
                         $ {formatNumber(priceUSD)}

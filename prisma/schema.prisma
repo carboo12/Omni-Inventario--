@@ -778,6 +778,12 @@ model SystemSettings {
   enableBatchAndExpiration  Boolean      @default(false)
   enableKitchenPrinter      Boolean      @default(false)
 
+  enableMultiCurrency       Boolean      @default(true)
+  enableWholesalePrices     Boolean      @default(false)
+  enableAccountsPayable     Boolean      @default(true)
+  enablePettyCashExpenses   Boolean      @default(true)
+  enableSerialNumbers       Boolean      @default(false)
+
   @@map("systemsettings")
 }
 

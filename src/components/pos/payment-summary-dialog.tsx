@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React from 'react';
 import {
@@ -31,9 +31,33 @@ export function PaymentSummaryDialog({
 
     // Local formatCurrency removed in favor of unified lib/utils utility
 
+    // BLINDAJE: funcion que cierra el modal PRIMERO y luego dispara la accion de confirmacion.
+    // Evita que el modal quede congelado si el flujo async de pago falla o el iframe interrumpe callbacks.
+    const handleConfirm = () => {
+        onClose();   // 1) Cierre sincronico e inmediato del estado open = false
+        onConfirm(); // 2) Logica de confirmacion (puede ser async en el padre)
+    };
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-md bg-stone-900 text-white border-stone-800">
+            <DialogContent
+                className="sm:max-w-md bg-stone-900 text-white border-stone-800"
+                onKeyDownCapture={(e) => {
+                    if (e.key === 'Enter') {
+                        // Enter completa el pago (CONTINUAR); dejar que los botones
+                        // nativos manejen su propio Enter/click para no duplicar.
+                        const el = e.target as HTMLElement | null;
+                        if (el && (el.tagName === 'BUTTON' || el.tagName === 'A')) return;
+                        e.preventDefault();
+                        // BLINDAJE: cerrar el modal PRIMERO de forma sincrona.
+                        handleConfirm();
+                    } else if (e.key === 'Escape') {
+                        // Esc cierra el modal igual que el boton de cerrar/Radix y
+                        // devuelve el foco al buscador (cierre completo).
+                        onClose();
+                    }
+                }}
+            >
                 <DialogHeader>
                     <DialogTitle className="text-center text-xl text-stone-300">Resumen de Pago</DialogTitle>
                 </DialogHeader>
@@ -60,20 +84,13 @@ export function PaymentSummaryDialog({
                 <div className="text-center space-y-4">
                     <p className="text-xl italic text-stone-300">Gracias por su Compra</p>
                     <Button
-                        onClick={onConfirm}
+                        onClick={handleConfirm}
+                        autoFocus
                         className="w-full h-16 text-xl bg-[#673AB7] hover:bg-[#5E35B1] font-bold"
                     >
                         CONTINUAR &gt;
                     </Button>
                 </div>
-                {/* Assuming EditJewelryDialog is meant to be a sibling to the Button or within the DialogContent */}
-                {/* Note: EditJewelryDialog component and its props (isEditDialogOpen, setIsEditDialogOpen, editingPiece)
-                    are not defined in the provided context. This insertion is based on the instruction's snippet. */}
-                {/* <EditJewelryDialog
-                    open={isEditDialogOpen}
-                    onOpenChange={setIsEditDialogOpen}
-                    piece={editingPiece as any}
-                /> */}
             </DialogContent>
         </Dialog>
     );

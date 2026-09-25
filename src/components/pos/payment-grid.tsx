@@ -26,8 +26,8 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
     const handleMethodSelect = (method: string) => {
         if (method === 'Efectivo') {
             setPaymentMethod('Efectivo');
-            // Si no se permiten dólares, ir directo a entrada de córdobas
-            if (!settings.allowDollars) {
+            // Si no se permiten dólares o la moneda múltiple está desactivada, ir directo a córdobas
+            if (!settings.allowDollars || settings.enableMultiCurrency === false) {
                 setCurrency('NIO');
                 setStep('cash-entry');
                 setAmountInputs('');

@@ -49,7 +49,7 @@ export function PaymentDialog({ isOpen, onClose, total, onSuccessfulPayment }: P
       setIsProcessing(false);
       // Set default tab based on enabled payment methods
       if (settings.allowCash) setActiveTab('cash-nio');
-      else if (settings.allowDollars) setActiveTab('cash-usd');
+      else if (settings.allowDollars && settings.enableMultiCurrency !== false) setActiveTab('cash-usd');
       else if (settings.allowCard) setActiveTab('card');
       else setActiveTab('cash-nio');
     }
@@ -117,7 +117,7 @@ export function PaymentDialog({ isOpen, onClose, total, onSuccessfulPayment }: P
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="cash-nio" disabled={isProcessing}><Coins className='mr-2 h-4 w-4' />Efectivo (C$)</TabsTrigger>
-                <TabsTrigger value="cash-usd" disabled={!settings.allowDollars || isProcessing}><DollarSign className='mr-2 h-4 w-4' />Efectivo ($)</TabsTrigger>
+                <TabsTrigger value="cash-usd" disabled={settings.enableMultiCurrency === false || !settings.allowDollars || isProcessing}><DollarSign className='mr-2 h-4 w-4' />Efectivo ($)</TabsTrigger>
                 <TabsTrigger value="card" disabled={!settings.allowCard || isProcessing}><CreditCard className='mr-2 h-4 w-4' />Tarjeta</TabsTrigger>
                 <TabsTrigger value="multi" disabled><ReceiptText className='mr-2 h-4 w-4' />Múltiple</TabsTrigger>
               </TabsList>

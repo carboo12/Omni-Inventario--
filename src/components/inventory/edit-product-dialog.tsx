@@ -182,6 +182,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
 
   // ── Módulo Opcional de Recetas (BOM) ─────────────────────────────────────
   const enableRecipes = !!settings.enableRecipes;
+  const batchExpiryEnabled = !!settings.enableBatchAndExpiration;
 
   const [ingredientQuery, setIngredientQuery] = useState('');
   const [showIngredientResults, setShowIngredientResults] = useState(false);
@@ -295,7 +296,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
   const handleSubmit = async (values: FormValues) => {
     if (isSaving) return;
 
-    if (mode === 'PHARMACY') {
+    if (mode === 'PHARMACY' && batchExpiryEnabled) {
       let hasError = false;
       if (!values.batch) {
         form.setError('batch', { message: 'El lote es requerido en Farmacia.' });
@@ -650,6 +651,8 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                     </div>
                   )}
 
+                  {settings.enableWholesalePrices !== false && (
+                  <>
                   {/* Niveles de Precio siempre visibles */}
                   <div className="border-t border-slate-200 pt-4 space-y-3">
                     <p className="text-xs font-semibold text-slate-500 uppercase">Niveles de Precio</p>
@@ -695,6 +698,8 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                       />
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
 
                 {/* Presentación base / unidad de medida (obligatoria) */}
@@ -1024,7 +1029,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                 </div>
                 </>
                 )}
-                {mode === 'PHARMACY' && (
+                {mode === 'PHARMACY' && batchExpiryEnabled && (
                   <>
                     <FormField
                       control={form.control}

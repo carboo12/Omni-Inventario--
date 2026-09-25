@@ -40,6 +40,15 @@ export interface InitialAppData {
     invoiceAlertDays: number | null;
     importProductsInDollars: boolean | null;
     creditFinancingEnabled: boolean;
+    allowCreditSales: boolean;
+    enableRecipes: boolean;
+    enableBatchAndExpiration: boolean;
+    enableKitchenPrinter: boolean;
+    enableMultiCurrency: boolean;
+    enableWholesalePrices: boolean;
+    enableAccountsPayable: boolean;
+    enablePettyCashExpenses: boolean;
+    enableSerialNumbers: boolean;
   } | null;
   businessMode: BusinessMode;
   sessions: Array<{

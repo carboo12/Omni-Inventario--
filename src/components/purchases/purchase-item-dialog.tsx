@@ -17,6 +17,7 @@ import { getProducts } from '@/lib/actions/products';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@/hooks/use-settings';
 
 interface PurchaseItemDialogProps {
     isOpen: boolean;
@@ -26,6 +27,7 @@ interface PurchaseItemDialogProps {
 }
 
 export function PurchaseItemDialog({ isOpen, onClose, onAdd, businessMode }: PurchaseItemDialogProps) {
+    const { settings } = useSettings();
     const isBoutique = businessMode === 'BOUTIQUE';
     console.log("CACHE BUSTER 1 - Ignorar esto");
     const [searchTerm, setSearchTerm] = useState('');
@@ -617,6 +619,8 @@ export function PurchaseItemDialog({ isOpen, onClose, onAdd, businessMode }: Pur
                                     className="bg-yellow-50 border-yellow-200"
                                 />
                             </div>
+                            {settings.enableWholesalePrices !== false && (
+                            <>
                             <div className="space-y-2">
                                 <Label>Precio 2 (C$)</Label>
                                 <Input 
@@ -644,6 +648,7 @@ export function PurchaseItemDialog({ isOpen, onClose, onAdd, businessMode }: Pur
                                     onChange={(e) => setFormData({...formData, price4: Number(e.target.value)})}
                                 />
                             </div>
+                            </>)}
                         </div>
                         </div>
                         )}
@@ -703,6 +708,8 @@ export function PurchaseItemDialog({ isOpen, onClose, onAdd, businessMode }: Pur
                                         className="bg-yellow-50 border-yellow-200"
                                     />
                                 </div>
+                                {settings.enableWholesalePrices !== false && (
+                                    <>
                                 <div className="space-y-2">
                                     <Label>Precio 2 (C$)</Label>
                                     <Input 
@@ -730,6 +737,7 @@ export function PurchaseItemDialog({ isOpen, onClose, onAdd, businessMode }: Pur
                                         onChange={(e) => setFormData({...formData, price4: Number(e.target.value)})}
                                     />
                                 </div>
+                                </>)}
                             </div>
                             </div>
                         )}

@@ -28,6 +28,10 @@ export function InvoiceAlerts() {
     useEffect(() => {
         const checkAlerts = async () => {
             if (hasChecked) return;
+            if (settings?.enableAccountsPayable === false) {
+                setHasChecked(true);
+                return;
+            }
             
             const alertDays = settings?.invoiceAlertDays || 5;
             const res = await getPendingInvoicesAlerts(alertDays);
@@ -52,6 +56,8 @@ export function InvoiceAlerts() {
             checkAlerts();
         }
     }, [settings, hasChecked]);
+
+    if (settings?.enableAccountsPayable === false) return null;
 
     if (alerts.length === 0) return null;
 

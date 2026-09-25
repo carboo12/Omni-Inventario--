@@ -5,6 +5,7 @@ import type { PendingSale, CartItem } from '@/lib/types';
 import { useAuth } from './use-auth';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from './use-toast';
+import { useSettings } from './use-settings';
 import {
   createHeldSale,
   getPendingHeldSales,
@@ -51,6 +52,7 @@ export const PendingSalesProvider: React.FC<{ children: ReactNode }> = ({ childr
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { settings } = useSettings();
   const prevCountRef = useRef<number>(0);
   const initializedRef = useRef(false);
 
@@ -75,6 +77,10 @@ export const PendingSalesProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Notificar al cajero cuando llegan comandas nuevas
   useEffect(() => {
     const currentCount = (pendingSales ?? []).length;
+    if (settings.enableKitchenPrinter === false) {
+      prevCountRef.current = currentCount;
+      return;
+    }
     if (!initializedRef.current) {
       prevCountRef.current = currentCount;
       initializedRef.current = true;
@@ -89,7 +95,7 @@ export const PendingSalesProvider: React.FC<{ children: ReactNode }> = ({ childr
       });
     }
     prevCountRef.current = currentCount;
-  }, [pendingSales, toast]);
+  }, [pendingSales, toast, settings]);
 
   const addPendingSale = useCallback(async (customerName: string, items: CartItem[], total: number) => {
     if (!user) return { success: false, error: 'No hay usuario autenticado' };

@@ -5,6 +5,7 @@ import { Wallet, Truck, AlertTriangle, CalendarClock, CheckCircle2 } from "lucid
 import { ReportKpi, ReportViewProps, ReportViewState, ReportTable } from "./report-primitives";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { useSettings } from '@/hooks/use-settings';
 import { TableCell } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -127,6 +128,7 @@ function AgingRow({
 }
 
 export function AgingReport({ data, isLoading, isError, onRetry }: ReportViewProps) {
+  const { settings } = useSettings();
   const d = data || {};
   const cxc = d.cxc || {};
   const cxp = d.cxp || {};
@@ -151,6 +153,7 @@ export function AgingReport({ data, isLoading, isError, onRetry }: ReportViewPro
           icon={<AlertTriangle className="h-4 w-4" />}
           tone="red"
         />
+        {settings.enableAccountsPayable !== false && (
         <ReportKpi
           label="CxP · Total por pagar"
           value={formatCurrency(n(cxp.totals?.total), "NIO")}
@@ -158,6 +161,8 @@ export function AgingReport({ data, isLoading, isError, onRetry }: ReportViewPro
           icon={<Truck className="h-4 w-4" />}
           tone="violet"
         />
+        )}
+        {settings.enableAccountsPayable !== false && (
         <ReportKpi
           label="CxP · Vencidas"
           value={formatCurrency(cxpOverdue, "NIO")}
@@ -165,12 +170,15 @@ export function AgingReport({ data, isLoading, isError, onRetry }: ReportViewPro
           icon={<CalendarClock className="h-4 w-4" />}
           tone="orange"
         />
+        )}
       </div>
 
       <Tabs defaultValue="cxc" className="mt-4">
         <TabsList className="no-print">
           <TabsTrigger value="cxc">Cuentas por Cobrar</TabsTrigger>
+          {settings.enableAccountsPayable !== false && (
           <TabsTrigger value="cxp">Cuentas por Pagar</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="cxc">

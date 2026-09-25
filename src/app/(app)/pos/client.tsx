@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 import { generateUUID } from '@/lib/uuid';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import dynamic from '@/lib/dynamic';
 import type { CartItem, Product, InventoryMovement, PendingSale, InventoryItem } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -212,11 +212,20 @@ const CashierPOS = ({ products, inventory }: POSComponentProps) => {
     const { toast } = useToast();
     const { settings } = useSettings();
     const enableRecipes = !!settings.enableRecipes;
+    const pathname = usePathname();
 const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unlockPendingSale, addPendingSale, deletePendingSale } = usePendingSales();
     const { cart, setCart, customerName, setCustomerName } = usePersistedCart();
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const [wizardProduct, setWizardProduct] = useState<{ product: Product } | null>(null);
     const productGridRef = useRef<ProductGridHandle>(null);
+    // Auto-enfoque persistente del buscador (Buscar: [ Nombre/Code ]): devuelve el
+    // cursor al input de búsqueda tras cobrar, imprimir, limpiar carrito, seleccionar
+    // cliente o cerrar cualquier diálogo/modal.
+    const focusSearchInput = useCallback(() => {
+        setTimeout(() => {
+            productGridRef.current?.focusSearch();
+        }, 100);
+    }, []);
     const [editingItem, setEditingItem] = useState<CartItem | null>(null);
     const [activeSale, setActiveSale] = useState<PendingSale | null>(null);
     const [viewMode, setViewMode] = useState<'products' | 'payment'>('products');
@@ -243,33 +252,48 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         let cancelled = false;
         let pollTimer: number | undefined;
         let fallbackTimer: number | undefined;
+        let safetyTimer: number | undefined;
         let attempts = 0;
 
         const resetAfterPrint = () => {
+            // Cerrar el modal de resumen SIEMPRE (incluso si la venta ya se reinició):
+            // printReceiptHtml() imprime en el onload del iframe (asíncrono) y window.print()
+            // es síncrono; ambos pueden dejar la capa de "Resumen de Pago" visible o
+            // congelada con montos en C$0.00 al cerrar la ventana de impresión.
+            setIsPaymentSummaryOpen(false);
             if (saleResetAfterPrintRef.current) {
                 saleResetAfterPrintRef.current = false;
                 // Reinicio DESPUÉS de imprimir/cerrar la ventana: volver al catálogo.
                 setViewMode('products');
                 setCart([]);
                 setPaymentData(null);
-                setIsPaymentSummaryOpen(false);
                 if (activeSale) {
                     removePendingSale(activeSale.id);
                     setActiveSale(null);
                 }
                 setCustomerName('');
+                setSelectedClient(null);
+                // Devolver el foco al buscador para capturar el siguiente escaneo.
+                focusSearchInput();
             }
         };
 
         // TICKET TÉRMICO (80mm): imprime en un iframe aislado con CSS propio, sin
         // window.print() sobre la ventana principal. Evita el salto de página que
         // Chromium fuerza en tickets largos (>10 ítems) antes del bloque de Totales.
-        // print() del iframe también es síncrono: el reinicio ocurre al cerrar el diálogo.
+        // NOTA: printReceiptHtml() es ASÍNCRONO (imprime en el onload del iframe), así
+        // que el reinicio ocurre ANTES de abrirse el diálogo. El timer re-afirma cierre
+        // + foco al cerrar la ventana para que el modal de resumen no quede visible.
         if (printFormat === 'ticket') {
             printReceiptHtml(buildReceiptHtml(saleForPrint));
             resetAfterPrint();
             setSaleForPrint(null);
-            return () => { cancelled = true; };
+            safetyTimer = window.setTimeout(() => {
+                if (cancelled) return;
+                setIsPaymentSummaryOpen(false);
+                focusSearchInput();
+            }, 800);
+            return () => { cancelled = true; if (safetyTimer !== undefined) window.clearTimeout(safetyTimer); };
         }
 
         // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
@@ -278,6 +302,13 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             printA4Html(buildA4ReceiptHtml(saleForPrint));
             resetAfterPrint();
             setSaleForPrint(null);
+            // window.print() bloquea en Chromium y puede dejar la capa del modal
+            // congelada: re-afirmar cierre + foco tras el diálogo de impresión.
+            safetyTimer = window.setTimeout(() => {
+                if (cancelled) return;
+                setIsPaymentSummaryOpen(false);
+                focusSearchInput();
+            }, 800);
         };
 
         const waitForPrintArea = () => {
@@ -301,6 +332,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             cancelled = true;
             if (pollTimer !== undefined) window.clearTimeout(pollTimer);
             if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+            if (safetyTimer !== undefined) window.clearTimeout(safetyTimer);
         };
     }, [saleForPrint, printAreaId, printFormat]);
     const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
@@ -368,6 +400,8 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             setTimeout(() => {
                 printReceiptHtml(buildRetiroReceiptHtml(retiroData));
                 setLastRetiro(null);
+                // Tras imprimir el comprobante, devolver el foco al buscador.
+                focusSearchInput();
             }, 150);
         } catch (e) {
             console.error(e);
@@ -440,6 +474,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 setCart([]);
                 setCustomerName('');
                 setSelectedClient(null);
+                focusSearchInput();
                 toast({ title: 'Cotización Guardada', description: `Cotización #${quoteData.quoteNumber} creada exitosamente.` });
             } else {
                 toast({ title: 'Error', description: result.error || 'No se pudo crear la cotización.', variant: 'destructive' });
@@ -504,6 +539,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                     });
                 }
                 toast({ title: 'Cotización Cargada', description: `Cotización COT-${String(result.data.quoteNumber).padStart(7, '0')} cargada con éxito.` });
+                focusSearchInput();
             } else {
                 toast({ title: 'No encontrada', description: result.error || 'Cotización no encontrada.', variant: 'destructive' });
             }
@@ -595,6 +631,7 @@ const addToCart = (product: Product) => {
 
     // Precio directo del nivel elegido en BD (sin recálculos).
     const getProductPrice = (product: Product, priceLevel: number): number => {
+        if (settings.enableWholesalePrices === false) return product.priceNIO;
         if (priceLevel === 2 && (product as any).price2) return (product as any).price2;
         if (priceLevel === 3 && (product as any).price3) return (product as any).price3;
         if (priceLevel === 4 && (product as any).price4) return (product as any).price4;
@@ -698,6 +735,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         if (sale.customerName) setCustomerName(sale.customerName);
         setViewMode('products');
         toast({ title: 'Comanda cargada', description: 'La comanda se cargÃ³ al carrito. Puede editarla antes de cobrar.' });
+        focusSearchInput();
     };
 
     const handlePayment = () => {
@@ -706,6 +744,7 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
             return;
         }
 setViewMode('payment');
+        focusSearchInput();
     };
 
 const [isFinancingOpen, setIsFinancingOpen] = useState(false);
@@ -812,9 +851,14 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
     };
 
     const confirmPayment = () => {
+        // BLINDAJE: cerrar el modal de resumen INMEDIATAMENTE de forma sincrona.
+        // No depender de la tuberia de impresion async para desmontarlo.
+        setIsPaymentSummaryOpen(false);
         if (paymentData) {
             handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
         }
+        // Devolver el foco al buscador tras cerrar el modal.
+        setTimeout(() => { productGridRef.current?.focusSearch(); }, 150);
     };
 
     const handleClearCart = () => {
@@ -825,6 +869,7 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
             }
             setCart([]);
             setCustomerName('');
+            focusSearchInput();
         }
     };
 
@@ -838,6 +883,7 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
         toast({ title: 'Factura en Espera', description: 'La factura se ha guardado temporalmente.' });
         setCart([]);
         setCustomerName('');
+        focusSearchInput();
     };
 
     // Fila de acciones secundarias del POS. Cada acción declara explícitamente
@@ -877,7 +923,7 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
             color: 'bg-[#5C6BC0]',
             hover: 'hover:bg-[#3949AB]',
             onClick: openAbonoDialog,
-            enabled: true,
+            enabled: settings.allowCreditSales !== false,
         },
     ];
     // Omitir antes de renderizar toda acción sin texto/ícono/color válido o deshabilitada
@@ -886,6 +932,68 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
         (btn): btn is { label: string; icon: LucideIcon; color: string; hover?: string; title?: string; enabled: true; onClick: () => void } =>
             !!btn && !!btn.label && !!btn.enabled && !!btn.icon && !!btn.color
     );
+
+    // Algún diálogo/modal activo: desactiva el re-enfoque global por teclado y
+    // permite devolver el foco al buscador en cuanto TODOS se cierran.
+    const anyModalOpen =
+        isPaymentSummaryOpen ||
+        isAssignClientOpen ||
+        isHeldBillsOpen ||
+        showQuickSwitch ||
+        isRetiroOpen ||
+        isRetiroSaving ||
+        isAbonoOpen ||
+        isLoadingAbono ||
+        isSaveQuoteOpen ||
+        isLoadQuoteOpen ||
+        isFinancingOpen ||
+        isAdminAuthOpen ||
+        !!wizardProduct ||
+        !!editingItem ||
+        !!lastSale ||
+        !!saleForPrint ||
+        !!lastQuoteReceipt;
+
+    // Listener global de teclado (re-enfoque inteligente del buscador): si el
+    // usuario hace clic fuera del input y escanea/teclea caracteres alfanuméricos,
+    // el cursor vuelve automáticamente a Buscar: [ Nombre/Code ]. Se desactiva si
+    // hay un modal activo o si se está escribiendo en otro campo editable.
+    useEffect(() => {
+        const handleKeyPress = (e: KeyboardEvent) => {
+            const parentTarget = e.target as HTMLElement | null;
+            const isEditableField = !!parentTarget && (parentTarget instanceof HTMLInputElement || parentTarget instanceof HTMLTextAreaElement || parentTarget.isContentEditable);
+            if (
+                !isEditableField &&
+                !anyModalOpen &&
+                viewMode === 'products' &&
+                e.key.length === 1 &&
+                !e.ctrlKey && !e.metaKey && !e.altKey &&
+                /^[\p{L}\p{N}]$/u.test(e.key)
+            ) {
+                focusSearchInput();
+            }
+        };
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+    }, [viewMode, anyModalOpen, focusSearchInput]);
+
+    // Auto-focus Inicial y Cambio de Ruta: al cargar o volver al Punto de Venta,
+    // el cursor se posiciona automáticamente en Buscar: [ Nombre/Code ].
+    useEffect(() => {
+        if (pathname === '/pos') {
+            focusSearchInput();
+        }
+    }, [pathname, focusSearchInput]);
+
+    // Recuperación de Focus tras cerrar cualquier diálogo/modal: apenas todos los
+    // modales se cierran, devuelve el foco al buscador de escaneo.
+    const wasModalOpenRef = useRef(false);
+    useEffect(() => {
+        if (wasModalOpenRef.current && !anyModalOpen) {
+            focusSearchInput();
+        }
+        wasModalOpenRef.current = anyModalOpen;
+    }, [anyModalOpen, focusSearchInput]);
 
 return (
         <div className="flex w-full h-full min-w-0 bg-gray-100">
@@ -898,6 +1006,7 @@ return (
                         <span className="font-bold text-base whitespace-nowrap">Punto de Venta</span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                        {settings.enableKitchenPrinter !== false && (
                         <Button
                             variant="outline"
                             size="icon"
@@ -912,6 +1021,7 @@ return (
                                 </span>
                             )}
                         </Button>
+                        )}
                         {settings.quickSwitchEnabled && (
                             <Button
                                 variant="outline"
@@ -988,6 +1098,7 @@ return (
                             <FileText className="w-5 h-5" />
                             ESPERA
                         </Button>
+                        {settings.enablePettyCashExpenses !== false && (
                         <Button
                             className="h-14 flex flex-col gap-1 bg-[#FF9800] hover:bg-[#F57C00] text-white font-black text-[10px] p-2 active:scale-95"
                             onClick={() => setIsRetiroOpen(true)}
@@ -996,6 +1107,7 @@ return (
                             <Coins className="w-5 h-5" />
                             RETIRO/SALIDA
                         </Button>
+                        )}
                     </div>
 
                     {visibleSecondaryButtons.length > 0 && (
@@ -1040,7 +1152,7 @@ return (
                     ) : (
                         <PaymentGrid
                             total={cartTotal}
-                            onCancel={() => setViewMode('products')}
+                            onCancel={() => { setViewMode('products'); focusSearchInput(); }}
                             onComplete={handlePrePaymentComplete}
                             customerName={customerName || activeSale?.customerName || 'Cliente General'}
                         />
@@ -1051,7 +1163,7 @@ return (
             <AssignClientDialog
                 isOpen={isAssignClientOpen}
                 onClose={() => setIsAssignClientOpen(false)}
-                onAssign={(client: SelectedClient) => { setCustomerName(client.name); setSelectedClient(client); }}
+                onAssign={(client: SelectedClient) => { setCustomerName(client.name); setSelectedClient(client); focusSearchInput(); }}
                 currentName={customerName || activeSale?.customerName}
             />
 
@@ -1144,6 +1256,7 @@ return (
 
             <ProductAddWizard
                 product={wizardProduct?.product ?? null}
+                wholesaleEnabled={settings.enableWholesalePrices !== false}
                 onConfirm={handleWizardConfirm}
                 onClose={() => setWizardProduct(null)}
             />
@@ -1212,11 +1325,20 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
     const { toast } = useToast();
     const { settings } = useSettings();
     const enableRecipes = !!settings.enableRecipes;
+    const pathname = usePathname();
     const { addPendingSale, removePendingSale, deletePendingSale, lockPendingSale } = usePendingSales();
     const { cart, setCart, customerName, setCustomerName } = usePersistedCart();
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const [wizardProduct, setWizardProduct] = useState<{ product: Product } | null>(null);
     const productGridRef = useRef<ProductGridHandle>(null);
+    // Auto-enfoque persistente del buscador (Buscar: [ Nombre/Code ]): devuelve el
+    // cursor al input de búsqueda tras cobrar, imprimir, limpiar carrito, seleccionar
+    // cliente o cerrar cualquier diálogo/modal.
+    const focusSearchInput = useCallback(() => {
+        setTimeout(() => {
+            productGridRef.current?.focusSearch();
+        }, 100);
+    }, []);
     const [editingItem, setEditingItem] = useState<CartItem | null>(null);
     const [activeSale, setActiveSale] = useState<PendingSale | null>(null);
     const [viewMode, setViewMode] = useState<'products' | 'payment'>('products');
@@ -1285,34 +1407,48 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         let cancelled = false;
         let pollTimer: number | undefined;
         let fallbackTimer: number | undefined;
+        let safetyTimer: number | undefined;
         let attempts = 0;
 
         const resetAfterPrint = () => {
+            // Cerrar el modal de resumen SIEMPRE (incluso si la venta ya se reinició):
+            // printReceiptHtml() imprime en el onload del iframe (asíncrono) y window.print()
+            // es síncrono; ambos pueden dejar la capa de "Resumen de Pago" visible o
+            // congelada con montos en C$0.00 al cerrar la ventana de impresión.
+            setIsPaymentSummaryOpen(false);
             if (saleResetAfterPrintRef.current) {
                 saleResetAfterPrintRef.current = false;
                 // Reinicio DESPUÉS de imprimir/cerrar la ventana: volver al catálogo.
                 setViewMode('products');
                 setCart([]);
                 setPaymentData(null);
-                setIsPaymentSummaryOpen(false);
                 if (activeSale) {
                     removePendingSale(activeSale.id);
                     setActiveSale(null);
                 }
                 setCustomerName('');
                 setSelectedClient(null);
+                // Devolver el foco al buscador para capturar el siguiente escaneo.
+                focusSearchInput();
             }
         };
 
         // TICKET TÉRMICO (80mm): imprime en un iframe aislado con CSS propio, sin
         // window.print() sobre la ventana principal. Evita el salto de página que
         // Chromium fuerza en tickets largos (>10 ítems) antes del bloque de Totales.
-        // print() del iframe también es síncrono: el reinicio ocurre al cerrar el diálogo.
+        // NOTA: printReceiptHtml() es ASÍNCRONO (imprime en el onload del iframe), así
+        // que el reinicio ocurre ANTES de abrirse el diálogo. El timer re-afirma cierre
+        // + foco al cerrar la ventana para que el modal de resumen no quede visible.
         if (printFormat === 'ticket') {
             printReceiptHtml(buildReceiptHtml(saleForPrint));
             resetAfterPrint();
             setSaleForPrint(null);
-            return () => { cancelled = true; };
+            safetyTimer = window.setTimeout(() => {
+                if (cancelled) return;
+                setIsPaymentSummaryOpen(false);
+                focusSearchInput();
+            }, 800);
+            return () => { cancelled = true; if (safetyTimer !== undefined) window.clearTimeout(safetyTimer); };
         }
 
         // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
@@ -1321,6 +1457,13 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
             printA4Html(buildA4ReceiptHtml(saleForPrint));
             resetAfterPrint();
             setSaleForPrint(null);
+            // window.print() bloquea en Chromium y puede dejar la capa del modal
+            // congelada: re-afirmar cierre + foco tras el diálogo de impresión.
+            safetyTimer = window.setTimeout(() => {
+                if (cancelled) return;
+                setIsPaymentSummaryOpen(false);
+                focusSearchInput();
+            }, 800);
         };
 
         const waitForPrintArea = () => {
@@ -1344,6 +1487,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
             cancelled = true;
             if (pollTimer !== undefined) window.clearTimeout(pollTimer);
             if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+            if (safetyTimer !== undefined) window.clearTimeout(safetyTimer);
         };
     }, [saleForPrint, printAreaId, printFormat]);
     // Credit Note / Return States
@@ -1409,6 +1553,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
 
     // Precio directo del nivel elegido en BD (sin recálculos).
     const getProductPrice = (product: Product, priceLevel: number): number => {
+        if (settings.enableWholesalePrices === false) return product.priceNIO;
         if (priceLevel === 2 && (product as any).price2) return (product as any).price2;
         if (priceLevel === 3 && (product as any).price3) return (product as any).price3;
         if (priceLevel === 4 && (product as any).price4) return (product as any).price4;
@@ -1494,16 +1639,39 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
     const taxAmount = useMemo(() => settings.applyIVA ? cartSubtotal * 0.15 : 0, [cartSubtotal, settings.applyIVA]);
     const cartTotal = cartSubtotal + taxAmount;
 
-    const handlePayment = () => {
+const handlePayment = () => {
         if (cart.length === 0) {
             toast({ title: 'Carrito VacÃ­o', description: 'Agregue productos antes de cobrar.', variant: 'destructive' });
             return;
         }
         setViewMode('payment');
+        focusSearchInput();
     };
 
 const [isFinancingOpen, setIsFinancingOpen] = useState(false);
     const [pendingCredit, setPendingCredit] = useState<{ paid: number; change: number } | null>(null);
+
+    // Algún diálogo/modal activo: desactiva el re-enfoque global por teclado y
+    // permite devolver el foco al buscador en cuanto TODOS se cierran.
+    const anyModalOpen =
+        isPaymentSummaryOpen ||
+        isAssignClientOpen ||
+        isHeldBillsOpen ||
+        showQuickSwitch ||
+        isHelpOpen ||
+        isAdminAuthOpen ||
+        isCreditNoteOpen ||
+        isRetiroOpen ||
+        isFinancingOpen ||
+        isOpenDrawerReceiptActive ||
+        isSaveQuoteOpen ||
+        isLoadQuoteOpen ||
+        isRetiroSaving ||
+        !!wizardProduct ||
+        !!editingItem ||
+        !!lastSale ||
+        !!saleForPrint ||
+        !!lastQuoteReceipt;
 
     const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false) => {
         if (!user || !activeSession) return;
@@ -1593,13 +1761,18 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
     };
 
     const confirmPayment = () => {
+        // BLINDAJE: cerrar el modal de resumen INMEDIATAMENTE de forma sincrona.
+        // No depender de la tuberia de impresion async para desmontarlo.
+        setIsPaymentSummaryOpen(false);
         if (paymentData) {
             handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
         }
+        // Devolver el foco al buscador tras cerrar el modal.
+        setTimeout(() => { productGridRef.current?.focusSearch(); }, 150);
     };
 
 
-    const handleClearCart = () => {
+const handleClearCart = () => {
         if (cart.length > 0 && confirm('¿Estás seguro de limpiar el carrito?')) {
             if (activeSale) {
                 deletePendingSale(activeSale.id);
@@ -1608,6 +1781,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
             setCart([]);
             setCustomerName('');
             setSelectedClient(null);
+            focusSearchInput();
         }
     };
 
@@ -1625,6 +1799,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         setCart([]);
         setCustomerName('');
         setSelectedClient(null);
+        focusSearchInput();
     };
 
     const handleResumeBill = (sale: PendingSale) => {
@@ -1632,6 +1807,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         setCustomerName(sale.customerName);
         setActiveSale(sale);
         toast({ title: 'Factura Recuperada', description: 'La factura se ha cargado al carrito.' });
+        focusSearchInput();
     };
 
     // Handler for Credit Note Button
@@ -1679,6 +1855,8 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
             setTimeout(() => {
                 printReceiptHtml(buildRetiroReceiptHtml(retiroData));
                 setLastRetiro(null);
+                // Tras imprimir el comprobante, devolver el foco al buscador.
+                focusSearchInput();
             }, 150);
         } catch (e) {
             console.error(e);
@@ -1770,6 +1948,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                 setCart([]);
                 setCustomerName('');
                 setSelectedClient(null);
+                focusSearchInput();
                 toast({ title: 'Cotización Guardada', description: `Cotización #${quoteData.quoteNumber} creada exitosamente.` });
             } else {
                 toast({ title: 'Error', description: result.error || 'No se pudo crear la cotización.', variant: 'destructive' });
@@ -1834,6 +2013,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                     });
                 }
                 toast({ title: 'Cotización Cargada', description: `Cotización COT-${String(result.data.quoteNumber).padStart(7, '0')} cargada con éxito.` });
+                focusSearchInput();
             } else {
                 toast({ title: 'No encontrada', description: result.error || 'Cotización no encontrada.', variant: 'destructive' });
             }
@@ -1845,8 +2025,27 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
     // Keyboard shortcuts - MUST be after function declarations
     useEffect(() => {
         const handleKeyPress = (e: KeyboardEvent) => {
+            const parentTarget = e.target as HTMLElement | null;
+            const isEditableField = !!parentTarget && (parentTarget instanceof HTMLInputElement || parentTarget instanceof HTMLTextAreaElement || parentTarget.isContentEditable);
+
+            // Re-enfoque inteligente: si el usuario hace clic fuera del buscador
+            // (zona vacía del catálogo) y empieza a escanear o teclear caracteres
+            // alfanuméricos, devuelve el cursor a Buscar: [ Nombre/Code ] para
+            // capturar la lectura completa. Se desactiva si hay un diálogo/modal
+            // activo o si se está escribiendo en otro campo de texto editable.
+            if (
+                !isEditableField &&
+                !anyModalOpen &&
+                viewMode === 'products' &&
+                e.key.length === 1 &&
+                !e.ctrlKey && !e.metaKey && !e.altKey &&
+                /^[\p{L}\p{N}]$/u.test(e.key)
+            ) {
+                focusSearchInput();
+            }
+
             // Only trigger if not typing in an input/textarea
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+            if (isEditableField) {
                 return;
             }
 
@@ -1859,7 +2058,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                     e.preventDefault();
                     if (viewMode === 'payment') {
                         // Trigger credit payment if possible
-                        if (customerName && customerName !== 'ANONIM') {
+                        if (settings.allowCreditSales !== false && customerName && customerName !== 'ANONIM') {
                              handlePrePaymentComplete(cartTotal, 0, 'Credito');
                         }
                     } else {
@@ -1876,7 +2075,9 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                     break;
                 case 'F10':
                     e.preventDefault();
-                    setIsHeldBillsOpen(true);
+                    if (settings.enableKitchenPrinter !== false) {
+                        setIsHeldBillsOpen(true);
+                    }
                     break;
                 case 'F6':
                     e.preventDefault();
@@ -1913,8 +2114,28 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         cartTotal,
         handlePrePaymentComplete,
         handleCreditNoteClick,
-        setIsHeldBillsOpen
+        setIsHeldBillsOpen,
+        focusSearchInput,
+        anyModalOpen
     ]);
+
+    // Auto-focus Inicial y Cambio de Ruta: al cargar o volver al Punto de Venta,
+    // el cursor se posiciona automáticamente en Buscar: [ Nombre/Code ].
+    useEffect(() => {
+        if (pathname === '/pos') {
+            focusSearchInput();
+        }
+    }, [pathname, focusSearchInput]);
+
+    // Recuperación de Focus tras cerrar cualquier diálogo/modal: apenas todos los
+    // modales se cierran, devuelve el foco al buscador de escaneo.
+    const wasModalOpenRef = useRef(false);
+    useEffect(() => {
+        if (wasModalOpenRef.current && !anyModalOpen) {
+            focusSearchInput();
+        }
+        wasModalOpenRef.current = anyModalOpen;
+    }, [anyModalOpen, focusSearchInput]);
 
 
     return (
@@ -1994,6 +2215,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                         </Button>
 
                         {/* Row 2 */}
+                        {settings.enableKitchenPrinter !== false && (
                         <Button
                             className="h-16 flex flex-col gap-1.5 bg-[#673AB7] hover:bg-[#5E35B1] text-white font-black text-[10px] p-2 transition-all active:scale-95"
                             onClick={() => setIsHeldBillsOpen(true)}
@@ -2002,6 +2224,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                             <ListOrdered className="w-5 h-5" />
                             <span className="text-center leading-none uppercase">VER FACS<br />EN ESPERA</span>
                         </Button>
+                        )}
 
                         {settings.quickSwitchEnabled ? (
                             <Button
@@ -2023,6 +2246,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                             </Button>
                         )}
 
+                        {settings.enablePettyCashExpenses !== false && (
                         <Button
                             className="h-16 flex flex-col gap-1.5 bg-[#FF9800] hover:bg-[#F57C00] text-white font-black text-[10px] p-2 transition-all active:scale-95"
                             onClick={() => setIsRetiroOpen(true)}
@@ -2031,6 +2255,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                             <Coins className="w-5 h-5" />
                             <span className="text-center leading-none uppercase">RETIRO<br />SALIDA</span>
                         </Button>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 mt-2">
@@ -2087,7 +2312,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                     ) : (
                         <PaymentGrid
                             total={cartTotal}
-                            onCancel={() => setViewMode('products')}
+                            onCancel={() => { setViewMode('products'); focusSearchInput(); }}
                             onComplete={handlePrePaymentComplete}
                             customerName={customerName}
                         />
@@ -2101,6 +2326,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
                 onAssign={(client: SelectedClient) => {
                     setCustomerName(client.name);
                     setSelectedClient(client);
+                    focusSearchInput();
                 }}
                 currentName={customerName}
             />
@@ -2131,6 +2357,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
 
 <ProductAddWizard
                 product={wizardProduct?.product ?? null}
+                wholesaleEnabled={settings.enableWholesalePrices !== false}
                 onConfirm={handleWizardConfirm}
                 onClose={() => setWizardProduct(null)}
             />

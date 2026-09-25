@@ -14,11 +14,33 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serveStatic } from '@hono/node-server/serve-static';
 
+import { compress } from 'hono/compress';
+
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 9003);
 const FRONTEND_DIR = resolve(__dirname, '../dist');
 
 const app = buildDispatcherApp();
+
+// Habilitar compresión Gzip/Deflate/Brotli nativa para todas las respuestas HTTP
+app.use('*', compress());
+
+// Middleware de cabeceras de caché para acelerar carga móvil en red local (Wi-Fi/LAN)
+app.use('*', async (c, next) => {
+  await next();
+  const pathname = c.req.path;
+  if (pathname.startsWith('/assets/') || pathname.startsWith('/_next/static/')) {
+    c.header('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (
+    pathname === '/sw.js' ||
+    pathname === '/manifest.json' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname.endsWith('.html') ||
+    pathname === '/'
+  ) {
+    c.header('Cache-Control', 'no-cache, must-revalidate');
+  }
+});
 
 // CORS: permitimos credenciales (cookies de sesión) desde el origen del frontend.
 const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';

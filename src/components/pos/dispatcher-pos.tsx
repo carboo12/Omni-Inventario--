@@ -116,6 +116,7 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
   const userInventoryType = user?.inventoryType || 'general';
 
   const getProductPrice = (product: Product, priceLevel: number): number => {
+    if (settings.enableWholesalePrices === false) return product.priceNIO;
     if (priceLevel === 2 && (product as any).price2) return (product as any).price2;
     if (priceLevel === 3 && (product as any).price3) return (product as any).price3;
     if (priceLevel === 4 && (product as any).price4) return (product as any).price4;
@@ -292,7 +293,22 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
     }
   };
 
+  // Función centralizada de cierre del modal de resumen de pago.
+  // Se ejecuta SIEMPRE que el usuario presiona CONTINUAR >, la X, Escape o Enter.
+  const handleCloseSummary = () => {
+    // A) Cerrar el modal explícitamente en el estado (solución definitiva al bloqueo).
+    setIsPaymentSummaryOpen(false);
+    // B) Re-enfocar el buscador del POS para el siguiente escaneo.
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
+  };
+
   const handleSendToCashier = async () => {
+    if (settings.enableKitchenPrinter === false) {
+      toast({ title: 'Comandas deshabilitadas', description: 'Active la impresión de comandas en Configuración para enviar pedidos a caja.', variant: 'destructive' });
+      return;
+    }
     if (cart.length === 0) {
       toast({ title: 'Carrito Vacío', description: 'Agregue productos antes de enviar a caja.', variant: 'destructive' });
       return;
@@ -415,6 +431,10 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
 
   // Termina un pedido en espera y lo comanda a caja (PENDING). Sigue sin tocar stock.
   const handleSendHeldOrderToCashier = async (order: any) => {
+    if (settings.enableKitchenPrinter === false) {
+      toast({ title: 'Comandas deshabilitadas', description: 'Active la impresión de comandas en Configuración para enviar pedidos a caja.', variant: 'destructive' });
+      return;
+    }
     const result = await promoteHeldOrder(order.id);
     if (result && result.success === false) {
       toast({ title: 'Error', description: result.error || 'No se pudo enviar a caja.', variant: 'destructive' });
@@ -606,11 +626,12 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
 
           <Button
             onClick={() => setIsPaymentSummaryOpen(true)}
-            disabled={isSending || cart.length === 0}
+            disabled={isSending || settings.enableKitchenPrinter === false}
             className={cn(
               "h-12 shrink-0 rounded-xl bg-amber-500 px-4 text-sm font-black text-white shadow-lg transition-all active:scale-[0.97] hover:bg-amber-600",
-              cart.length === 0 && "opacity-50 cursor-not-allowed"
+              (cart.length === 0 || settings.enableKitchenPrinter === false) && "opacity-50 cursor-not-allowed"
             )}
+            title={settings.enableKitchenPrinter === false ? 'Comandas deshabilitadas en Configuración' : undefined}
           >
             {isSending ? (
               <span className="flex items-center gap-2">
@@ -876,12 +897,13 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
       {/* Resumen de pago: confirma el envío de la comanda a caja */}
       <PaymentSummaryDialog
         isOpen={isPaymentSummaryOpen}
-        onClose={() => setIsPaymentSummaryOpen(false)}
+        onClose={handleCloseSummary}
         total={cartTotal}
         amountPaid={cartTotal}
         change={0}
         onConfirm={() => {
-          setIsPaymentSummaryOpen(false);
+          // BLINDAJE: cerrar el modal PRIMERO de forma síncrona, luego enviar.
+          handleCloseSummary();
           handleSendToCashier();
         }}
       />
@@ -890,6 +912,7 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
       <ProductAddWizard
         product={wizardProduct?.product ?? null}
         defaultPriceLevel={customerPriceLevel}
+        wholesaleEnabled={settings.enableWholesalePrices !== false}
         onConfirm={handleWizardConfirm}
         onClose={() => setWizardProduct(null)}
       />

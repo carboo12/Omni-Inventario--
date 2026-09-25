@@ -25,11 +25,21 @@ export default defineConfig(({ mode }) => ({
             ],
           },
           workbox: {
-            globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+            globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json,wasm}'],
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
             navigateFallback: 'index.html',
             navigateFallbackDenylist: [/^\/api/],
             cleanupOutdatedCaches: true,
             runtimeCaching: [
+              {
+                urlPattern: ({ url }) => url.pathname.startsWith('/assets/'),
+                handler: 'CacheFirst',
+                options: {
+                  cacheName: 'static-assets',
+                  expiration: { maxEntries: 200, maxAgeSeconds: 365 * 24 * 60 * 60 },
+                  cacheableResponse: { statuses: [0, 200] },
+                },
+              },
               {
                 urlPattern: ({ url }) => url.pathname.startsWith('/api/actions'),
                 handler: 'NetworkFirst',
@@ -47,14 +57,14 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: [
       // Redirigir imports de server actions del frontend a los wrappers de transporte
-      { find: /^@\/lib\/actions\/.+/, replacement: (p) => {
+      { find: /^@\/lib\/actions\/.+/, replacement: (p: string) => {
           // Convertir @/lib/actions/<mod> -> @/lib/actions-client/<mod> (path absoluto)
           const mod = p.replace(/^@\/lib\/actions\//, '');
           const base = fileURLToPath(new URL('./src/lib/actions-client', import.meta.url));
           return `${base}/${mod}`;
         } },
       // src/actions/* -> actions-client (activation, etc.)
-      { find: /^@\/actions\/.+/, replacement: (p) => {
+      { find: /^@\/actions\/.+/, replacement: (p: string) => {
           const mod = p.replace(/^@\/actions\//, '');
           const base = fileURLToPath(new URL('./src/lib/actions-client', import.meta.url));
           return `${base}/${mod}`;
