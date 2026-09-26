@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import dynamic from '@/lib/dynamic'
 import type { InventoryItem, Product, InventoryMovement, InventoryType } from '@/lib/types';
 import {
@@ -19,6 +19,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { PlusCircle, Database, Upload, Search, Trash2, Eye, Pencil, ArrowUpDown, Package, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { useSearchParams } from '@/lib/router-nav';
+import { resolveStockStatus, isOutOfStockRow, DEFAULT_MIN_STOCK } from '@/lib/inventory-status';
 import { useToast } from '@/hooks/use-toast';
 import { updateInventoryItem, createInventoryItem, createInventoryMovement, getInventory } from '@/lib/actions/inventory';
 import { updateProduct, createProduct, getProducts, saveRecipe } from '@/lib/actions/products';
@@ -104,6 +106,12 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
     const rawInventory = inventoryQuery.data ?? [];
     const products = productsQuery.data ?? [];
 
+    const productsMap = useMemo(() => {
+        const map = new Map<string, Product>();
+        products.forEach(p => map.set(p.id, p));
+        return map;
+    }, [products]);
+
     // Replica la fusión que hacía la página servidor: filas sintéticas por variante
     const inventory = useMemo(() => {
         const variantInventory = products
@@ -117,12 +125,28 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                 batch: 'VARIANTE',
                 quantity: p.stock || 0,
                 expiryDate: 'N/A',
-                status: (p.stock || 0) <= 0 ? 'Agotado' : (p.stock || 0) < (p.minStock || 10) ? 'Stock Bajo' : 'En Stock',
+                status: resolveStockStatus(p.stock, p.minStock),
                 variantId: p.variantId,
                 parentProductId: p.parentProductId,
             })) as InventoryItem[];
-        return [...variantInventory, ...rawInventory];
-    }, [products, rawInventory]);
+        const merged = [...variantInventory, ...rawInventory];
+
+        // El estado se evalúa SIEMPRE sobre el stock TOTAL del producto (suma de
+        // todos sus lotes), nunca sobre el lote individual. Así el badge de cada
+        // fila coincide con la métrica "Stock Bajo" del Dashboard y el filtro de
+        // esta tabla cuenta exactamente los mismos productos.
+        const totalByProduct = new Map<string, number>();
+        for (const item of merged) {
+            const key = item.productId || `${item.inventoryType}::${item.productName}`;
+            totalByProduct.set(key, (totalByProduct.get(key) || 0) + (item.quantity || 0));
+        }
+
+        return merged.map((item: any) => {
+            const key = item.productId || `${item.inventoryType}::${item.productName}`;
+            const minStock = productsMap.get(item.productId)?.minStock ?? item.minStock ?? DEFAULT_MIN_STOCK;
+            return { ...item, status: resolveStockStatus(totalByProduct.get(key) || 0, minStock) };
+        });
+    }, [products, rawInventory, productsMap]);
 
     // Escribe al caché de React Query; descarta filas sintéticas de variantes para mantener el caché limpio
     const writeBaseInventory = (next: InventoryItem[]) =>
@@ -139,7 +163,30 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
         );
     const [movements, setMovements] = useState<InventoryMovement[]>(initialMovements ?? []);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all');
+    // Estado inicial tomado de la URL. Acepta ?filter=low-stock, ?status=low-stock
+    // y ?filtro=stock-bajo para que la tarjeta del Dashboard (/inventory?filter=low-stock)
+    // abra la vista ya filtrada.
+    const searchParams = useSearchParams();
+    const [statusFilter, setStatusFilter] = useState(() => {
+        const valor = [
+            searchParams.get('filter'),
+            searchParams.get('status'),
+            searchParams.get('filtro'),
+        ].find(Boolean);
+        if (!valor) return 'all';
+        switch (valor) {
+            case 'low-stock':
+            case 'stock-bajo':
+                return 'Stock Bajo';
+            case 'agotado':
+            case 'out-of-stock':
+                return 'Agotado';
+            case 'en-stock':
+                return 'En Stock';
+            default:
+                return 'all';
+        }
+    });
     const [inventoryTypeFilter, setInventoryTypeFilter] = useState<'all' | InventoryType>('all');
     const [showOutOfStock, setShowOutOfStock] = useState(false);
     const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -148,21 +195,18 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
     const [dialogAction, setDialogAction] = useState<'edit' | 'adjust' | 'edit-product' | null>(null);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-    const productsMap = useMemo(() => {
-        const map = new Map<string, Product>();
-        products.forEach(p => map.set(p.id, p));
-        return map;
-    }, [products]);
+    // Inventarios visibles para el usuario actual
+    const allowedInventoryTypes = useMemo<InventoryType[]>(() => {
+        if (user?.role === 'dispatcher' && user.inventoryType) return [user.inventoryType];
+        return ['pharmacy', 'general', 'jewelry'];
+    }, [user]);
 
     const filteredInventory = useMemo(() => {
         const lowercasedSearchTerm = searchTerm.toLowerCase();
 
-        // Determine which inventories the user can see
-        let allowedInventoryTypes: Array<InventoryType> = ['pharmacy', 'general', 'jewelry'];
-        if (user?.role === 'dispatcher' && user.inventoryType) {
-            allowedInventoryTypes = [user.inventoryType];
-        }
-
+        // Búsqueda + tipos permitidos + tipo de inventario. El switch de agotados
+        // NO se aplica aquí a propósito: la tabla muestra filas consolidadas
+        // (suma de lotes), así que la regla debe evaluarse sobre la fila final.
         return inventory
             .filter(item => allowedInventoryTypes.includes(item.inventoryType)) // Filter by user's allowed inventory
             .filter((item) => {
@@ -183,20 +227,30 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                 }
                 return false;
             })
-            .filter((item) =>
-                statusFilter === 'all' ? true : item.status === statusFilter
-            )
-            .filter((item) => {
-                // Ocultar lotes agotados (stock 0) por defecto, salvo que el admin
-                // active el toggle o filtre explícitamente por "Agotado".
-                if (!showOutOfStock && statusFilter !== 'Agotado' && item.quantity <= 0) return false;
-                return true;
-            })
             .filter(item =>
                 inventoryTypeFilter === 'all' ? true : item.inventoryType === inventoryTypeFilter
             )
             .sort((a, b) => a.productName.localeCompare(b.productName));
-    }, [inventory, searchTerm, statusFilter, user, inventoryTypeFilter, productsMap, mode, showOutOfStock]);
+    }, [inventory, searchTerm, allowedInventoryTypes, inventoryTypeFilter, productsMap, mode]);
+
+    /**
+     * Aplica el switch "Mostrar lotes agotados" y el selector de estado sobre la
+     * fila FINAL de la tabla. El switch tiene prioridad: apagado, NINGÚN producto
+     * con cantidad <= 0 (agotados y saldos negativos) puede verse, sin importar el
+     * filtro elegido.
+     */
+    const applyStockRowFilters = <T extends { status?: string | null }>(rows: T[]): T[] =>
+        rows.filter((row) => {
+            if (!showOutOfStock && isOutOfStockRow(row as any)) return false;
+            if (statusFilter === 'all') return true;
+            // "Stock Bajo" incluye también los agotados: ambos necesitan
+            // reabastecimiento y ambos cuentan en la métrica del Dashboard.
+            // Con el switch apagado los agotados ya se descartaron arriba.
+            if (statusFilter === 'Stock Bajo') {
+                return row.status === 'Stock Bajo' || row.status === 'Agotado';
+            }
+            return row.status === statusFilter;
+        });
 
     const groupedInventory = useMemo(() => {
         if (mode !== 'BOUTIQUE') return filteredInventory;
@@ -234,8 +288,25 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
             }
         });
 
-        return Array.from(groups.values());
+        return Array.from(groups.values()).map((group) => {
+            const totalQuantity = group.items.reduce((sum: number, i: any) => sum + (i.quantity || 0), 0);
+            // `status` es a nivel de producto (stock total vs minStock), así que
+            // todos los lotes/variantes del grupo lo comparten: se toma el del
+            // primer ítem para que el filtro de estado y el badge coincidan.
+            return {
+                ...group,
+                totalQuantity,
+                quantity: totalQuantity,
+                status: group.items[0]?.status,
+            };
+        });
     }, [filteredInventory, mode, productsMap, products]);
+
+    // Fila consolidada: el switch y el estado se aplican sobre la fila ya sumada.
+    const visibleGroupedInventory = useMemo(
+        () => (mode === 'BOUTIQUE' ? applyStockRowFilters(groupedInventory) : groupedInventory),
+        [groupedInventory, mode, showOutOfStock, statusFilter]
+    );
 
     // Consolidación para la tabla normal (no boutique): los lotes genéricos
     // (STOCK-INICIAL / N/A / vacíos) de un mismo producto se agrupan en una sola
@@ -272,16 +343,38 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
         });
 
         return Array.from(groups.values()).map(g => {
-            // Recalcular el status consolidado sobre el stock total acumulado.
-            const total = g.items.reduce((sum: number, i: any) => sum + (i.quantity || 0), 0);
-            const product = g.productId ? productsMap.get(g.productId) : undefined;
-            const minStock = product?.minStock ?? (g as any).minStock ?? 10;
-            let status: InventoryItem['status'] = 'En Stock';
-            if (total <= 0) status = 'Agotado';
-            else if (total < minStock) status = 'Stock Bajo';
-            return { ...g, quantity: total, status, lastItem: g.items[g.items.length - 1] };
+            // El status ya viene normalizado a nivel de producto (stock total vs
+            // minStock) en `inventory`; se reutiliza el de la primera fila del
+            // grupo para que el badge coincida con la métrica del Dashboard.
+            return { ...g, quantity: g.items.reduce((sum: number, i: any) => sum + (i.quantity || 0), 0), status: g.status, lastItem: g.items[g.items.length - 1] };
         });
     }, [filteredInventory, mode, productsMap]);
+
+    // Fila consolidada: el switch y el estado se aplican sobre la fila ya sumada.
+    const visibleConsolidatedInventory = useMemo(
+        () => (mode === 'BOUTIQUE' ? consolidatedInventory : applyStockRowFilters(consolidatedInventory)),
+        [consolidatedInventory, mode, showOutOfStock, statusFilter]
+    );
+
+    // Conteo REAL de registros agotados (cantidad <= 0). Se mide sobre las mismas
+    // filas que la tabla muestra — en BOUTIQUE grupos, en el resto lotes
+    // consolidados — de modo que (N) coincide exactamente con cuántos registros
+    // agotados hay y cuántos aparecen al activar el switch.
+    const outOfStockCount = useMemo(() => {
+        const rows: any[] = mode === 'BOUTIQUE' ? visibleGroupedInventory : visibleConsolidatedInventory;
+        return rows.filter(isOutOfStockRow).length;
+    }, [visibleGroupedInventory, visibleConsolidatedInventory, mode]);
+
+    // Al llegar desde la tarjeta "Productos Stock Bajo" del Dashboard se activa el
+    // switch de agotados si hay registros agotados, para que también se vean los
+    // productos que necesitan reabastecimiento urgente. Se hace una sola vez por montaje.
+    const autoOutOfStockRef = useRef(false);
+    useEffect(() => {
+        if (statusFilter !== 'Stock Bajo' || autoOutOfStockRef.current) return;
+        if (inventory.length === 0) return; // datos aún cargando
+        autoOutOfStockRef.current = true;
+        if (outOfStockCount > 0) setShowOutOfStock(true);
+    }, [statusFilter, inventory.length, outOfStockCount]);
 
     const toggleGroup = (groupKey: string) => {
         setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
@@ -295,8 +388,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
         const newInventory = inventory.map(item => {
             if (item.id === updatedItem.id) {
                 const product = products.find(p => p.id === updatedItem.productId);
-                const minStock = product?.minStock || 50;
-                const newStatus: InventoryItem['status'] = updatedItem.quantity === 0 ? 'Agotado' : updatedItem.quantity < minStock ? 'Stock Bajo' : 'En Stock';
+                const newStatus = resolveStockStatus(updatedItem.quantity, product?.minStock ?? DEFAULT_MIN_STOCK);
                 return { ...updatedItem, status: newStatus };
             }
             return item;
@@ -376,6 +468,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                 inventoryType: updatedProductData.inventoryType,
                 unitOfMeasure: updatedProductData.unitOfMeasure,
                 minStock: updatedProductData.minStock,
+                allowNegativeStock: (updatedProductData as any).allowNegativeStock === true,
                 barcode: updatedProductData.barcode,
                 brand: updatedProductData.brand,
                 size: updatedProductData.size,
@@ -552,7 +645,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                     batch: newItemData.batch,
                     quantity: newItemData.quantity,
                     expiryDate: newItemData.expiryDate,
-                    status: newItemData.quantity === 0 ? 'Agotado' : 'En Stock' // Simple logic
+                    status: resolveStockStatus(newItemData.quantity, productsMap.get(productId)?.minStock ?? DEFAULT_MIN_STOCK)
                 });
 
                 if (!newInventoryItemResult.success) {
@@ -652,7 +745,7 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                                             checked={showOutOfStock}
                                             onCheckedChange={setShowOutOfStock}
                                         />
-                                        Mostrar lotes agotados <span className="text-[10px] text-muted-foreground/70">(0)</span>
+                                        Mostrar lotes agotados <span className="text-[10px] text-muted-foreground/70">({outOfStockCount})</span>
                                     </label>
                                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                                         <SelectTrigger className="h-9 w-[130px]">
@@ -709,8 +802,8 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {groupedInventory.length > 0 ? (
-                                                groupedInventory.map((group, index) => {
+                                        {visibleGroupedInventory.length > 0 ? (
+                                            visibleGroupedInventory.map((group, index) => {
                                                     const isExpanded = expandedGroups[group.id] ?? false;
                                                     
                                                     return (
@@ -864,8 +957,8 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {consolidatedInventory.length > 0 ? (
-                                            consolidatedInventory.map((item) => (
+                                        {visibleConsolidatedInventory.length > 0 ? (
+                                            visibleConsolidatedInventory.map((item) => (
                                                 <TableRow key={item.id + (item.batch || '') + (item.quantity || 0)} onClick={() => openActionDialog(item.lastItem || item)} className="cursor-pointer hover:bg-muted/50">
                                                     <TableCell className="font-medium">{item.productName}</TableCell>
                                                     <TableCell className="text-xs">{item.barcode}</TableCell>
@@ -887,11 +980,17 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                                                 </TableRow>
                                             ))
                                         ) : (
-                                            <TableRow>
-                                                <TableCell colSpan={user?.role === 'admin' ? 7 : 6} className="h-32 text-center text-muted-foreground">
-                                                    Sin resultados.
-                                                </TableCell>
-                                            </TableRow>
+                                                <TableRow>
+                                                    <TableCell colSpan={user?.role === 'admin' ? 7 : 6} className="h-32 text-center text-muted-foreground">
+                                                        Sin resultados.
+                                                        {!showOutOfStock && outOfStockCount > 0 && (
+                                                            <div className="mt-2 text-xs text-muted-foreground/80">
+                                                                Hay {outOfStockCount} registro{outOfStockCount === 1 ? '' : 's'} agotado{outOfStockCount === 1 ? '' : 's'} oculto{outOfStockCount === 1 ? '' : 's'}. Activa
+                                                                &quot;Mostrar lotes agotados&quot; para verlos.
+                                                            </div>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
                                         )}
                                     </TableBody>
                                 </Table>

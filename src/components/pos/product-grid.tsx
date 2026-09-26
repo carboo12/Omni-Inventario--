@@ -7,6 +7,18 @@ import { ArrowLeft, Search, User } from 'lucide-react';
 import { cn, formatNumber } from '@/lib/utils';
 import Image from '@/components/ui/image';
 import { useSettings } from '@/hooks/use-settings';
+import { allowsNegativeStock, getProductStock } from '@/lib/stock-policy';
+
+/**
+ * `true` cuando el producto no se puede vender: está agotado, no está marcado
+ * para venta bajo encargo y no es un platillo preparado (cuyos insumos valida
+ * el backend). Se usa para deshabilitar tarjetas y el escaneo por código de barras.
+ */
+export function isProductBlocked(product: Product): boolean {
+    if ((product as any).type === 'RECIPE_ITEM') return false;
+    if (allowsNegativeStock(product)) return false;
+    return getProductStock(product) <= 0;
+}
 
 export interface ProductGridHandle {
     /** Limpia el filtro, reinicia el catálogo y deja el buscador listo para el siguiente producto. */
@@ -101,6 +113,9 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
             );
             
             if (exactBarcodeMatch) {
+                // Producto agotado y sin venta bajo encargo: no se agrega. Se
+                // conserva el código en el buscador para que el cajero lo vea.
+                if (isProductBlocked(exactBarcodeMatch)) return;
                 onProductSelect(exactBarcodeMatch);
                 setSearchTerm('');
                 focusSearchInput();
@@ -342,9 +357,11 @@ export const ProductGrid = forwardRef<ProductGridHandle, ProductGridProps>(({ pr
                                     // Try to find an exact barcode match first
                                     const exactMatch = products.find(p => p.barcode === searchTerm);
                                     if (exactMatch) {
-                                        onProductSelect(exactMatch);
-                                        setSearchTerm('');
-                                        focusSearchInput();
+                                        if (!isProductBlocked(exactMatch)) {
+                                            onProductSelect(exactMatch);
+                                            setSearchTerm('');
+                                            focusSearchInput();
+                                        }
                                         return;
                                     }
                                     
@@ -471,24 +488,33 @@ const ProductCard = ({ product, onSelect, priceLevel = 1, getProductPrice }: { p
         ? (product as any).originalPrice 
         : product.priceNIO / (parseFloat(settings.exchangeRate) || 36.5);
 
-    const stock = typeof product.stock === 'number' ? product.stock : 0;
+    const stock = getProductStock(product);
     const outOfStock = stock <= 0;
+    // Producto agotado y sin permiso de venta bajo encargo: no se puede vender.
+    const blocked = isProductBlocked(product);
     const stockUnit = (product as any).baseUnit || (product.unitOfMeasure === 'unit' ? 'Unidad' : product.unitOfMeasure);
 
     return (
         <div
-            onClick={() => onSelect(product)}
+            onClick={() => { if (!blocked) onSelect(product); }}
+            title={blocked ? 'Producto sin existencias disponibles' : undefined}
             className={cn(
-                "aspect-square bg-white border-2 border-slate-100 hover:border-primary/50 text-slate-900 p-2 cursor-pointer rounded-xl flex flex-col justify-between transition-all relative overflow-hidden group shadow-sm hover:shadow-md",
-                outOfStock && "border-[#FF5722]/60 bg-orange-50/60 hover:border-[#FF5722]"
+                "aspect-square bg-white border-2 border-slate-100 text-slate-900 p-2 rounded-xl flex flex-col justify-between transition-all relative overflow-hidden group shadow-sm",
+                blocked
+                    ? "border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed grayscale"
+                    : "hover:border-primary/50 cursor-pointer hover:shadow-md",
+                !blocked && outOfStock && "border-[#FF5722]/60 bg-orange-50/60 hover:border-[#FF5722]"
             )}
         >
             {/* Background Accent */}
             <div className="absolute top-0 right-0 w-12 h-12 bg-primary/5 rounded-bl-3xl -mr-4 -mt-4 transition-all group-hover:bg-primary/10" />
 
             {outOfStock && (
-                <span className="absolute top-1.5 left-1.5 z-10 bg-[#FF5722] text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide shadow-sm">
-                    Sin Stock / Encargo
+                <span className={cn(
+                    "absolute top-1.5 left-1.5 z-10 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide shadow-sm",
+                    blocked ? "bg-slate-500" : "bg-[#FF5722]"
+                )}>
+                    {blocked ? 'Agotado' : 'Sin Stock / Encargo'}
                 </span>
             )}
 
@@ -531,7 +557,7 @@ const ProductCard = ({ product, onSelect, priceLevel = 1, getProductPrice }: { p
                 )}
                 <div className={cn(
                     "flex items-center justify-between mt-1 pt-1 border-t border-dashed border-slate-200 text-[9px] font-bold uppercase tracking-wide",
-                    outOfStock ? "text-[#FF5722]" : "text-green-700"
+                    blocked ? "text-slate-500" : (outOfStock ? "text-[#FF5722]" : "text-green-700")
                 )}>
                     <span>Stock:</span>
                     <span>{formatNumber(stock)} {stockUnit}</span>

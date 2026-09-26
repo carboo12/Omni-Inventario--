@@ -407,6 +407,7 @@ model Product {
   inventoryType     String
   unitOfMeasure     String
   minStock          Int?
+  allowNegativeStock Boolean            @default(false)
   barcode           String?
   imageUrl          String?
   imageHint         String?
@@ -605,6 +606,11 @@ model SalesInvoice {
   sessionId           String
   userId              String
   customerId          String?
+  deliveryType        String              @default("COUNTER")
+  deliveryStatus      String              @default("DELIVERED")
+  deliveryAddress     String?
+  deliveryPhone       String?
+  isPaid              Boolean             @default(true)
   creditNote          CreditNote?
   customer            Customer?           @relation(fields: [customerId], references: [id], map: "SalesInvoice_customerId_fkey")
   cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "SalesInvoice_sessionId_fkey")
@@ -612,10 +618,12 @@ model SalesInvoice {
   salesInvoiceItem    SalesInvoiceItem[]
   creditInstallment   CreditInstallment[]
   creditPayment       CreditPayment[]
+  deliveryRouteStops  DeliveryRouteStop[]
 
   @@index([customerId], map: "SalesInvoice_customerId_fkey")
   @@index([sessionId], map: "SalesInvoice_sessionId_fkey")
   @@index([userId], map: "SalesInvoice_userId_fkey")
+  @@index([deliveryStatus], map: "SalesInvoice_deliveryStatus_idx")
   @@map("salesinvoice")
 }
 
@@ -1004,17 +1012,20 @@ model DeliveryRouteStop {
   id         String             @id
   routeId    String
   orderId    String?
+  invoiceId  String?
   customerId String
   address    String?
   notes      String?
   status     DeliveryStopStatus @default(PENDING)
   visitedAt  DateTime?
 
-  route    DeliveryRoute  @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  order    CustomerOrder? @relation(fields: [orderId], references: [id])
-  customer Customer       @relation(fields: [customerId], references: [id])
+  route        DeliveryRoute  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  order        CustomerOrder? @relation(fields: [orderId], references: [id])
+  salesInvoice SalesInvoice?  @relation(fields: [invoiceId], references: [id])
+  customer     Customer       @relation(fields: [customerId], references: [id])
 
   @@index([routeId])
+  @@index([invoiceId])
   @@map("delivery_route_stop")
 }
 

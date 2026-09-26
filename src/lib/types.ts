@@ -49,6 +49,11 @@ export type Product = {
   inventoryType: InventoryType;
   unitOfMeasure: UnitOfMeasure;
   minStock?: number | null;
+  /**
+   * Permite vender por encima de las existencias (venta bajo encargo).
+   * Por defecto `false`: una venta nunca puede dejar el stock en negativo.
+   */
+  allowNegativeStock?: boolean | null;
   barcode?: string | null;
   imageUrl?: string | null;
   imageHint?: string | null;

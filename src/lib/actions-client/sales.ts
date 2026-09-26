@@ -2,13 +2,21 @@
 // Wrappers de transporte para el módulo 'sales' (llaman a la API).
 import { callAction } from '../api-client';
 
-import type { InventoryMovement, User } from '@prisma/client';
+import type { Prisma, InventoryMovement, User } from '@prisma/client';
 
 // Tipos copiados del action original (para no arrastrar código server al bundle).
 export interface SaleFinancing {
     installments: number;
     frequency: 'SEMANAL' | 'QUINCENAL' | 'MENSUAL';
     interestRate: number;
+}
+
+export interface SaleDeliveryDetails {
+    deliveryType?: 'COUNTER' | 'ROUTE';
+    deliveryStatus?: 'PENDIENTE_ENTREGA' | 'EN_RUTA' | 'ENTREGADO' | 'COBRADO';
+    deliveryAddress?: string;
+    deliveryPhone?: string;
+    isPaid?: boolean;
 }
 
 export async function createSale(...args: any[]): Promise<any> {
@@ -25,4 +33,16 @@ export async function getInvoiceByNumber(...args: any[]): Promise<any> {
 
 export async function getLastSale(...args: any[]): Promise<any> {
   return callAction('sales', 'getLastSale', args);
+}
+
+export async function confirmDeliveryAndPayment(...args: any[]): Promise<any> {
+  return callAction('sales', 'confirmDeliveryAndPayment', args);
+}
+
+export async function updateInvoiceDeliveryStatus(...args: any[]): Promise<any> {
+  return callAction('sales', 'updateInvoiceDeliveryStatus', args);
+}
+
+export async function getDeliveryInvoices(...args: any[]): Promise<any> {
+  return callAction('sales', 'getDeliveryInvoices', args);
 }

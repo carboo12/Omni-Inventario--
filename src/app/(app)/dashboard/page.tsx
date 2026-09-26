@@ -3,6 +3,8 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
+import type { StatCardAccent } from "@/components/ui/stat-card";
 import { DollarSign, Package, ShoppingCart, AlertTriangle, Coins, CreditCard, Landmark, Loader2, ShieldCheck, Truck, MapPin, Users, Boxes } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getDashboardStats, DashboardStats } from "@/lib/actions/dashboard";
@@ -11,6 +13,19 @@ import { useSettings } from "@/hooks/use-settings";
 import { formatNumber } from "@/lib/utils";
 
 const EXCHANGE_RATE = 36.5;
+
+type DashboardStat = {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  change: string;
+  href?: string;
+  accent?: StatCardAccent;
+};
+
+/** Enlace profundo al inventario con el filtro de stock bajo aplicado. */
+const INVENTORY_LOW_STOCK = "/inventory?filter=low-stock";
+
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -40,52 +55,52 @@ export default function DashboardPage() {
 
     if (!stats) return null;
 
-    const masterAdminStats = [
-      { title: "Total de Productos / Ítems", value: `${formatNumber(stats.totalProducts, 0)} ítems`, icon: Boxes, change: "Productos registrados en el catálogo" },
-      { title: "Ingresos Totales", value: `C$${formatNumber(stats.totalRevenue)}`, icon: DollarSign, change: "Total acumulado" },
+    const masterAdminStats: DashboardStat[] = [
+      { title: "Total de Productos / Ítems", value: `${formatNumber(stats.totalProducts, 0)} ítems`, icon: Boxes, change: "Productos registrados en el catálogo", href: "/inventory" },
+      { title: "Ingresos Totales", value: `C$${formatNumber(stats.totalRevenue)}`, icon: DollarSign, change: "Total acumulado", href: "/reports" },
       // "Sucursales Totales" removed as requested
-      { title: "Inventario General", value: `${formatNumber(stats.totalInventoryCount, 0)} unidades`, icon: Package, change: "Total en todas las bodegas" },
-      { title: "Aprobaciones Pendientes", value: stats.pendingApprovals.toString(), icon: AlertTriangle, change: stats.pendingApprovals > 0 ? "Requiere atención" : "Todo al día" },
-      { title: "Estado de Licencia", value: "Activa", icon: ShieldCheck, change: "Sistema validado" },
+      { title: "Inventario General", value: `${formatNumber(stats.totalInventoryCount, 0)} unidades`, icon: Package, change: "Total en todas las bodegas", href: "/inventory" },
+      { title: "Aprobaciones Pendientes", value: stats.pendingApprovals.toString(), icon: AlertTriangle, change: stats.pendingApprovals > 0 ? "Requiere atención" : "Todo al día", accent: "warning" },
+      { title: "Estado de Licencia", value: "Activa", icon: ShieldCheck, change: "Sistema validado", href: "/settings" },
     ];
 
-    const adminStats = [
-      { title: "Total de Productos / Ítems", value: `${formatNumber(stats.totalProducts, 0)} ítems`, icon: Boxes, change: "Productos registrados en el catálogo" },
-      { title: "Ingresos de Sucursal", value: `C$${formatNumber(stats.totalRevenue)}`, icon: DollarSign, change: "Total acumulado" },
-      { title: "Inversión en Inventario", value: `C$${formatNumber(stats.inventoryInvestment)}`, icon: Landmark, change: "Valor de costo del stock" },
-      { title: "Cuentas por Pagar", value: `C$${formatNumber(stats.accountsPayable)}`, icon: CreditCard, change: "Saldo total pendiente" },
-      { title: "Productos a Vencer", value: stats.expiringProductsCount.toString(), icon: AlertTriangle, change: "En los próximos 30 días" },
+    const adminStats: DashboardStat[] = [
+      { title: "Total de Productos / Ítems", value: `${formatNumber(stats.totalProducts, 0)} ítems`, icon: Boxes, change: "Productos registrados en el catálogo", href: "/inventory" },
+      { title: "Ingresos de Sucursal", value: `C$${formatNumber(stats.totalRevenue)}`, icon: DollarSign, change: "Total acumulado", href: "/reports" },
+      { title: "Inversión en Inventario", value: `C$${formatNumber(stats.inventoryInvestment)}`, icon: Landmark, change: "Valor de costo del stock", href: "/inventory" },
+      { title: "Cuentas por Pagar", value: `C$${formatNumber(stats.accountsPayable)}`, icon: CreditCard, change: "Saldo total pendiente", href: "/purchases" },
+      { title: "Productos a Vencer", value: stats.expiringProductsCount.toString(), icon: AlertTriangle, change: "En los próximos 30 días", href: "/inventory", accent: "warning" },
     ];
 
-    const dispatcherStats = [
-      { title: "Inversión en Inventario", value: `C$${formatNumber(stats.inventoryInvestment)}`, icon: Landmark, change: `Valor de costo (${user?.inventoryType === 'pharmacy' ? 'Farmacia' : 'General'})` },
-      { title: "Artículos con Stock Bajo", value: stats.lowStockCount.toString(), icon: Package, change: "Necesitan reabastecimiento" },
-      { title: "Productos a Vencer", value: stats.expiringProductsCount.toString(), icon: AlertTriangle, change: "En los próximos 30 días" },
-      { title: "Movimientos de Stock Hoy", value: (stats.stockMovementsToday || 0).toString(), icon: Package, change: "Entradas, salidas y ajustes" },
+    const dispatcherStats: DashboardStat[] = [
+      { title: "Inversión en Inventario", value: `C$${formatNumber(stats.inventoryInvestment)}`, icon: Landmark, change: `Valor de costo (${user?.inventoryType === 'pharmacy' ? 'Farmacia' : 'General'})`, href: "/inventory" },
+      { title: "Artículos con Stock Bajo", value: stats.lowStockCount.toString(), icon: Package, change: "Necesitan reabastecimiento", href: INVENTORY_LOW_STOCK, accent: "warning" },
+      { title: "Productos a Vencer", value: stats.expiringProductsCount.toString(), icon: AlertTriangle, change: "En los próximos 30 días", href: "/inventory", accent: "warning" },
+      { title: "Movimientos de Stock Hoy", value: (stats.stockMovementsToday || 0).toString(), icon: Package, change: "Entradas, salidas y ajustes", href: "/kardex" },
     ];
 
-    const cashierStats = [
-      { title: "Ventas de Hoy", value: `C$${formatNumber(stats.todaysSalesAmount)}`, icon: DollarSign, change: "Total del día" },
-      { title: "Ventas del Turno", value: `C$${formatNumber(stats.todaysSalesAmount)}`, icon: ShoppingCart, change: "Sesión actual" },
-      { title: "Caja (C$)", value: `C$${formatNumber(stats.cashInRegister)}`, icon: Coins, change: "Efectivo estimado" },
-      { title: "Caja ($)", value: `$${formatNumber(stats.cashInRegister / EXCHANGE_RATE)}`, icon: DollarSign, change: `TC: ${EXCHANGE_RATE}` },
+    const cashierStats: DashboardStat[] = [
+      { title: "Ventas de Hoy", value: `C$${formatNumber(stats.todaysSalesAmount)}`, icon: DollarSign, change: "Total del día", href: "/reports" },
+      { title: "Ventas del Turno", value: `C$${formatNumber(stats.todaysSalesAmount)}`, icon: ShoppingCart, change: "Sesión actual", href: "/reports" },
+      { title: "Caja (C$)", value: `C$${formatNumber(stats.cashInRegister)}`, icon: Coins, change: "Efectivo estimado", href: "/cash-management" },
+      { title: "Caja ($)", value: `$${formatNumber(stats.cashInRegister / EXCHANGE_RATE)}`, icon: DollarSign, change: `TC: ${EXCHANGE_RATE}`, href: "/cash-management" },
     ];
 
-    const ruteroStats = [
-      { title: "Entregas de Hoy", value: "0", icon: Truck, change: "Pendientes de asignación" },
-      { title: "Ruta Asignada", value: "Sin ruta", icon: MapPin, change: "No hay ruta activa" },
-      { title: "Clientes a Visitar", value: "0", icon: Users, change: "En la ruta actual" },
-      { title: "Pendientes de Ayer", value: "0", icon: AlertTriangle, change: "Entregas no completadas" },
+    const ruteroStats: DashboardStat[] = [
+      { title: "Entregas de Hoy", value: "0", icon: Truck, change: "Pendientes de asignación", href: "/delivery-routes" },
+      { title: "Ruta Asignada", value: "Sin ruta", icon: MapPin, change: "No hay ruta activa", href: "/delivery-routes" },
+      { title: "Clientes a Visitar", value: "0", icon: Users, change: "En la ruta actual", href: "/customers" },
+      { title: "Pendientes de Ayer", value: "0", icon: AlertTriangle, change: "Entregas no completadas", href: "/delivery-routes", accent: "warning" },
     ];
 
-    let currentStats: { title: string; value: string | number; icon: React.ElementType; change: string; }[] = [];
+    let currentStats: DashboardStat[] = [];
 
     if (mode === 'DISTRIBUIDORA') {
       currentStats = [
-        { title: "Ventas de Hoy", value: `C$${formatNumber(stats.todaysSalesAmount)}`, icon: DollarSign, change: "Total del día" },
-        { title: "Inventario General", value: `${formatNumber(stats.totalInventoryCount, 0)} unidades`, icon: Package, change: "Total en bodega" },
-        { title: "Cuentas por Cobrar", value: `C$${formatNumber(stats.accountsReceivable)}`, icon: CreditCard, change: "Saldo pendiente de clientes" },
-        { title: "Productos Stock Bajo", value: stats.lowStockCount.toString(), icon: AlertTriangle, change: "Necesitan reabastecimiento" },
+        { title: "Ventas de Hoy", value: `C$${formatNumber(stats.todaysSalesAmount)}`, icon: DollarSign, change: "Total del día", href: "/reports" },
+        { title: "Inventario General", value: `${formatNumber(stats.totalInventoryCount, 0)} unidades`, icon: Package, change: "Total en bodega", href: "/inventory" },
+        { title: "Cuentas por Cobrar", value: `C$${formatNumber(stats.accountsReceivable)}`, icon: CreditCard, change: "Saldo pendiente de clientes", href: "/customers/credit" },
+        { title: "Productos Stock Bajo", value: stats.lowStockCount.toString(), icon: AlertTriangle, change: "Necesitan reabastecimiento", href: INVENTORY_LOW_STOCK, accent: "warning" },
       ];
     } else if (mode === 'JEWELRY' && stats.jewelryStats && (user?.role === 'master-admin' || user?.role === 'admin')) {
       const jStats = stats.jewelryStats;
@@ -102,19 +117,22 @@ export default function DashboardPage() {
           title: "Peso Total en Stock",
           value: `${totalGrams.toFixed(2)}g`,
           icon: Landmark,
-          change: "Oro fino en inventario"
+          change: "Oro fino en inventario",
+          href: "/jewelry/inventory"
         },
         {
           title: "Valor de Inventario",
           value: `C$${formatNumber(jStats.totalInventoryValueUSD * EXCHANGE_RATE)}`,
           icon: ShoppingCart,
-          change: `≈ $${formatNumber(jStats.totalInventoryValueUSD)} USD`
+          change: `≈ $${formatNumber(jStats.totalInventoryValueUSD)} USD`,
+          href: "/jewelry/inventory"
         },
         {
           title: "Utilidad Estimada",
           value: `C$${formatNumber(jStats.estimatedProfitUSD * EXCHANGE_RATE)}`,
           icon: AlertTriangle,
-          change: `≈ $${formatNumber(jStats.estimatedProfitUSD)} USD — ${jStats.estimatedProfitUSD >= 0 ? 'Balance positivo' : 'Balance negativo'}`
+          change: `≈ $${formatNumber(jStats.estimatedProfitUSD)} USD — ${jStats.estimatedProfitUSD >= 0 ? 'Balance positivo' : 'Balance negativo'}`,
+          href: "/jewelry/sales"
         }
       ];
     } else {
@@ -128,20 +146,15 @@ export default function DashboardPage() {
     return (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {currentStats.map((stat) => (
-          <Card key={stat.title} className="overflow-hidden">
-            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-              <div className="space-y-1">
-                <CardTitle className="text-sm font-semibold text-muted-foreground">{stat.title}</CardTitle>
-                <div className="text-2xl font-bold tracking-tight text-foreground">{stat.value}</div>
-              </div>
-              <div className="metric-icon">
-                <stat.icon className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="border-t pt-3 text-xs font-medium text-muted-foreground">{stat.change}</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            key={stat.title}
+            title={stat.title}
+            value={stat.value}
+            subtitle={stat.change}
+            icon={stat.icon}
+            href={stat.href}
+            accent={stat.accent}
+          />
         ))}
       </div>
     );

@@ -1,7 +1,15 @@
 "use client";
 
-import { format } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+/** Identificador del iframe de impresión, para poder limpiar el anterior. */
+const PRINT_IFRAME_ID = 'print-receipt-iframe';
+/** Margen de espera para que la ventana del iframe esté inicializada (~600 ms). */
+const PRINT_MAX_ATTEMPTS = 24;
+const PRINT_RETRY_DELAY_MS = 25;
+/** Frame de espera antes de invocar print() para que el ticket esté pintado. */
+const PRINT_SETTLE_DELAY_MS = 250;
 
 /**
  * Aísla la impresión de tickets térmicos en un iframe dinámico e invisible.
@@ -11,7 +19,12 @@ import { es } from 'date-fns/locale';
 export function printReceiptHtml(htmlContent: string) {
     if (typeof document === 'undefined') return;
 
+    // 1. Una impresión anterior que no llegó a eliminarse no debe acumularse.
+    document.getElementById(PRINT_IFRAME_ID)?.remove();
+
+    // 2. Iframe oculto: no debe alterar el flujo ni el estilo de la página.
     const iframe = document.createElement('iframe');
+    iframe.id = PRINT_IFRAME_ID;
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
     iframe.style.bottom = '0';
@@ -21,23 +34,93 @@ export function printReceiptHtml(htmlContent: string) {
     iframe.style.background = 'transparent';
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('title', 'impresion-ticket');
-    iframe.onload = () => {
-        const body = iframe.contentWindow?.document.body;
-        if (!body || !body.innerHTML || body.innerHTML.trim().length === 0) {
+
+    // 3. El iframe es efímero: se elimina siempre, se imprima o no (diálogo
+    //    cancelado, documento vacío, error al imprimir o ventana inaccesible).
+    let removeTimer: number | undefined;
+    const dispose = () => {
+        window.clearTimeout(removeTimer);
+        try {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        } catch {
+            // El iframe ya fue desconectado.
+        }
+    };
+
+    // 4. Se adjunta al DOM ANTES de leer contentWindow / contentDocument: fuera del
+    //    documento el iframe no tiene ventana y el acceso devolvería null.
+    (document.body || document.documentElement).appendChild(iframe);
+
+    // 5. `contentWindow` puede seguir siendo null justo después de insertarlo si la
+    //    ventana del iframe aún no se inicializó. Se espera el evento 'load' y, si no
+    //    llegara, se reintenta con margen antes de abandonar; nunca se desreferencia.
+    let attempts = 0;
+    let settled = false;
+
+    const emit = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(retryTimer);
+        iframe.removeEventListener('load', emit);
+
+        const frameWindow = iframe.contentWindow;
+        const frameDoc = iframe.contentDocument || frameWindow?.document;
+        if (!frameWindow || !frameDoc) {
+            console.error('No se pudo acceder al documento del iframe de impresión.');
+            dispose();
             return;
         }
-        try {
-            iframe.contentWindow!.print();
-        } catch {
-            // Ignorar cancelaciones o errores del diálogo de impresión.
-        }
-        setTimeout(() => iframe.remove(), 1000);
-    };
-    document.body.appendChild(iframe);
 
-    const doc = iframe.contentWindow!.document;
-    doc.open();
-    doc.write(`<!DOCTYPE html>
+        // Se escribe el documento COMPLETO (CSS de 80 mm + contenido). Escribir
+        // únicamente el body dejaría el ticket sin su hoja de estilos.
+        frameDoc.open();
+        frameDoc.write(buildPrintDocument(htmlContent));
+        frameDoc.close();
+
+        if (!frameDoc.body || frameDoc.body.innerHTML.trim().length === 0) {
+            dispose();
+            return;
+        }
+
+        // Un frame de espera garantiza que el ticket esté pintado antes de imprimir.
+        window.setTimeout(() => {
+            try {
+                frameWindow.focus();
+                frameWindow.print();
+            } catch {
+                // Diálogo de impresión cancelado o bloqueado por el navegador.
+            }
+            removeTimer = window.setTimeout(dispose, 1000);
+        }, PRINT_SETTLE_DELAY_MS);
+    };
+
+    let retryTimer: number | undefined;
+    const waitForFrame = () => {
+        if (settled) return;
+        if (iframe.contentWindow) {
+            emit();
+            return;
+        }
+        if (++attempts >= PRINT_MAX_ATTEMPTS) {
+            console.error('No se pudo acceder al documento del iframe de impresión.');
+            settled = true;
+            dispose();
+            return;
+        }
+        retryTimer = window.setTimeout(waitForFrame, PRINT_RETRY_DELAY_MS);
+    };
+
+    iframe.addEventListener('load', emit, { once: true });
+    waitForFrame();
+}
+
+/**
+ * Envuelve el contenido del ticket en un documento completo con la hoja de estilos
+ * de 80 mm. Debe escribirse el documento entero (y no sólo el body) para que el
+ * ticket conserve su formato térmico.
+ */
+function buildPrintDocument(htmlContent: string): string {
+    return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -47,20 +130,18 @@ export function printReceiptHtml(htmlContent: string) {
 <style>
   @page {
     margin: 0 !important;
-    size: auto;
+    size: auto !important; /* Mantiene la bobina de papel como rollo continuo */
   }
   @media print {
     html, body {
       width: 80mm !important;
       max-width: 80mm !important;
       height: auto !important;
-      min-height: auto !important;
+      min-height: 100% !important;
       max-height: none !important;
       margin: 0 !important;
       padding: 0 !important;
       overflow: visible !important;
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -68,9 +149,12 @@ export function printReceiptHtml(htmlContent: string) {
       width: 100% !important;
       max-width: 80mm !important;
       height: auto !important;
+      min-height: 100% !important;
       max-height: none !important;
       overflow: visible !important;
-      page-break-inside: avoid !important;
+    }
+    .item-row {
+      page-break-inside: avoid !important; /* Evita que un producto individual se corte a la mitad */
       break-inside: avoid !important;
     }
   }
@@ -83,13 +167,13 @@ export function printReceiptHtml(htmlContent: string) {
   html, body {
     width: 80mm !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 100% !important;
     max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     overflow: visible !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.2;
     background: #fff;
     color: #000;
@@ -111,6 +195,7 @@ export function printReceiptHtml(htmlContent: string) {
   .ticket-container {
     width: 100% !important;
     height: auto !important;
+    min-height: 100% !important;
     max-height: none !important;
     overflow: visible !important;
     padding: 4mm 2mm;
@@ -121,13 +206,54 @@ export function printReceiptHtml(htmlContent: string) {
   .bold { font-weight: bold; }
   .dashed-line {
     border-bottom: 1px dashed #000;
-    margin: 4px 0;
+    margin: 6px 0;
+  }
+
+  .detalle-factura-header {
+    text-align: center;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+    padding: 3px 0;
+    margin: 8px 0 6px 0;
+  }
+
+  .col-cant { width: 12%; text-align: left; font-weight: bold; }
+  .col-prod { width: 48%; word-break: break-word; overflow-wrap: break-word; }
+  .col-price { width: 20%; text-align: right; }
+  .col-total { width: 20%; text-align: right; }
+
+  .ticket-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 12px;
+  }
+
+  .ticket-table th {
+    font-weight: bold;
+    padding: 3px 1px;
+    border-bottom: 1px solid #000;
+  }
+
+  .ticket-table td {
+    vertical-align: top;
+    padding: 4px 1px;
+  }
+
+  .item-row {
+    border-top: 1px dashed #000;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .flex-row {
     display: flex;
     justify-content: space-between;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 400;
     line-height: 1.4;
   }
@@ -140,7 +266,7 @@ export function printReceiptHtml(htmlContent: string) {
     display: flex;
     justify-content: space-between;
     font-weight: 900;
-    font-size: 20px;
+    font-size: 19px;
     margin-top: 4px;
     line-height: 1.2;
   }
@@ -152,21 +278,14 @@ export function printReceiptHtml(htmlContent: string) {
     font-style: italic;
   }
 
-  .item-row {
-    padding: 2px 0;
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1.3;
-  }
-
   .info-line {
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.2;
     margin: 0;
   }
 
   .pharmacy-name {
-    font-size: 19px;
+    font-size: 18px;
     line-height: 1.2;
     font-weight: 800;
     text-transform: uppercase;
@@ -191,7 +310,7 @@ export function printReceiptHtml(htmlContent: string) {
 
   .footer-msg {
     white-space: pre-line;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .thanks {
@@ -204,12 +323,17 @@ export function printReceiptHtml(htmlContent: string) {
 <body>
 ${htmlContent}
 </body>
-</html>`);
-    doc.close();
+</html>`;
 }
 
-function escapeHtml(str: string): string {
-    return str
+/**
+ * Escapa HTML tolerando null/undefined. Cualquier campo de texto que llegue nulo
+ * desde la base de datos (nombre de empresa, producto, usuario, etc.) se
+ * imprimiría como cadena vacía en lugar de romper el ticket con un TypeError.
+ */
+function escapeHtml(value: string | number | null | undefined): string {
+    if (value === null || value === undefined) return '';
+    return String(value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -225,6 +349,20 @@ function fmtNum(value: number | string | null | undefined): string {
     });
 }
 
+function formatUnitLabel(unit?: string): string | null {
+    if (!unit) return null;
+    const trimmed = unit.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (['ud', 'unidad', 'unid', 'un', 'pza', 'pz'].includes(lower)) {
+        return null;
+    }
+    if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+        return trimmed;
+    }
+    return `(${trimmed})`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Build ticket HTML (ReceiptTemplate equivalent)                    */
 /* ------------------------------------------------------------------ */
@@ -238,12 +376,18 @@ export interface ReceiptHtmlData {
     date: Date;
     cashierName: string;
     clientName?: string;
+    /** Teléfono del cliente (cotizaciones y factura en hoja normal). */
+    clientPhone?: string;
+    /** Dirección de entrega del cliente. Solo se imprime en la factura Hoja Normal. */
+    clientAddress?: string;
     items: Array<{
         quantity: number;
         description: string;
         price: number;
         total: number;
         unit?: string;
+        /** Código / código de barras del producto. Solo se imprime en Hoja Normal. */
+        code?: string;
     }>;
     subtotal: number;
     tax: number;
@@ -251,6 +395,10 @@ export interface ReceiptHtmlData {
     paymentMethod: string;
     amountPaid: number;
     change: number;
+    /** Solo cotizaciones: días de vigencia -> línea "Vigencia". */
+    validityDays?: number;
+    /** Solo cotizaciones: nota al pie del detalle. */
+    notes?: string;
     footerMessage?: string;
     website?: string;
     logoSvg?: string | null;
@@ -258,16 +406,32 @@ export interface ReceiptHtmlData {
     exchangeRate?: number;
     showTotalUSD?: boolean;
     isReprint?: boolean;
+    /** 'sale' (por defecto) o 'quotation'. Define encabezado, metadatos y leyenda. */
+    documentKind?: 'sale' | 'quotation';
+    /** 'counter' (mostrador, por defecto) o 'route' (pedido para ruta / domicilio). */
+    deliveryType?: 'counter' | 'route';
+    /** Estado de entrega legible, p. ej. "Pendiente de entrega". Solo Hoja Normal. */
+    deliveryStatus?: string;
+    /** Nombre de la hoja de ruta asignada. Solo Hoja Normal. */
+    routeName?: string;
+    /** Nombre del repartidor que entrega. Solo Hoja Normal. */
+    deliveredByName?: string;
 }
 
 export function buildReceiptHtml(data: ReceiptHtmlData): string {
     const {
         pharmacyName, address, phone, rfc, ticketId, date,
-        cashierName, clientName, items, subtotal, tax, total,
-        paymentMethod, amountPaid, change, footerMessage, website,
+        cashierName, clientName, clientPhone, items, subtotal, tax, total,
+        paymentMethod, amountPaid, change, validityDays, notes,
+        footerMessage, website,
         logoSvg, currencySymbol = 'C$', exchangeRate = 36.5,
         showTotalUSD = false, isReprint = false,
+        documentKind = 'sale',
     } = data;
+
+    // La plantilla unificada de 80 mm cubre venta y cotización: sólo cambian
+    // el rótulo del encabezado, las líneas de metadatos y la leyenda final.
+    const isQuotation = documentKind === 'quotation';
 
     const totalUSD = total / exchangeRate;
     const dateStr = format(date, 'dd/MM/yyyy HH:mm', { locale: es });
@@ -287,10 +451,62 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
           </div>`
         : '';
 
-    const itemsHtml = items.map(item => {
-        const unit = item.unit ? ` ${item.unit.toUpperCase()}` : '';
-        return `<div class="ticket-item item-row">${item.quantity}${escapeHtml(unit)} - ${escapeHtml(item.description)} - P.U ${currencySymbol} ${fmtNum(item.price)} - ${currencySymbol} ${fmtNum(item.total)}</div>`;
+    const itemsTableRowsHtml = items.map(item => {
+        const unitLabel = formatUnitLabel(item.unit);
+        const unitHtml = unitLabel
+            ? `<div style="font-size:0.9em;font-style:italic;font-weight:normal;">${escapeHtml(unitLabel)}</div>`
+            : '';
+        return `<tr class="item-row" style="border-top:1px dashed #000;">
+            <td class="col-cant" style="vertical-align:top;text-align:left;padding:4px 1px;font-weight:bold;white-space:nowrap;">${item.quantity}</td>
+            <td class="col-prod" style="vertical-align:top;text-align:left;padding:4px 1px;word-break:break-word;overflow-wrap:break-word;">
+                <div>${escapeHtml(item.description)}</div>
+                ${unitHtml}
+            </td>
+            <td class="col-price" style="vertical-align:top;text-align:right;padding:4px 1px;white-space:nowrap;">${fmtNum(item.price)}</td>
+            <td class="col-total" style="vertical-align:top;text-align:right;padding:4px 1px;white-space:nowrap;">${fmtNum(item.total)}</td>
+        </tr>`;
     }).join('\n');
+
+    // --- Metadatos del documento (difieren entre venta y cotización) ---
+    const validityHtml = isQuotation && validityDays
+        ? `<p class="info-line">Vigencia: ${format(addDays(date, validityDays), 'dd/MM/yyyy', { locale: es })} (${validityDays} días)</p>`
+        : '';
+
+    const metaHtml = isQuotation
+        ? `<p class="info-line">No. Cotización: ${escapeHtml(ticketId)}</p>
+           <p class="info-line">Fecha: ${dateStr}</p>
+           ${validityHtml}
+           <p class="info-line">Atendido por: ${escapeHtml(cashierName)}</p>
+           <p class="info-line">Cliente: ${escapeHtml(clientName || 'Cliente Genérico')}</p>
+           ${clientPhone ? `<p class="info-line">Tel: ${escapeHtml(clientPhone)}</p>` : ''}`
+        : `<p class="info-line">Ticket: ${escapeHtml(ticketId)}</p>
+           <p class="info-line">Fecha: ${dateStr}</p>
+           <p class="info-line">Cajero: ${escapeHtml(cashierName)}</p>
+           <p class="info-line">Cliente: ${escapeHtml(clientName || 'Cliente Genérico')}</p>`;
+
+    const sectionTitleHtml = isQuotation ? 'PRESUPUESTO / COTIZACIÓN' : 'Detalle Factura';
+
+    // La cotización no registra pago ni cambio.
+    const paymentHtml = isQuotation
+        ? ''
+        : `<div class="payment-info">
+             <div class="flex-row">
+               <span>Pago (${escapeHtml(paymentMethod)}):</span>
+               <span>${currencySymbol} ${fmtNum(amountPaid)}</span>
+             </div>
+             <div class="flex-row">
+               <span>Cambio:</span>
+               <span>${currencySymbol} ${fmtNum(change)}</span>
+             </div>
+           </div>`;
+
+    const notesHtml = isQuotation && notes
+        ? `<p class="info-line" style="font-style:italic;margin-top:6px;white-space:pre-line;">Nota: ${escapeHtml(notes)}</p>`
+        : '';
+
+    const thanksHtml = isQuotation
+        ? '<p class="thanks">*** PRESUPUESTO NO VALIDO COMO FACTURA ***</p>'
+        : '<p class="thanks">*** GRACIAS POR SU COMPRA ***</p>';
 
     return `<div class="ticket-container">
   <div class="ticket-header text-center">
@@ -303,17 +519,24 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
   </div>
 
   <div style="margin-top:8px;">
-    <p class="info-line">Ticket: ${escapeHtml(ticketId)}</p>
-    <p class="info-line">Fecha: ${dateStr}</p>
-    <p class="info-line">Cajero: ${escapeHtml(cashierName)}</p>
-    <p class="info-line">Cliente: ${escapeHtml(clientName || 'Cliente Genérico')}</p>
+    ${metaHtml}
   </div>
 
-  <div class="dashed-line"></div>
+  <div class="detalle-factura-header">${sectionTitleHtml}</div>
 
-  <div>
-    ${itemsHtml}
-  </div>
+  <table class="ticket-table">
+    <thead>
+      <tr>
+        <th class="col-cant" style="text-align:left;padding:3px 1px;width:12%;font-weight:bold;">Cant</th>
+        <th class="col-prod" style="text-align:left;padding:3px 1px;width:48%;">Producto</th>
+        <th class="col-price" style="text-align:right;padding:3px 1px;width:20%;">P. Unit</th>
+        <th class="col-total" style="text-align:right;padding:3px 1px;width:20%;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsTableRowsHtml}
+    </tbody>
+  </table>
 
   <div class="dashed-line"></div>
 
@@ -333,23 +556,16 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
     ${usdHtml}
   </div>
 
+  ${notesHtml}
+
   <div class="dashed-line"></div>
 
-  <div class="payment-info">
-    <div class="flex-row">
-      <span>Pago (${escapeHtml(paymentMethod)}):</span>
-      <span>${currencySymbol} ${fmtNum(amountPaid)}</span>
-    </div>
-    <div class="flex-row">
-      <span>Cambio:</span>
-      <span>${currencySymbol} ${fmtNum(change)}</span>
-    </div>
-  </div>
+  ${paymentHtml}
 
   <div class="ticket-footer text-center" style="margin-top:16px;">
     ${footerMessage ? `<p class="footer-msg">${escapeHtml(footerMessage)}</p>` : ''}
     ${website ? `<p class="info-line">${escapeHtml(website)}</p>` : ''}
-    <p class="thanks">*** GRACIAS POR SU COMPRA ***</p>
+    ${thanksHtml}
   </div>
 </div>`;
 }
@@ -609,104 +825,60 @@ export interface QuoteReceiptHtmlData {
         description: string;
         price: number;
         total: number;
+        /** Presentación (LIBRA, QUINTAL, CAJA...) mostrada en 2.ª línea. */
+        unit?: string;
     }>;
     subtotal: number;
     total: number;
+    /** IVA de la cotización. Si se omite se deduce como total - subtotal. */
+    tax?: number;
     notes?: string;
     footerMessage?: string;
     website?: string;
     logoSvg?: string | null;
     currencySymbol?: string;
+    exchangeRate?: number;
+    showTotalUSD?: boolean;
 }
 
+/**
+ * Adaptador de compatibilidad: delega en la plantilla unificada de 80 mm
+ * (`buildReceiptHtml`) con `documentKind: 'quotation'`, de modo que las
+ * cotizaciones se impriman con el mismo layout, columnas y estilos que el POS.
+ */
 export function buildQuoteReceiptHtml(data: QuoteReceiptHtmlData): string {
     const {
         businessName, address, phone, rfc, quoteNumber, date,
         expirationDays, customerName, customerPhone, cashierName,
         items, subtotal, total, notes, footerMessage, website,
-        logoSvg, currencySymbol = 'C$',
+        logoSvg, currencySymbol, exchangeRate, showTotalUSD,
     } = data;
 
-    const dateStr = format(date, 'dd/MM/yyyy HH:mm', { locale: es });
-    const expirationDate = new Date(date);
-    expirationDate.setDate(expirationDate.getDate() + expirationDays);
-    const expirationStr = format(expirationDate, 'dd/MM/yyyy', { locale: es });
-
-    const logoHtml = logoSvg
-        ? `<div class="logo-img" style="display:flex;align-items:center;justify-content:center;margin-bottom:8px;">${logoSvg}</div>`
-        : '';
-
-    const customerHtml = customerName && customerName !== 'Cliente General'
-        ? `<p style="margin:0;">Cliente: ${escapeHtml(customerName)}</p>
-           ${customerPhone ? `<p style="margin:0;">Tel: ${escapeHtml(customerPhone)}</p>` : ''}`
-        : '';
-
-    const itemsHtml = items.map(item =>
-        `<tr>
-            <td>${item.quantity}</td>
-            <td>${escapeHtml(item.description)}</td>
-            <td class="text-right">${currencySymbol} ${fmtNum(item.price)}</td>
-            <td class="text-right">${currencySymbol} ${fmtNum(item.total)}</td>
-        </tr>`
-    ).join('\n');
-
-    const notesHtml = notes
-        ? `<div style="margin-top:8px;font-size:10px;font-style:italic;"><p style="margin:0;">Nota: ${escapeHtml(notes)}</p></div>`
-        : '';
-
-    return `<div class="ticket-container">
-  <div class="ticket-header text-center" style="margin-bottom:16px;">
-    ${logoHtml}
-    <p style="font-size:16px;font-weight:bold;text-transform:uppercase;margin:0;">${escapeHtml(businessName)}</p>
-    <p style="white-space:pre-line;margin:0;">${escapeHtml(address)}</p>
-    ${phone ? `<p style="margin:0;">${escapeHtml(phone)}</p>` : ''}
-    ${rfc ? `<p style="margin:0;">RFC: ${escapeHtml(rfc)}</p>` : ''}
-  </div>
-
-  <div style="border:2px dashed #000;padding:8px;margin-bottom:12px;text-align:center;">
-    <p style="font-size:14px;font-weight:bold;text-transform:uppercase;margin:0;">PRESUPUESTO / COTIZACION</p>
-    <p style="font-size:10px;font-style:italic;margin-top:4px;">No valido como comprobante fiscal / factura</p>
-  </div>
-
-  <div style="margin-bottom:8px;">
-    <p style="margin:0;">No. Cotizacion: ${escapeHtml(quoteNumber)}</p>
-    <p style="margin:0;">Fecha: ${dateStr}</p>
-    <p style="margin:0;">Vigencia hasta: ${expirationStr} (${expirationDays} dias)</p>
-    <p style="margin:0;">Atendido por: ${escapeHtml(cashierName)}</p>
-    ${customerHtml}
-  </div>
-
-  <div class="dashed-line"></div>
-
-  <table style="width:100%;text-align:left;border-collapse:collapse;font-size:12px;">
-    <thead>
-      <tr>
-        <th style="width:32px;">Cant</th>
-        <th>Desc</th>
-        <th class="text-right">P.Unit</th>
-        <th class="text-right">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemsHtml}
-    </tbody>
-  </table>
-
-  <div class="dashed-line"></div>
-
-  <div class="ticket-totals flex-row" style="font-weight:bold;font-size:14px;">
-    <span>TOTAL:</span>
-    <span>${currencySymbol} ${fmtNum(total)}</span>
-  </div>
-
-  ${notesHtml}
-
-  <div class="ticket-footer text-center" style="margin-top:16px;border-top:1px dashed #000;padding-top:12px;">
-    <p style="font-size:10px;font-weight:bold;margin:0;">*** PRESUPUESTO NO VENDA ***</p>
-    <p style="font-size:10px;margin-top:4px;margin-bottom:0;">Presente este documento al momento de facturar.</p>
-    <p style="font-size:10px;margin:0;">Los precios pueden variar sin previo aviso.</p>
-    ${footerMessage ? `<p class="footer-msg" style="margin-top:8px;">${escapeHtml(footerMessage)}</p>` : ''}
-    ${website ? `<p style="margin:0;">${escapeHtml(website)}</p>` : ''}
-  </div>
-</div>`;
+    return buildReceiptHtml({
+        pharmacyName: businessName,
+        address,
+        phone,
+        rfc,
+        ticketId: quoteNumber,
+        date,
+        cashierName,
+        clientName: customerName,
+        clientPhone: customerPhone,
+        items,
+        subtotal,
+        tax: data.tax ?? Math.max(0, total - subtotal),
+        total,
+        paymentMethod: '',
+        amountPaid: 0,
+        change: 0,
+        validityDays: expirationDays,
+        notes,
+        footerMessage,
+        website,
+        logoSvg,
+        currencySymbol,
+        exchangeRate,
+        showTotalUSD,
+        documentKind: 'quotation',
+    });
 }

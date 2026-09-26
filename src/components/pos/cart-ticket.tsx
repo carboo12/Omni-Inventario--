@@ -17,6 +17,8 @@ interface CartTicketProps {
     selectedItemId?: string | null;
     onSelectItem?: (itemId: string) => void;
     onEditItem?: (item: CartItem) => void;
+    /** Productos sin existencias suficientes: sus filas se resaltan en rojo. */
+    highlightProductIds?: string[];
 }
 
 const getItemPrice = (item: CartItem): number => {
@@ -45,6 +47,7 @@ export const CartTicket = ({
     selectedItemId,
     onSelectItem,
     onEditItem,
+    highlightProductIds,
 }: CartTicketProps) => {
 
     const { settings } = useSettings();
@@ -102,18 +105,26 @@ export const CartTicket = ({
                         cart.map((item, index) => {
                             const unitPrice = getItemPrice(item);
                             const presentationUnit = getPresentationUnitLabel(item);
+                            const outOfStock = !!highlightProductIds?.includes(item.product.id);
                             return (
                             <div 
                                 key={item.id}
                                 onClick={() => onEditItem ? onEditItem(item) : onSelectItem?.(item.id)}
                                 className={cn(
                                     "grid grid-cols-12 gap-1 p-2 text-[11px] border-b cursor-pointer hover:bg-blue-50 transition-colors",
-                                    selectedItemId === item.id ? "bg-gray-800 text-white hover:bg-gray-700" : (index % 2 === 0 ? "bg-white" : "bg-gray-50")
+                                    outOfStock
+                                        ? "bg-red-100 ring-2 ring-inset ring-red-500 hover:bg-red-200"
+                                        : (selectedItemId === item.id ? "bg-gray-800 text-white hover:bg-gray-700" : (index % 2 === 0 ? "bg-white" : "bg-gray-50"))
                                 )}
                             >
                                 <div className="col-span-3 truncate font-medium">
                                     <div className="font-bold text-[9px] opacity-70 truncate">{item.product.barcode || '0000'}</div>
                                     <div className="truncate font-black uppercase text-[10px]">{item.product.name}</div>
+                                    {outOfStock && (
+                                        <div className="text-[9px] font-black uppercase text-red-700">
+                                            Stock insuficiente
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="col-span-2 text-center flex items-center justify-center font-bold">
                                     {item.quantity.toFixed(2)}

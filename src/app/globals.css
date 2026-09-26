@@ -143,9 +143,20 @@ input.no-spinner {
 }
 
 @media print {
+  @page {
+    margin: 0 !important;
+    size: auto !important; /* Mantiene la bobina de papel como rollo continuo */
+  }
   html,
   body {
     background: #ffffff !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+  }
+  .item-row {
+    page-break-inside: avoid; /* Evita que un producto individual se corte a la mitad */
   }
 }
+
 

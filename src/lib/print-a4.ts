@@ -43,7 +43,7 @@ export function printA4Html(htmlContent: string) {
 <style>
   @page {
     size: letter;
-    margin: 15mm;
+    margin: 12mm;
   }
   @media print {
     html, body {
@@ -147,25 +147,56 @@ export function printA4Html(htmlContent: string) {
     margin: 0 0 5px 0;
   }
 
+  .client-row {
+    margin: 0 0 2px 0;
+    font-size: 13px;
+  }
+
+  .client-row strong {
+    color: #374151;
+  }
+
+  .delivery-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 10px;
+    border: 1px solid #b45309;
+    border-radius: 4px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
   .items-table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 30px;
+    border: 1px solid #9ca3af;
   }
 
   .items-table th {
     background: #f3f4f6;
-    color: #374151;
-    font-weight: 600;
+    color: #111827;
+    font-weight: 700;
     text-align: left;
-    padding: 10px;
-    border-bottom: 2px solid #d1d5db;
+    padding: 9px 10px;
+    border: 1px solid #9ca3af;
+    font-size: 11px;
+    letter-spacing: 0.02em;
   }
 
   .items-table td {
-    padding: 12px 10px;
-    border-bottom: 1px solid #e5e7eb;
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
     color: #111827;
+    font-size: 13px;
+  }
+
+  .items-table tbody tr:nth-child(even) td {
+    background: #fafafa;
   }
 
   .text-right {
@@ -214,21 +245,29 @@ export function printA4Html(htmlContent: string) {
 
   .signatures {
     display: flex;
-    justify-content: space-around;
-    margin-top: 60px;
+    justify-content: space-between;
+    margin-top: 70px;
     margin-bottom: 30px;
+    page-break-inside: avoid;
   }
 
   .signature-box {
+    width: 45%;
     text-align: center;
-    width: 200px;
   }
 
   .signature-line {
     border-top: 1px solid #000;
-    margin-top: 50px;
-    padding-top: 5px;
+    margin-top: 45px;
+    padding-top: 6px;
     font-weight: 600;
+    font-size: 12px;
+  }
+
+  .signature-hint {
+    margin-top: 3px;
+    font-size: 10px;
+    color: #6b7280;
   }
 </style>
 </head>
@@ -259,10 +298,11 @@ function fmtNum(value: number | string | null | undefined): string {
 export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
     const {
         pharmacyName, address, phone, rfc, ticketId, date,
-        cashierName, clientName, items, subtotal, tax, total,
+        cashierName, clientName, clientPhone, clientAddress, items, subtotal, tax, total,
         paymentMethod, amountPaid, change, footerMessage, website,
         logoSvg, currencySymbol = 'C$', exchangeRate = 36.5,
         showTotalUSD = false, isReprint = false,
+        deliveryType = 'counter', deliveryStatus, routeName, deliveredByName,
     } = data;
 
     const totalUSD = total / exchangeRate;
@@ -283,10 +323,23 @@ export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
            </tr>`
         : '';
 
+    // Los pedidos a domicilio se identifican en el propio documento para que la hoja
+    // que viaja con el paquete sea de mostrador o de ruta.
+    const deliveryBadgeHtml = deliveryType === 'route'
+        ? `<div><span class="delivery-badge">Pedido para Ruta / Domicilio</span></div>`
+        : '';
+    const deliveryMetaHtml = deliveryType === 'route'
+        ? [
+            deliveryStatus ? `<p class="client-row"><strong>Estado de entrega:</strong> ${escapeHtml(deliveryStatus)}</p>` : '',
+            routeName ? `<p class="client-row"><strong>Hoja de ruta:</strong> ${escapeHtml(routeName)}</p>` : '',
+        ].filter(Boolean).join('\n      ')
+        : '';
+
     const itemsHtml = items.map((item) => {
         const unit = item.unit ? ` ${item.unit.toUpperCase()}` : '';
         return `<tr>
             <td class="text-center">${item.quantity}${escapeHtml(unit)}</td>
+            <td>${escapeHtml(item.code || '—')}</td>
             <td>${escapeHtml(item.description)}</td>
             <td class="text-right">${currencySymbol} ${fmtNum(item.price)}</td>
             <td class="text-right">${currencySymbol} ${fmtNum(item.total)}</td>
@@ -313,22 +366,27 @@ export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
   <div class="customer-section">
     <div class="customer-info">
       <p class="section-title">Cliente</p>
-      <p style="font-weight: 600; font-size: 16px; margin: 0;">${escapeHtml(clientName || 'Cliente de Contado')}</p>
+      <p style="font-weight: 600; font-size: 16px; margin: 0 0 3px 0;">${escapeHtml(clientName || 'Cliente de Contado')}</p>
+      ${clientAddress ? `<p class="client-row"><strong>Dirección de entrega:</strong> ${escapeHtml(clientAddress)}</p>` : ''}
+      ${clientPhone ? `<p class="client-row"><strong>Teléfono:</strong> ${escapeHtml(clientPhone)}</p>` : ''}
     </div>
     <div class="meta-info">
       <p class="section-title">Detalles</p>
-      <p style="margin: 0;"><strong>Atendido por:</strong> ${escapeHtml(cashierName)}</p>
-      <p style="margin: 0;"><strong>Método de Pago:</strong> ${escapeHtml(paymentMethod)}</p>
+      <p class="client-row"><strong>Atendido por:</strong> ${escapeHtml(cashierName)}</p>
+      <p class="client-row"><strong>Método de pago:</strong> ${escapeHtml(paymentMethod)}</p>
+      ${deliveryMetaHtml}
+      ${deliveryBadgeHtml}
     </div>
   </div>
 
   <table class="items-table">
     <thead>
       <tr>
-        <th class="text-center" style="width: 10%;">CANTIDAD</th>
-        <th style="width: 50%;">DESCRIPCIÓN</th>
-        <th class="text-right" style="width: 20%;">PRECIO UNIT.</th>
-        <th class="text-right" style="width: 20%;">TOTAL</th>
+        <th class="text-center" style="width: 10%;">CANT.</th>
+        <th style="width: 16%;">CÓDIGO</th>
+        <th style="width: 40%;">DESCRIPCIÓN</th>
+        <th class="text-right" style="width: 17%;">P. UNITARIO</th>
+        <th class="text-right" style="width: 17%;">TOTAL</th>
       </tr>
     </thead>
     <tbody>
@@ -367,10 +425,12 @@ export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
 
   <div class="signatures">
     <div class="signature-box">
-      <div class="signature-line">Firma Autorizada</div>
+      <div class="signature-line">Entregado por (Ruta)</div>
+      <div class="signature-hint">${deliveredByName ? escapeHtml(deliveredByName) : 'Nombre y firma del repartidor'}</div>
     </div>
     <div class="signature-box">
-      <div class="signature-line">Firma de Recibido</div>
+      <div class="signature-line">Recibido Conforme (Cliente)</div>
+      <div class="signature-hint">${escapeHtml(clientName || 'Cliente')}</div>
     </div>
   </div>
 

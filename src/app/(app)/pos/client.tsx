@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { generateUUID } from '@/lib/uuid';
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
@@ -29,11 +29,24 @@ import { getPreferredPrintFormat, savePreferredPrintFormat, type PrintFormat } f
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { createSale, getLastSale } from '@/lib/actions/sales';
+import {
+    allowsNegativeStock,
+    getMaxSellableQuantity,
+    getProductStock,
+    buildInsufficientStockMessage,
+    buildNoStockMessage,
+    findStockIssues,
+    requiresEncargoConfirmation,
+    INSUFFICIENT_STOCK_CODE,
+    type StockCheckLine,
+} from '@/lib/stock-policy';
+import { EncargoConfirmDialog, requestEncargoConfirmation } from '@/components/pos/encargo-confirm-dialog';
 import type { SaleFinancing } from '@/lib/actions/sales';
 import { buildReceiptDataFromInvoice } from '@/lib/ticket-data';
 import { printReceiptHtml, buildReceiptHtml, buildRetiroReceiptHtml, buildQuoteReceiptHtml } from '@/lib/print-iframe';
 import { printA4Html, buildA4ReceiptHtml } from '@/lib/print-a4';
 import { createQuote, getQuoteByNumber } from '@/lib/actions/quotations';
+import { QUOTATIONS_LIST_QUERY_KEY, clearStagedQuoteForPOS, readStagedQuoteForPOS } from '@/lib/quotations-nav';
 import { searchOrCreateCustomer, getAllCustomers } from '@/lib/actions/customers';
 import { useBusinessMode } from '@/hooks/use-business-mode';
 import { getAvailableJewelry } from '@/lib/actions/jewelry-production';
@@ -48,7 +61,7 @@ import { ProductAddWizard } from '@/components/pos/product-add-wizard';
 import { ItemEditDialog } from '@/components/pos/item-edit-dialog';
 import { usePersistedCart } from '@/hooks/use-persisted-cart';
 import { usePOSData } from '@/hooks/use-pos-data';
-import { resolvePresentationFactor } from '@/lib/presentations';
+import { resolvePresentationFactor, resolvePresentationUnitLabel } from '@/lib/presentations';
 
 const AssignClientDialog = dynamic(
     () => import('@/components/pos/assign-client-dialog').then((mod) => ({ default: mod.AssignClientDialog })),
@@ -91,7 +104,14 @@ const LoadQuoteDialog = dynamic(
 // Local formatCurrency removed in favor of unified lib/utils utility
 
 // Helper to prepare receipt data
-const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, tax: number, user: any, settings: any, customerName: string = 'Cliente General', paymentMethod: string = 'Efectivo', amountPaid: number = 0, change: number = 0, ticketIdOverride?: string) => {
+const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, tax: number, user: any, settings: any, customerName: string = 'Cliente General', paymentMethod: string = 'Efectivo', amountPaid: number = 0, change: number = 0, ticketIdOverride?: string, delivery?: {
+    clientAddress?: string;
+    clientPhone?: string;
+    deliveryType?: 'counter' | 'route';
+    deliveryStatus?: string;
+    routeName?: string;
+    deliveredByName?: string;
+}) => {
     return {
         pharmacyName: settings.ticketHeader.name,
         address: settings.ticketHeader.address,
@@ -101,14 +121,9 @@ const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, 
         date: new Date(),
         cashierName: user?.name || 'Cajero',
         clientName: customerName,
+        clientAddress: delivery?.clientAddress,
+        clientPhone: delivery?.clientPhone,
         items: items.map(item => {
-            const isBox = item.presentation === 'box' && (item.product as any).hasBoxOption;
-            const bulkUnit = (item.product as any).bulkUnit || 'Paca';
-            const baseUnit = (item.product as any).baseUnit || 'ud';
-            // Presentación exacta vendida (dinámica o legado caja). Se muestra en mayúscula
-            // en el ticket: ej. "2 RISTRA - Jabón - C$30.00" / "1 CAJA - Café - C$1,300".
-            const presentationName = item.presentationName || (isBox ? bulkUnit : null);
-            const unit = presentationName || baseUnit;
             const unitPrice = getCartItemPrice(item);
             return {
                 quantity: item.quantity,
@@ -117,7 +132,9 @@ const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, 
                 price: unitPrice,
                 total: unitPrice * item.quantity,
                 // Cantidad + presentación: el template renderiza "{quantity} {unit}".
-                unit,
+                unit: resolvePresentationUnitLabel(item.product, item.presentation, item.presentationName),
+                // Código del producto: solo se imprime en la factura Hoja Normal.
+                code: item.product.barcode || undefined,
                 priceLevel: item.priceLevel,
                 pending: !!item.isEncargo,
             };
@@ -133,7 +150,11 @@ const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, 
         website: settings.ticketFooter.website,
         logoSvg: settings.logoSvg,
         exchangeRate: parseFloat(settings.exchangeRate) || 36.5,
-        showTotalUSD: true
+        showTotalUSD: true,
+        deliveryType: delivery?.deliveryType,
+        deliveryStatus: delivery?.deliveryStatus,
+        routeName: delivery?.routeName,
+        deliveredByName: delivery?.deliveredByName,
     };
 };
 
@@ -149,13 +170,111 @@ const getCartItemPrice = (item: CartItem): number => {
     return item.product.priceNIO;
 };
 
+// Los platillos preparados (RECIPE_ITEM) no llevan registro propio de inventario:
+// su stock son los insumos de la receta, que valida el backend al cobrar.
+const isRecipeItem = (product: any): boolean => product?.type === 'RECIPE_ITEM';
+
 // Determina si el ítem supera el stock disponible => venta bajo encargo (entrega pendiente).
+// Solo aplica a productos marcados con `allowNegativeStock`: el resto queda bloqueado.
 const computeIsEncargo = (product: Product, presentation: 'unit' | 'box' | string, quantity: number, presentationFactor?: number): boolean => {
+    if (!allowsNegativeStock(product)) return false;
+    // Los platillos preparados no llevan stock propio.
+    if (isRecipeItem(product)) return false;
     const factor = resolvePresentationFactor(product, presentation, undefined, presentationFactor);
     const physicalNeed = quantity * factor;
-    const stock = typeof (product as any).stock === 'number' ? (product as any).stock : 0;
+    const stock = getProductStock(product);
     return physicalNeed > stock;
 };
+
+/** Resultado de aplicar la política de stock a una cantidad solicitada. */
+type StockGuardOutcome = {
+    allowed: boolean;
+    /** Cantidad final a agregar (ya limitada al stock disponible). */
+    quantity: number;
+    /** `true` cuando la cantidad solicitada se redujo por falta de existencias. */
+    clamped: boolean;
+    /** Existencias físicas disponibles del producto. */
+    available: number;
+    /** Unidades físicas que se querían vender antes de limitar. */
+    requestedPhysical: number;
+    /** `true` cuando el producto no tiene existencias y no admite stock negativo. */
+    outOfStock: boolean;
+};
+
+/**
+ * Política de stock al agregar o incrementar un producto:
+ *  - Sin existencias y sin `allowNegativeStock` => `allowed: false` (se bloquea).
+ *  - Cantidad por encima de la existencia => se limita a `Math.min(solicitado, stock)`.
+ *  - Con `allowNegativeStock` no hay tope (venta bajo encargo).
+ */
+const resolveStockGuard = (
+    product: Product,
+    presentation: 'unit' | 'box' | string,
+    requestedQuantity: number,
+    options: { presentationName?: string; presentationFactor?: number; recipesEnabled?: boolean } = {}
+): StockGuardOutcome => {
+    const requested = Math.max(0, Number.isFinite(requestedQuantity) ? requestedQuantity : 0);
+    const requestedPhysical = requested * resolvePresentationFactor(
+        product,
+        presentation,
+        options.presentationName,
+        options.presentationFactor
+    );
+    const available = getProductStock(product);
+    const allowNegative = allowsNegativeStock(product);
+
+    const pass = { available, requestedPhysical };
+
+    if (requested <= 0) return { allowed: true, quantity: requested, clamped: false, outOfStock: false, ...pass };
+
+    // Los platillos preparados se validan por sus insumos en el backend.
+    if (options.recipesEnabled && isRecipeItem(product)) {
+        return { allowed: true, quantity: requested, clamped: false, outOfStock: false, ...pass };
+    }
+
+    if (!allowNegative && available <= 0) {
+        return { allowed: false, quantity: 0, clamped: false, outOfStock: true, ...pass };
+    }
+
+    const factor = resolvePresentationFactor(product, presentation, options.presentationName, options.presentationFactor);
+    const maxPhysical = getMaxSellableQuantity(available, allowNegative);
+    const maxQuantity = factor > 0 ? Math.floor((maxPhysical / factor) * 100) / 100 : requested;
+    const quantity = Math.min(requested, maxQuantity);
+    return { allowed: true, quantity, clamped: quantity < requested, outOfStock: false, ...pass };
+};
+
+/** Muestra el aviso correspondiente al resultado de la política de stock. */
+const notifyStockGuard = (toast: any, product: Product, outcome: StockGuardOutcome) => {
+    if (!outcome.allowed) {
+        toast({ title: 'Sin existencias', description: buildNoStockMessage(), variant: 'destructive' });
+        return;
+    }
+    if (outcome.clamped) {
+        toast({
+            title: 'Stock insuficiente',
+            description: buildInsufficientStockMessage(product.name, outcome.available, outcome.requestedPhysical),
+            variant: 'destructive',
+        });
+    }
+};
+
+/** Líneas del carrito evaluadas contra el stock, para la política compartida. */
+const buildCartStockLines = (cart: CartItem[]): StockCheckLine[] => cart
+    // Los platillos preparados se excluyen: no tienen stock propio, el backend
+    // valida el stock de sus insumos al cobrar.
+    .filter((item) => !isRecipeItem(item.product))
+    .map((item) => ({
+    productId: item.product.id,
+    productName: item.product.name,
+    physicalUnits: item.quantity * resolvePresentationFactor(
+        item.product,
+        item.presentation,
+        item.presentationName,
+        item.presentationFactor
+    ),
+    available: getProductStock(item.product),
+    allowNegative: allowsNegativeStock(item.product),
+}));
 
 // #region Dispatcher Component
 // La vista del Despachador (mobile-first) vive en @/components/pos/dispatcher-pos.
@@ -209,6 +328,7 @@ const CashierPOS = ({ products, inventory }: POSComponentProps) => {
     const { mode } = useBusinessMode();
     const { activeSession, refreshSessions } = useCashRegister();
     const { addSaleToSession } = useCashRegisterSessions();
+    const queryClient = useQueryClient();
     const { toast } = useToast();
     const { settings } = useSettings();
     const enableRecipes = !!settings.enableRecipes;
@@ -227,10 +347,19 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         }, 100);
     }, []);
     const [editingItem, setEditingItem] = useState<CartItem | null>(null);
+    /** Productos del carrito que no tienen existencias suficientes (resalte rojo). */
+    const [stockIssueIds, setStockIssueIds] = useState<string[]>([]);
     const [activeSale, setActiveSale] = useState<PendingSale | null>(null);
     const [viewMode, setViewMode] = useState<'products' | 'payment'>('products');
     const [isPaymentSummaryOpen, setIsPaymentSummaryOpen] = useState(false);
-    const [paymentData, setPaymentData] = useState<{ paid: number, change: number, method: string } | null>(null);
+    const [paymentData, setPaymentData] = useState<{ paid: number, change: number, method: string, deliveryDetails?: any } | null>(null);
+    
+    // Auth and Financing states
+    const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
+    const [adminAuthAction, setAdminAuthAction] = useState<'credit-sale' | 'general' | null>(null);
+    const [pendingAdminSale, setPendingAdminSale] = useState<{ paid: number, change: number, method: string, financing?: any } | null>(null);
+    const [isFinancingOpen, setIsFinancingOpen] = useState(false);
+    const [pendingCredit, setPendingCredit] = useState<{ paid: number, change: number } | null>(null);
     const [lastSale, setLastSale] = useState<any>(null);
     const [saleForPrint, setSaleForPrint] = useState<any>(null);
     const [printFormat, setPrintFormat] = useState<PrintFormat>('ticket');
@@ -456,12 +585,17 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                         description: item.product.name,
                         price: typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO,
                         total: (typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO) * item.quantity,
+                        // Presentación en 2.ª línea, igual que el ticket de venta.
+                        unit: resolvePresentationUnitLabel(item.product, item.presentation, item.presentationName),
                     })),
                     subtotal: cartTotal,
                     total: cartTotal,
                     logoSvg: settings.logoSvg,
                     footerMessage: settings.ticketFooter.message,
                     website: settings.ticketFooter.website,
+                    // Misma conversión de moneda que aplica el ticket de venta.
+                    exchangeRate: parseFloat(settings.exchangeRate) || 36.5,
+                    showTotalUSD: true,
                 };
                 setLastQuoteReceipt(quoteData);
                 setTimeout(() => {
@@ -475,6 +609,9 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 setCustomerName('');
                 setSelectedClient(null);
                 focusSearchInput();
+                // Invalida la lista de cotizaciones para que al navegar a
+                // /quotations la tabla muestre el registro recien creado.
+                queryClient.invalidateQueries({ queryKey: QUOTATIONS_LIST_QUERY_KEY });
                 toast({ title: 'Cotización Guardada', description: `Cotización #${quoteData.quoteNumber} creada exitosamente.` });
             } else {
                 toast({ title: 'Error', description: result.error || 'No se pudo crear la cotización.', variant: 'destructive' });
@@ -547,6 +684,17 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             toast({ title: 'Error', description: 'Error al cargar la cotización.', variant: 'destructive' });
         }
     };
+
+    // Cotización elegida en el módulo Cotizaciones ("Cargar en POS"): se carga en
+    // el carrito al montar la vista del POS. El traspaso viaja en sessionStorage
+    // porque la cotización sobrevive al remontaje de los componentes del POS.
+    useEffect(() => {
+        const staged = readStagedQuoteForPOS();
+        if (!staged) return;
+        clearStagedQuoteForPOS();
+        handleLoadQuote(staged);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Abre el diálogo de "Abono a Cuentas / Cuotas" del cliente seleccionado en el carrito.
     const openAbonoDialog = async () => {
@@ -625,6 +773,14 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     }, [userInventoryType, products, inventory, enableRecipes]);
 
 const addToCart = (product: Product) => {
+        // Bloqueo por falta de existencias: un producto con stock <= 0 no se puede
+        // agregar, ni con clic ni por lectura de código de barras, salvo que tenga
+        // `allowNegativeStock` (venta bajo encargo).
+        const guard = resolveStockGuard(product, 'unit', 1, { recipesEnabled: enableRecipes });
+        if (!guard.allowed) {
+            notifyStockGuard(toast, product, guard);
+            return;
+        }
         // Abre el wizard compartido (presentación → cantidad → nivel de precio).
         setWizardProduct({ product });
     };
@@ -639,11 +795,42 @@ const addToCart = (product: Product) => {
     };
 
     // Completa la secuencia del wizard y agrega el ítem con presentación/cantidad/nivel.
-    const handleWizardConfirm = (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
-        const qty = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
-        if (qty <= 0) return;
+    const handleWizardConfirm = async (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
+        const requested = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
+        if (requested <= 0) return;
+        // Política de stock: se valida el TOTAL que quedaría en el carrito (lo que ya
+        // había + lo nuevo). Si no hay existencias se bloquea; si el total supera la
+        // existencia, se limita a Math.min(total, stock) y se avisa al cajero.
+        const existingItem = cart.find((item) => item.product.id === product.id && item.presentation === presentation);
+        const alreadyInCart = existingItem?.quantity || 0;
+        const guard = resolveStockGuard(product, presentation, alreadyInCart + requested, { presentationName, presentationFactor, recipesEnabled: enableRecipes });
+        if (!guard.allowed) {
+            notifyStockGuard(toast, product, guard);
+            return;
+        }
+        const qty = Math.round((guard.quantity - alreadyInCart) * 100) / 100;
+        if (qty <= 0) {
+            notifyStockGuard(toast, product, guard);
+            return;
+        }
+        if (guard.clamped) notifyStockGuard(toast, product, guard);
+        // Producto marcado para stock negativo: antes de dejarlo bajo encargo se
+        // pide confirmación explícita al cajero.
+        if (requiresEncargoConfirmation({
+            productId: product.id,
+            productName: product.name,
+            physicalUnits: (alreadyInCart + qty) * resolvePresentationFactor(product, presentation, presentationName, presentationFactor),
+            available: guard.available,
+            allowNegative: true,
+        })) {
+            const confirmed = await requestEncargoConfirmation({
+                productName: product.name,
+                units: (alreadyInCart + qty) * resolvePresentationFactor(product, presentation, presentationName, presentationFactor),
+                available: guard.available,
+            });
+            if (!confirmed) return;
+        }
         setCart(prevCart => {
-            const existingItem = prevCart.find((item) => item.product.id === product.id && item.presentation === presentation);
             // Precio unitario efectivo: nivel elegido de precios del producto.
             const unitPrice = getProductPrice(product, priceLevel);;
             if (existingItem) {
@@ -663,6 +850,26 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
 
     // Guarda los cambios de un ítem editado (cantidad / precio / presentación).
     const handleSaveItemEdit = (itemId: string, updates: { quantity?: number; priceLevel?: number; presentationId?: string; presentationName?: string; presentationFactor?: number }) => {
+        const target = cart.find((item) => item.product.id === itemId);
+        if (target) {
+            const nextPresentation = updates.presentationId ?? target.presentation ?? 'unit';
+            const nextQuantity = updates.quantity !== undefined ? Math.max(0, updates.quantity) : target.quantity;
+            // Política de stock también al editar: no se puede dejar una cantidad
+            // por encima de las existencias disponibles.
+            const guard = resolveStockGuard(target.product, nextPresentation, nextQuantity, {
+                presentationName: updates.presentationName ?? target.presentationName,
+                presentationFactor: updates.presentationFactor ?? target.presentationFactor,
+                recipesEnabled: enableRecipes,
+            });
+            if (!guard.allowed) {
+                notifyStockGuard(toast, target.product, guard);
+                return;
+            }
+            if (guard.clamped) {
+                notifyStockGuard(toast, target.product, guard);
+                updates = { ...updates, quantity: guard.quantity };
+            }
+        }
         setCart(prevCart => prevCart.map(item => {
             if (item.product.id !== itemId) return item;
             const nextQuantity = updates.quantity !== undefined ? Math.max(0, updates.quantity) : item.quantity;
@@ -689,6 +896,25 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
     };
 
     const updateQuantity = (productId: string, change: number) => {
+        // Política de stock: los botones +/− no pueden dejar el ítem por encima
+        // de las existencias; se limita al máximo disponible y se avisa.
+        const target = cart.find((item) => item.product.id === productId);
+        if (target && change > 0) {
+            const guard = resolveStockGuard(target.product, target.presentation ?? 'unit', target.quantity + change, {
+                presentationName: target.presentationName,
+                presentationFactor: target.presentationFactor,
+                recipesEnabled: enableRecipes,
+            });
+            if (!guard.allowed) {
+                notifyStockGuard(toast, target.product, guard);
+                return;
+            }
+            if (guard.clamped) {
+                notifyStockGuard(toast, target.product, guard);
+                change = Math.round((guard.quantity - target.quantity) * 100) / 100;
+                if (change <= 0) return;
+            }
+        }
         setCart((prevCart) =>
             prevCart.map((item) =>
                 item.product.id === productId
@@ -738,45 +964,41 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         focusSearchInput();
     };
 
-    const handlePayment = () => {
-        if (cart.length === 0) {
-            toast({ title: 'Carrito VacÃ­o', description: 'Agregue productos antes de cobrar.', variant: 'destructive' });
-            return;
-        }
-setViewMode('payment');
-        focusSearchInput();
-    };
+const handlePayment = () => {
+   if (cart.length === 0) {
+   toast({ title: 'Carrito Vacío', description: 'Agregue productos antes de cobrar.', variant: 'destructive' });
+   return;
+   }
+   // Validación contra el stock más reciente antes de abrir el cobro: si algún
+   // ítem no tiene existencias suficientes, se detiene el proceso y se resalta
+   // en rojo la fila problemática.
+   const stockIssues = findStockIssues(buildCartStockLines(cart));
+   if (stockIssues.length > 0) {
+       setStockIssueIds(stockIssues.map((issue) => issue.productId));
+       toast({
+           title: 'Stock insuficiente',
+           description: stockIssues.map((issue) => issue.message).join(' '),
+           variant: 'destructive',
+       });
+       return;
+   }
+   setStockIssueIds([]);
+   setViewMode('payment');
+   focusSearchInput();
+   };
 
-const [isFinancingOpen, setIsFinancingOpen] = useState(false);
-    const [pendingCredit, setPendingCredit] = useState<{ paid: number; change: number } | null>(null);
-    const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
-    const [adminAuthAction, setAdminAuthAction] = useState<'credit-note' | 'credit-sale'>('credit-note');
-    const [pendingAdminSale, setPendingAdminSale] = useState<{ paid: number; change: number; method: string; financing?: SaleFinancing } | null>(null);
-
-    const handleAdminAuthSuccess = () => {
-        setIsAdminAuthOpen(false);
-        if (adminAuthAction === 'credit-sale' && pendingAdminSale) {
-            const p = pendingAdminSale;
-            setPendingAdminSale(null);
-            handleSuccessfulPayment(p.paid, p.change, p.method, p.financing, true);
-        }
-        setAdminAuthAction('credit-note');
-    };
-
-const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false) => {
+    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false, deliveryDetails?: any) => {
         if (!user || !activeSession) return;
 
-const effectiveCustomerName = activeSale?.customerName || customerName || 'Cliente General';
+        const effectiveCustomerName = activeSale?.customerName || customerName || 'Cliente General';
 
         let customerId: string | undefined = undefined;
-        const requiresCustomer = mode === 'JEWELRY' || paymentMethod === 'Credito';
+        const requiresCustomer = mode === 'JEWELRY' || paymentMethod === 'Credito' || deliveryDetails?.deliveryType === 'ROUTE';
         const hasRealName = !!effectiveCustomerName && effectiveCustomerName.trim() !== '' && effectiveCustomerName !== 'Cliente General';
         if (requiresCustomer && !hasRealName) {
-            toast({ title: 'Error', description: 'Es obligatorio asignar un nombre de cliente real.', variant: 'destructive' });
+            toast({ title: 'Error', description: 'Es obligatorio asignar un nombre de cliente real para crédito o despachos a ruta.', variant: 'destructive' });
             return;
         }
-        // Persiste la relación del cliente en la factura SIEMPRE que haya un nombre real,
-        // para que la reimpresión muestre el mismo nombre asignado al cobrar.
         if (hasRealName) {
             try {
                 const customer = await searchOrCreateCustomer(effectiveCustomerName.trim());
@@ -788,16 +1010,17 @@ const effectiveCustomerName = activeSale?.customerName || customerName || 'Clien
         }
 
         const roundedTotal = Math.round(cartTotal * 100) / 100;
-        const result = await createSale(
+        const result: any = await createSale(
             cart,
             activeSession.id,
             user.id,
             user.inventoryType || 'general',
-roundedTotal,
+            roundedTotal,
             paymentMethod as any,
             customerId,
             financing || null,
-            adminAuthorized || undefined
+            adminAuthorized || undefined,
+            deliveryDetails || undefined
         );
 
         if (!result.success) {
@@ -812,33 +1035,61 @@ roundedTotal,
                 });
                 return;
             }
+            if ((result as any).code === INSUFFICIENT_STOCK_CODE) {
+                const productId = (result as any).productId;
+                setStockIssueIds(productId ? [productId] : cart.map((item) => item.product.id));
+                setViewMode('products');
+                toast({
+                    title: 'Stock insuficiente',
+                    description: result.error,
+                    variant: 'destructive',
+                });
+                return;
+            }
             toast({ title: 'Error', description: result.error, variant: 'destructive' });
             return;
         }
+
+        setStockIssueIds([]);
 
         const isJewelry = mode === 'JEWELRY';
         const ticketLabel = result.invoiceNumber
             ? (isJewelry ? `Factura ${formatTicketNumber(result.invoiceNumber)}` : formatTicketNumber(result.invoiceNumber))
             : undefined;
         const finalCustomerName = effectiveCustomerName && effectiveCustomerName.trim() ? effectiveCustomerName.trim() : 'Cliente General';
-const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, finalCustomerName, paymentMethod, amountPaid, change, ticketLabel);
-        // Se solicita imprimir SOLO cuando el portal del <ReceiptTemplate/> esté
-        // montado. El reinicio de la venta (carrito/resumen/cliente/panel) se
-        // ejecuta DESPUÉS de cerrar la vista previa, dentro de la tubería de impresión.
+        const receiptData = prepareReceiptData(
+            cart,
+            cartTotal,
+            cartSubtotal,
+            taxAmount,
+            user,
+            settings,
+            finalCustomerName,
+            paymentMethod,
+            amountPaid,
+            change,
+            ticketLabel,
+            {
+                clientAddress: deliveryDetails?.deliveryAddress,
+                clientPhone: deliveryDetails?.deliveryPhone,
+                deliveryType: deliveryDetails?.deliveryType === 'ROUTE' ? 'route' : 'counter',
+                deliveryStatus: deliveryDetails?.deliveryStatus,
+            }
+        );
         saleResetAfterPrintRef.current = true;
         setSaleForPrint(receiptData);
 
         refreshSessions();
-        toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
+        toast({ title: 'Venta Registrada', description: deliveryDetails?.deliveryType === 'ROUTE' ? 'Pedido para ruta registrado exitosamente.' : 'La venta ha sido registrada exitosamente.' });
     };
 
-const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+    const handlePrePaymentComplete = (amountPaid: number, change: number, method: string, deliveryDetails?: any) => {
         if (method === 'Credito' && settings.creditFinancingEnabled) {
             setPendingCredit({ paid: amountPaid, change });
             setIsFinancingOpen(true);
             return;
         }
-        setPaymentData({ paid: amountPaid, change, method });
+        setPaymentData({ paid: amountPaid, change, method, deliveryDetails });
         setIsPaymentSummaryOpen(true);
     };
 
@@ -851,14 +1102,26 @@ const handlePrePaymentComplete = (amountPaid: number, change: number, method: st
     };
 
     const confirmPayment = () => {
-        // BLINDAJE: cerrar el modal de resumen INMEDIATAMENTE de forma sincrona.
-        // No depender de la tuberia de impresion async para desmontarlo.
         setIsPaymentSummaryOpen(false);
         if (paymentData) {
-            handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
+            handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method, undefined, false, paymentData.deliveryDetails);
         }
-        // Devolver el foco al buscador tras cerrar el modal.
         setTimeout(() => { productGridRef.current?.focusSearch(); }, 150);
+    };
+
+    const handleAdminAuthSuccess = () => {
+        setIsAdminAuthOpen(false);
+        if (adminAuthAction === 'credit-sale' && pendingAdminSale) {
+            handleSuccessfulPayment(
+                pendingAdminSale.paid,
+                pendingAdminSale.change,
+                pendingAdminSale.method,
+                pendingAdminSale.financing,
+                true // adminAuthorized
+            );
+        }
+        setPendingAdminSale(null);
+        setAdminAuthAction(null);
     };
 
     const handleClearCart = () => {
@@ -1048,6 +1311,7 @@ return (
                         onSelectItem={handleItemSelect}
                         onEditItem={(item) => setEditingItem(item)}
                         onRemoveItem={removeFromCart}
+                        highlightProductIds={stockIssueIds}
                         onUpdateQuantity={(pid, qty) => {
                             setCart(prev => prev.map(ci =>
                                 ci.product.id === pid ? { ...ci, quantity: Math.max(0, qty) } : ci
@@ -1261,6 +1525,9 @@ return (
                 onClose={() => setWizardProduct(null)}
             />
 
+            {/* Confirmación de venta bajo encargo (productos con allowNegativeStock). */}
+            <EncargoConfirmDialog />
+
             <ItemEditDialog
                 item={editingItem}
                 onClose={() => setEditingItem(null)}
@@ -1322,6 +1589,7 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
     const { mode } = useBusinessMode();
     const { activeSession, refreshSessions } = useCashRegister();
     const { addSaleToSession } = useCashRegisterSessions();
+    const queryClient = useQueryClient();
     const { toast } = useToast();
     const { settings } = useSettings();
     const enableRecipes = !!settings.enableRecipes;
@@ -1340,6 +1608,8 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
         }, 100);
     }, []);
     const [editingItem, setEditingItem] = useState<CartItem | null>(null);
+    /** Productos del carrito que no tienen existencias suficientes (resalte rojo). */
+    const [stockIssueIds, setStockIssueIds] = useState<string[]>([]);
     const [activeSale, setActiveSale] = useState<PendingSale | null>(null);
     const [viewMode, setViewMode] = useState<'products' | 'payment'>('products');
     const [isPaymentSummaryOpen, setIsPaymentSummaryOpen] = useState(false);
@@ -1546,7 +1816,15 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         return result;
     }, [userInventoryType, products, inventory, enableRecipes]);
 
-    const addToCart = (product: Product) => {
+const addToCart = (product: Product) => {
+        // Bloqueo por falta de existencias: un producto con stock <= 0 no se puede
+        // agregar, ni con clic ni por lectura de código de barras, salvo que tenga
+        // `allowNegativeStock` (venta bajo encargo).
+        const guard = resolveStockGuard(product, 'unit', 1, { recipesEnabled: enableRecipes });
+        if (!guard.allowed) {
+            notifyStockGuard(toast, product, guard);
+            return;
+        }
         // Abre el wizard compartido (presentación → cantidad → nivel de precio).
         setWizardProduct({ product });
     };
@@ -1561,11 +1839,42 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
     };
 
     // Completa la secuencia del wizard y agrega el ítem con presentación/cantidad/nivel.
-    const handleWizardConfirm = (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
-        const qty = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
-        if (qty <= 0) return;
+    const handleWizardConfirm = async (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
+        const requested = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
+        if (requested <= 0) return;
+        // Política de stock: se valida el TOTAL que quedaría en el carrito (lo que ya
+        // había + lo nuevo). Si no hay existencias se bloquea; si el total supera la
+        // existencia, se limita a Math.min(total, stock) y se avisa al cajero.
+        const existingItem = cart.find((item) => item.product.id === product.id && item.presentation === presentation);
+        const alreadyInCart = existingItem?.quantity || 0;
+        const guard = resolveStockGuard(product, presentation, alreadyInCart + requested, { presentationName, presentationFactor, recipesEnabled: enableRecipes });
+        if (!guard.allowed) {
+            notifyStockGuard(toast, product, guard);
+            return;
+        }
+        const qty = Math.round((guard.quantity - alreadyInCart) * 100) / 100;
+        if (qty <= 0) {
+            notifyStockGuard(toast, product, guard);
+            return;
+        }
+        if (guard.clamped) notifyStockGuard(toast, product, guard);
+        // Producto marcado para stock negativo: antes de dejarlo bajo encargo se
+        // pide confirmación explícita al cajero.
+        if (requiresEncargoConfirmation({
+            productId: product.id,
+            productName: product.name,
+            physicalUnits: (alreadyInCart + qty) * resolvePresentationFactor(product, presentation, presentationName, presentationFactor),
+            available: guard.available,
+            allowNegative: true,
+        })) {
+            const confirmed = await requestEncargoConfirmation({
+                productName: product.name,
+                units: (alreadyInCart + qty) * resolvePresentationFactor(product, presentation, presentationName, presentationFactor),
+                available: guard.available,
+            });
+            if (!confirmed) return;
+        }
         setCart(prevCart => {
-            const existingItem = prevCart.find((item) => item.product.id === product.id && item.presentation === presentation);
             // Precio unitario efectivo: nivel elegido de precios del producto.
             const unitPrice = getProductPrice(product, priceLevel);;
             if (existingItem) {
@@ -1585,6 +1894,26 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
 
     // Guarda los cambios de un ítem editado (cantidad / precio / presentación).
     const handleSaveItemEdit = (itemId: string, updates: { quantity?: number; priceLevel?: number; presentationId?: string; presentationName?: string; presentationFactor?: number }) => {
+        const target = cart.find((item) => item.product.id === itemId);
+        if (target) {
+            const nextPresentation = updates.presentationId ?? target.presentation ?? 'unit';
+            const nextQuantity = updates.quantity !== undefined ? Math.max(0, updates.quantity) : target.quantity;
+            // Política de stock también al editar: no se puede dejar una cantidad
+            // por encima de las existencias disponibles.
+            const guard = resolveStockGuard(target.product, nextPresentation, nextQuantity, {
+                presentationName: updates.presentationName ?? target.presentationName,
+                presentationFactor: updates.presentationFactor ?? target.presentationFactor,
+                recipesEnabled: enableRecipes,
+            });
+            if (!guard.allowed) {
+                notifyStockGuard(toast, target.product, guard);
+                return;
+            }
+            if (guard.clamped) {
+                notifyStockGuard(toast, target.product, guard);
+                updates = { ...updates, quantity: guard.quantity };
+            }
+        }
         setCart(prevCart => prevCart.map(item => {
             if (item.product.id !== itemId) return item;
             const nextQuantity = updates.quantity !== undefined ? Math.max(0, updates.quantity) : item.quantity;
@@ -1930,12 +2259,17 @@ const handleClearCart = () => {
                         description: item.product.name,
                         price: typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO,
                         total: (typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO) * item.quantity,
+                        // Presentación en 2.ª línea, igual que el ticket de venta.
+                        unit: resolvePresentationUnitLabel(item.product, item.presentation, item.presentationName),
                     })),
                     subtotal: cartTotal,
                     total: cartTotal,
                     logoSvg: settings.logoSvg,
                     footerMessage: settings.ticketFooter.message,
                     website: settings.ticketFooter.website,
+                    // Misma conversión de moneda que aplica el ticket de venta.
+                    exchangeRate: parseFloat(settings.exchangeRate) || 36.5,
+                    showTotalUSD: true,
                 };
                 setLastQuoteReceipt(quoteData);
                 setTimeout(() => {
@@ -1949,6 +2283,9 @@ const handleClearCart = () => {
                 setCustomerName('');
                 setSelectedClient(null);
                 focusSearchInput();
+                // Invalida la lista de cotizaciones para que al navegar a
+                // /quotations la tabla muestre el registro recien creado.
+                queryClient.invalidateQueries({ queryKey: QUOTATIONS_LIST_QUERY_KEY });
                 toast({ title: 'Cotización Guardada', description: `Cotización #${quoteData.quoteNumber} creada exitosamente.` });
             } else {
                 toast({ title: 'Error', description: result.error || 'No se pudo crear la cotización.', variant: 'destructive' });
@@ -2021,6 +2358,17 @@ const handleClearCart = () => {
             toast({ title: 'Error', description: 'Error al cargar la cotización.', variant: 'destructive' });
         }
     };
+
+    // Cotización elegida en el módulo Cotizaciones ("Cargar en POS"): se carga en
+    // el carrito al montar la vista del POS. El traspaso viaja en sessionStorage
+    // porque la cotización sobrevive al remontaje de los componentes del POS.
+    useEffect(() => {
+        const staged = readStagedQuoteForPOS();
+        if (!staged) return;
+        clearStagedQuoteForPOS();
+        handleLoadQuote(staged);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Keyboard shortcuts - MUST be after function declarations
     useEffect(() => {

@@ -237,3 +237,6 @@ export const FullPageInvoiceTemplate: React.FC<FullPageInvoiceProps> = ({
         </div>
     );
 };
+
+export { InvoiceA4Template } from './invoice-a4-template';
+

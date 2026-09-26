@@ -1,25 +1,3 @@
-Solucionar error Cannot read properties of undefined (reading 'totalRevenue') en la página /reports.
-
-Problema:
-Al ingresar a la vista de reportes (/reports), la aplicación se rompe mostrando una pantalla de error no capturado (unhandled exception) debido al intento de acceder a totalRevenue cuando el objeto de datos de la API aún no se ha cargado o es undefined.
-
-Requerimientos de Solución:
-
-Protección y Valores por Defecto en el Frontend:
-
-Inspecciona el componente que renderiza la vista /reports (ej. src/pages/reports.tsx o src/app/reports/page.tsx).
-
-Aplica encadenamiento opcional (optional chaining) y valores de respaldo (fallbacks) en todas las lecturas de propiedades del objeto de métricas:
-
-TypeScript
-// Ejemplo de protección segura:
-const totalRevenue = data?.totalRevenue ?? 0;
-Agrega validación de estado de carga (loading state) o skeletons mientras la petición a la API se completa para prevenir renderizados prematuros.
-
-Manejo Seguro de Errores de API:
-
-Si la petición a la API falla o retorna null, el componente debe mostrar un estado controlado en español (ej. "No se pudieron cargar las métricas de reportes") en lugar de tumbar la interfaz completa.
-
-Verificación de Endpoint Backend:
-
-Revisa el controlador/servicio de reportes que responde a esta ruta y confirma que el JSON retornado incluya siempre la propiedad totalRevenue (incluso si no hay ventas registradas, devolviendo 0).
+Restaurar formato de impresión en Hoja Normal (Carta/A4) e implementar módulo/estado para Pedidos en Ruta y Cobro contra entrega.PARTE 1: Restaurar / Habilitar Formato de Factura en Hoja Normal (A4 / Carta)Selector de Formato de Impresión:En la pantalla de Facturación / Venta finalizada y en el historial de facturas, asegúrate de que existan dos opciones o un selector de formato al imprimir:Ticket Térmico (80mm) (usa print-iframe.ts).   Hoja Carta / A4 (Factura Normal).Vista / Plantilla de Factura Hoja Normal:Revisa si existe la ruta /facturas/[id]/print o el componente <InvoiceA4Template/>. Si fue removido, vuelve a crearlo.Diseño para Hoja Normal (CSS @media print):Encabezado formal con Logo, Nombre del Negocio, RUC/Identificación, Dirección y Teléfono.   Cuadro de datos del cliente: Nombre, Dirección de Entrega, Teléfono, Fecha y No. de Factura/Pedido.Tabla estilizada con bordes limpios: Cant | Código | Descripción | P. Unitario | Total.Resumen financiero: Subtotal, IVA, Total C$, Equivalente USD.   Sección de Firma de Recibido:Plaintext_______________________           _______________________
+ Entregado por (Ruta)              Recibido Conforme (Cliente)
+Configura CSS de impresión: @page { size: letter; margin: 12mm; }.PARTE 2: Implementar Flujo de Pedidos para Ruteo y EntregaEstado de Entrega en Ventas/Facturas:Agrega los siguientes estados al modelo de Ventas/Pedidos:PENDIENTE_ENTREGA (Pedido listo cargado a la ruta).EN_RUTA (El repartidor lleva el pedido).ENTREGADO / COBRADO.Opción de "Enviar a Ruta / Pedido Domicilio" en el POS:Al momento de facturar/cobrar en el Punto de Venta, agrega un checkbox o selector de tipo de despacho:[ ] Venta Directa (Mostrador)[x] Pedido para Ruta / Entrega a DomicilioSi se selecciona Entrega a Domicilio:Permite seleccionar el cliente y su dirección/teléfono.Define si el método de pago es "Cobro contra entrega" (Pendiente de pago).Vista de Hoja de Ruta / Hoja de Despacho:Crea la vista /ruta o /entregas donde el repartidor o cajero pueda ver los pedidos asignados del día.Permite imprimir un Manifiesto de Ruta (Lista resumida de todos los pedidos y direcciones a entregar) y las Facturas individuales en Hoja Normal para adjuntar a las cajas/paquetes.Agregar botón "Confirmar Cobro y Entrega" en la vista de ruta para marcar el pedido como pagado e ingresar el dinero a la caja correspondiente.REGLAS DE BLINDAJE:Mantener intacta la función de impresión de tickets térmicos de 80mm sin romper las mejoras de formato anteriores.   All texts in Spanish.

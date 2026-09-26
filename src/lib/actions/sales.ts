@@ -2,6 +2,7 @@
 import { generateUUID } from '@/lib/uuid';
 
 import db from '../db';
+import { Prisma } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { InventoryMovement, PendingSale, CartItem } from '../types';
 import { InventoryMovement as PrismaInventoryMovement, User as PrismaUser } from '@prisma/client';
@@ -10,6 +11,11 @@ import { BusinessGuard } from '../business-guard';
 import { recordAudit } from './audit';
 import { getPaymentBucket, isCreditPayment } from '../payment-method';
 import { resolvePresentationFactor } from '../presentations';
+import {
+    INSUFFICIENT_STOCK_CODE,
+    InsufficientStockError,
+    allowsNegativeStock,
+} from '../stock-policy';
 
 export interface SaleFinancing {
     installments: number;
@@ -24,6 +30,38 @@ class CreditAuthRequiredError extends Error {
     requiresAdmin = true;
 }
 
+/** Número de intentos ante conflictos de escritura (carreras de stock). */
+const STOCK_TX_MAX_ATTEMPTS = 3;
+
+/**
+ * Ejecuta la transacción de venta con aislamiento SERIALIZABLE y reintenta ante
+ * conflictos de escritura (Prisma P2034). Esto hace que la comprobación de
+ * existencias y el descuento FIFO sean atómicos: dos cajeros cobrando el mismo
+ * producto a la vez no pueden ambos pasar la validación y dejar el stock en
+ * negativo. Con el aislamiento por defecto (REPEATABLE READ) la lectura previa
+ * al descuento no está protegida contra esas carreras.
+ */
+async function runStockSafeTransaction<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= STOCK_TX_MAX_ATTEMPTS; attempt++) {
+        try {
+            return await db.$transaction(fn, {
+                isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+                maxWait: 5000,
+                timeout: 15000,
+            });
+        } catch (error: any) {
+            lastError = error;
+            // P2034: transacción en conflicto o deadlock. Se reintenta con backoff.
+            if (error?.code !== 'P2034' || attempt === STOCK_TX_MAX_ATTEMPTS) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+        }
+    }
+    throw lastError;
+}
+
 /** Consume la materia prima (INGREDIENT) de una receta dentro de la transacción
  * de venta de un platillo preparado (RECIPE_ITEM). Reproduce el descuento FIFO
  * por vencimiento + Kardex del producto estándar, pero aplicado al inventario
@@ -34,7 +72,7 @@ class CreditAuthRequiredError extends Error {
  * RECIPE_ITEM y únicamente cuando `enableRecipes === true`. */
 async function consumeIngredientStock(
     tx: any,
-    ingredient: { id: string; name: string; isFractional?: boolean | null },
+    ingredient: { id: string; name: string; isFractional?: boolean | null; allowNegativeStock?: boolean | null },
     requiredUnits: number,
     transactionId: string,
     userId: string,
@@ -46,6 +84,13 @@ async function consumeIngredientStock(
         where: { productId: ingredient.id, inventoryType },
         orderBy: { expiryDate: 'asc' }
     });
+
+    // Validación atómica ANTES de descontar: si el insumo no tiene existencias
+    // suficientes y no permite stock negativo, se aborta toda la transacción.
+    const available = inventoryItems.reduce((sum: number, i: any) => sum + (i.quantity || 0), 0);
+    if (!allowsNegativeStock(ingredient) && requiredUnits > available) {
+        throw new InsufficientStockError(ingredient.id, ingredient.name, available, requiredUnits);
+    }
 
     let remaining = requiredUnits;
 
@@ -100,8 +145,8 @@ async function consumeIngredientStock(
         remaining -= quantityToTake;
     }
 
-    // ENCARGO: si el stock del insumo es insuficiente, se permite la venta
-    // llevando el Kardex del insumo a negativo (igual que un producto normal).
+    // ENCARGO: solo si el insumo tiene `allowNegativeStock`. Si no lo tiene, la
+    // validación de arriba ya abortó la transacción y nunca se llega aquí.
     if (remaining > 0) {
         const encQty = ingredient.isFractional ? Math.ceil(remaining) : remaining;
         const currentRecords = await tx.inventoryItem.findMany({
@@ -147,20 +192,30 @@ async function consumeIngredientStock(
     }
 }
 
+export interface SaleDeliveryDetails {
+    deliveryType?: 'COUNTER' | 'ROUTE';
+    deliveryStatus?: 'PENDIENTE_ENTREGA' | 'EN_RUTA' | 'ENTREGADO' | 'COBRADO';
+    deliveryAddress?: string;
+    deliveryPhone?: string;
+    isPaid?: boolean;
+}
+
 export async function createSale(
     items: CartItem[],
     sessionId: string,
     userId: string,
     inventoryType: string,
     totalAmount: number,
-    paymentMethod: 'Efectivo' | 'Tarjeta' | 'Dolares' | 'Credito',
+    paymentMethod: string,
     customerId?: string,
     financing?: SaleFinancing | null,
-    adminAuthorized?: boolean
+    adminAuthorized?: boolean,
+    deliveryDetails?: SaleDeliveryDetails
 ) {
     console.log('--- DEBUG createSale ---');
     console.log('paymentMethod:', paymentMethod);
     console.log('customerId:', customerId);
+    console.log('deliveryDetails:', deliveryDetails);
     
     const session = await verifySession();
     if (!session) return { success: false, error: 'Unauthorized' };
@@ -181,8 +236,8 @@ export async function createSale(
         // Round totalAmount to 2 decimal places to ensure accounting accuracy
         const roundedTotalAmount = Math.round(totalAmount * 100) / 100;
 
-        // Desglose para reproducir el ticket idÃ©ntico en reimpresiÃ³n: el subtotal es la
-        // suma de los totales por lÃ­nea y el impuesto es la diferencia con el total.
+        // Desglose para reproducir el ticket idéntico en reimpresión: el subtotal es la
+        // suma de los totales por línea y el impuesto es la diferencia con el total.
         const lineTotals = items.reduce((sum, item) => {
             const unitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0
                 ? item.unitPrice
@@ -194,32 +249,24 @@ export async function createSale(
 
         let createdInvoiceNumber = 0;
 
-await db.$transaction(async (tx) => {
+        const isCobroContraEntrega = paymentMethod === 'Cobro contra entrega' || deliveryDetails?.isPaid === false;
+        const isPaid = deliveryDetails?.isPaid !== undefined ? deliveryDetails.isPaid : !isCobroContraEntrega;
+        const deliveryType = deliveryDetails?.deliveryType || (isCobroContraEntrega ? 'ROUTE' : 'COUNTER');
+        const deliveryStatus = deliveryDetails?.deliveryStatus || (deliveryType === 'ROUTE' ? 'PENDIENTE_ENTREGA' : 'DELIVERED');
+
+        await runStockSafeTransaction(async (tx) => {
             for (const item of items) {
                 const variantId = (item.product as any).variantId;
                 const parentProductId = (item.product as any).parentProductId || item.product.id;
 
-                // Multi-presentaciÃ³n: se descuenta del inventario la cantidad fÃ­sica
-                // equivalente en la unidad base (cantidad vendida Ã— factor de la
-                // presentaciÃ³n). Ej: 2 Ristras (factor 3) descontarÃ­an 2 Ã— 3 = 6.
                 const factor = resolvePresentationFactor(item.product, item.presentation, item.presentationName, item.presentationFactor);
                 const physicalUnits = item.quantity * factor;
-// Precio unitario efectivo: el congelado en el carrito (nivel de
-                // precio × presentación); fallback al precio de detalle.
-                const unitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0
-                    ? item.unitPrice
-                    : item.product.priceNIO;
 
-                // RECETAS (BOM): si está habilitado y el producto es un platillo
-                // preparado (RECIPE_ITEM), no se descuenta su propio stock: se
-                // descuentan los insumos de la receta (cantidad vendida × cantidad
-                // de cada insumo por platillo). Si la receta está vacía, cae al
-                // comportamiento estándar.
                 const productType = (item.product as any).type || 'STANDARD';
                 if (enableRecipes && productType === 'RECIPE_ITEM') {
                     const recipeLines = await tx.recipeItem.findMany({
                         where: { productId: parentProductId },
-                        include: { ingredient: { select: { id: true, name: true, isFractional: true } } }
+                        include: { ingredient: { select: { id: true, name: true, isFractional: true, allowNegativeStock: true } } }
                     });
                     if (recipeLines.length > 0) {
                         for (const line of recipeLines) {
@@ -231,15 +278,28 @@ await db.$transaction(async (tx) => {
                 }
 
                 if (variantId) {
+                    const variantRecord = await tx.productVariant.findUnique({
+                        where: { id: variantId },
+                        include: { size: true, color: true, product: true }
+                    });
+                    if (!variantRecord) {
+                        throw new Error(`La variante del producto no existe.`);
+                    }
+                    if (!allowsNegativeStock(variantRecord.product)
+                        && physicalUnits > Math.max(0, variantRecord.stock)) {
+                        throw new InsufficientStockError(
+                            variantRecord.productId || parentProductId,
+                            `${variantRecord.product.name} - ${variantRecord.size.name} - ${variantRecord.color.name}`,
+                            variantRecord.stock,
+                            physicalUnits
+                        );
+                    }
+
                     const updatedVariant = await tx.productVariant.update({
                         where: { id: variantId },
                         data: { stock: { decrement: physicalUnits } },
                         include: { size: true, color: true, product: true }
                     });
-
-                    // Encargo: se permite stock negativo (kardex en negativo) cuando el
-                    // producto no tiene existencias suficientes; el ticket lo marca como
-                    // "Pendiente de Entrega / Encargo".
 
                     await tx.inventoryMovement.create({
                         data: {
@@ -259,9 +319,6 @@ await db.$transaction(async (tx) => {
                     continue;
                 }
 
-                // Find inventory items for this product, ordered by expiry (FIFO)
-                // Se incluyen registros con cantidad 0/negativa para permitir encargos
-                // sobre productos sin existencias (kardex en negativo).
                 const inventoryItems = await tx.inventoryItem.findMany({
                     where: {
                         productId: parentProductId,
@@ -270,20 +327,31 @@ await db.$transaction(async (tx) => {
                     orderBy: { expiryDate: 'asc' }
                 });
 
-let remainingToSell = physicalUnits;
+                const productPolicy = await tx.product.findUnique({
+                    where: { id: parentProductId },
+                    select: { allowNegativeStock: true }
+                });
+                const availableForProduct = inventoryItems.reduce((sum: number, i: any) => sum + (i.quantity || 0), 0);
+                if (!allowsNegativeStock(productPolicy)
+                    && physicalUnits > Math.max(0, availableForProduct)) {
+                    throw new InsufficientStockError(
+                        parentProductId,
+                        item.product.name,
+                        availableForProduct,
+                        physicalUnits
+                    );
+                }
+
+                let remainingToSell = physicalUnits;
 
                 for (const invItem of inventoryItems) {
                     if (remainingToSell <= 0) break;
                     if (invItem.quantity <= 0) continue;
 
                     const quantityToTake = Math.min(invItem.quantity, remainingToSell);
-                    // El InventoryItem.quantity es Int; para fraccionarios redondeamos
-                    // hacia arriba el descuento físico pero el Kardex guarda la fracción real.
                     const invQtyToTake = item.product.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
                     if (invQtyToTake <= 0) continue;
 
-                    // Update inventory item ATOMICALLY
-                    // We use decrement to ensure safety against concurrent sales
                     const updatedInvItem = await tx.inventoryItem.update({
                         where: { id: invItem.id },
                         data: {
@@ -291,12 +359,10 @@ let remainingToSell = physicalUnits;
                         }
                     });
 
-                    // Check if stock went negative (shouldn't happen if logic is correct, but safe guard)
                     if (updatedInvItem.quantity < 0) {
                         throw new Error(`Stock insuficiente para el producto: ${item.product.name} (Race condition detected)`);
                     }
 
-                    // Update status based on new quantity
                     const newQuantity = updatedInvItem.quantity;
                     const status = newQuantity <= 0 ? 'Agotado' : (newQuantity < 10 ? 'Stock Bajo' : 'En Stock');
 
@@ -307,13 +373,11 @@ let remainingToSell = physicalUnits;
                         });
                     }
 
-                    // Create movement
-                    // Calculate total stock for this product for accurate Kardex
                     const currentStockRecords = await tx.inventoryItem.findMany({
                         where: { productId: item.product.id, inventoryType: inventoryType }
                     });
                     const currentTotal = currentStockRecords.reduce((sum, i) => sum + i.quantity, 0);
-                    const previousTotal = currentTotal + invQtyToTake; // Because we just decremented it
+                    const previousTotal = currentTotal + invQtyToTake;
 
                     await tx.inventoryMovement.create({
                         data: {
@@ -333,8 +397,6 @@ let remainingToSell = physicalUnits;
                     remainingToSell -= quantityToTake;
                 }
 
-                // ENCARGO: si el stock es insuficiente, se permite la venta llevando el
-                // kardex a valores negativos (venta bajo encargo / entrega pendiente).
                 if (remainingToSell > 0) {
                     const encQty = item.product.isFractional ? Math.ceil(remainingToSell) : remainingToSell;
                     const currentRecords = await tx.inventoryItem.findMany({
@@ -380,7 +442,7 @@ let remainingToSell = physicalUnits;
                 }
             }
 
-            // Create SalesInvoice
+            // Create SalesInvoice with Delivery fields
             const salesInvoice = await tx.salesInvoice.create({
                 data: {
                     id: generateUUID(),
@@ -392,7 +454,12 @@ let remainingToSell = physicalUnits;
                     sessionId: sessionId,
                     userId: userId,
                     customerId: customerId,
-salesInvoiceItem: {
+                    deliveryType: deliveryType,
+                    deliveryStatus: deliveryStatus,
+                    deliveryAddress: deliveryDetails?.deliveryAddress || null,
+                    deliveryPhone: deliveryDetails?.deliveryPhone || null,
+                    isPaid: isPaid,
+                    salesInvoiceItem: {
                         create: items.map(item => {
                             const invUnitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0
                                 ? item.unitPrice
@@ -437,19 +504,12 @@ salesInvoiceItem: {
                 });
                 if (!customer || !customer.hasCredit) throw new Error('El cliente no tiene habilitado el crédito');
 
-                // Financiamiento por cuotas: se suma el interés al valor de la
-                // venta y el saldo del cliente refleja el total financiado.
-                // Cada cuota es INMUTABLE (monto y fecha fijos) y se guarda en
-                // `creditinstallment` con estado PENDING.
                 let financedTotal = roundedTotalAmount;
                 if (financing && financing.installments > 0) {
                     const interestRate = Number(financing.interestRate) || 0;
                     financedTotal = Math.round((roundedTotalAmount + (roundedTotalAmount * interestRate) / 100) * 100) / 100;
                 }
 
-                // Validación de riesgo de crédito: cliente en mora (isOverdue) o
-                // límite de crédito excedido bloquean la venta, salvo autorización
-                // explícita de un Administrador.
                 const overdueCount = customer.creditInstallment?.length || 0;
                 const newBalance = customer.currentBalance + financedTotal;
                 const exceedsLimit = customer.creditLimit > 0 && newBalance > customer.creditLimit;
@@ -468,14 +528,11 @@ salesInvoiceItem: {
                     data: { currentBalance: { increment: financedTotal } }
                 });
 
-                // La factura queda con el saldo pendiente correspondiente al total
-                // financiado (con interés). Los abonos lo reducen por factura (FIFO).
                 await tx.salesInvoice.update({
                     where: { id: salesInvoice.id },
                     data: { pendingBalance: { increment: financedTotal } }
                 });
 
-                // Genera el plan de pagos inmutable en cuotas.
                 if (financing && financing.installments > 0) {
                     const totalInstallments = Math.max(1, Math.floor(Number(financing.installments) || 1));
                     const interestRate = Number(financing.interestRate) || 0;
@@ -501,35 +558,34 @@ salesInvoiceItem: {
                 }
             }
 
-            // Update Session with rounded amount
-            const updateData: any = {
-                totalSales: { increment: roundedTotalAmount }
-            };
+            // Update Session ONLY if sale is already paid (not pending cash on delivery)
+            if (isPaid) {
+                const updateData: any = {
+                    totalSales: { increment: roundedTotalAmount }
+                };
 
-            // Clasifica el mÃ©todo de pago con normalizaciÃ³n robusta de strings para que
-            // 'Efectivo C$', 'CASH', 'CONTADO', 'EFECTIVO' etc. sumen a Ventas Efectivo,
-            // y 'Tarjeta'/'TRANSFERENCIA' etc. sumen a Ventas Tarjeta.
-            switch (getPaymentBucket(paymentMethod)) {
-                case 'cash':
-                    updateData.salesCash = { increment: roundedTotalAmount };
-                    break;
-                case 'card':
-                    updateData.salesCard = { increment: roundedTotalAmount };
-                    break;
-                case 'usd':
-                    updateData.salesUSD = { increment: roundedTotalAmount };
-                    break;
-                case 'credit':
-                    updateData.salesCredit = { increment: roundedTotalAmount };
-                    break;
-                case 'other':
-                    break;
+                switch (getPaymentBucket(paymentMethod)) {
+                    case 'cash':
+                        updateData.salesCash = { increment: roundedTotalAmount };
+                        break;
+                    case 'card':
+                        updateData.salesCard = { increment: roundedTotalAmount };
+                        break;
+                    case 'usd':
+                        updateData.salesUSD = { increment: roundedTotalAmount };
+                        break;
+                    case 'credit':
+                        updateData.salesCredit = { increment: roundedTotalAmount };
+                        break;
+                    case 'other':
+                        break;
+                }
+
+                await tx.cashRegisterSession.update({
+                    where: { id: sessionId },
+                    data: updateData
+                });
             }
-
-            await tx.cashRegisterSession.update({
-                where: { id: sessionId },
-                data: updateData
-            });
         });
 
         revalidatePath('/pos');
@@ -555,6 +611,19 @@ salesInvoiceItem: {
         return { success: true, invoiceNumber: createdInvoiceNumber };
     } catch (error) {
         console.error('Error creating sale:', error);
+        if (error instanceof InsufficientStockError) {
+            // La transacción ya se revirtió: no hay venta, no hay kardex y el
+            // carrito del cajero queda intacto para que corrija las cantidades.
+            return {
+                success: false,
+                error: error.message,
+                code: INSUFFICIENT_STOCK_CODE,
+                productId: error.productId,
+                productName: error.productName,
+                available: error.available,
+                requested: error.requested,
+            };
+        }
         if (error instanceof CreditAuthRequiredError) {
             return { success: false, error: error.message, requiresAdmin: true };
         }
@@ -609,7 +678,10 @@ export async function getInvoiceByNumber(invoiceNumber: number | string) {
             where: { invoiceNumber: parsed },
             include: {
                 salesInvoiceItem: {
-                    orderBy: { id: 'asc' }
+                    orderBy: { id: 'asc' },
+                    // El código (código de barras) alimenta la columna "Código" de la
+                    // factura en Hoja Normal; no interviene en el ticket de 80 mm.
+                    include: { product: { select: { barcode: true } } }
                 },
                 customer: true,
                 user: true
@@ -654,6 +726,146 @@ export async function getLastSale(sessionId?: string) {
         return { success: true, data: invoice };
     } catch (error) {
         console.error('Error fetching last sale:', error);
-        return { success: false, error: 'Error al obtener la Ãºltima venta' };
+        return { success: false, error: 'Error al obtener la última venta' };
     }
 }
+
+export async function confirmDeliveryAndPayment(invoiceId: string, sessionId?: string) {
+    const session = await verifySession();
+    if (!session) return { success: false, error: 'Unauthorized' };
+
+    try {
+        const invoice = await db.salesInvoice.findUnique({
+            where: { id: invoiceId },
+            include: { customer: true, salesInvoiceItem: true }
+        });
+
+        if (!invoice) {
+            return { success: false, error: 'Factura no encontrada' };
+        }
+
+        const wasUnpaid = !invoice.isPaid;
+        let activeSessionId = sessionId || invoice.sessionId;
+
+        // Si la factura no estaba pagada ("Cobro contra entrega"), ingresar el dinero a la caja activa
+        if (wasUnpaid) {
+            // Buscar la sesión abierta si no se proporcionó una
+            if (!activeSessionId) {
+                const openSession = await db.cashRegisterSession.findFirst({
+                    where: { status: 'OPEN' },
+                    orderBy: { openingTime: 'desc' }
+                });
+                if (openSession) {
+                    activeSessionId = openSession.id;
+                }
+            }
+
+            if (activeSessionId) {
+                const isCash = getPaymentBucket(invoice.paymentMethod) === 'cash';
+                const isCard = getPaymentBucket(invoice.paymentMethod) === 'card';
+                const isUSD = getPaymentBucket(invoice.paymentMethod) === 'usd';
+
+                const sessionUpdate: any = {
+                    totalSales: { increment: invoice.totalAmount }
+                };
+
+                if (isCard) {
+                    sessionUpdate.salesCard = { increment: invoice.totalAmount };
+                } else if (isUSD) {
+                    sessionUpdate.salesUSD = { increment: invoice.totalAmount };
+                } else {
+                    sessionUpdate.salesCash = { increment: invoice.totalAmount };
+                }
+
+                await db.cashRegisterSession.update({
+                    where: { id: activeSessionId },
+                    data: sessionUpdate
+                });
+            }
+        }
+
+        const updated = await db.salesInvoice.update({
+            where: { id: invoiceId },
+            data: {
+                isPaid: true,
+                deliveryStatus: 'COBRADO',
+            }
+        });
+
+        revalidatePath('/ruta');
+        revalidatePath('/entregas');
+        revalidatePath('/delivery-routes');
+        revalidatePath('/orders');
+
+        try {
+            const actor = await db.user.findUnique({ where: { id: session.userId }, select: { name: true } });
+            await recordAudit({
+                userId: session.userId,
+                userName: actor?.name || 'Usuario',
+                action: 'UPDATE',
+                entity: 'Sale',
+                entityId: `FACTURA-${updated.invoiceNumber}`,
+                description: `Confirmó cobro y entrega del pedido #${updated.invoiceNumber} por C$${updated.totalAmount.toFixed(2)}`,
+                metadata: { invoiceNumber: updated.invoiceNumber, totalAmount: updated.totalAmount }
+            });
+        } catch (auditErr) {
+            console.error('Audit error:', auditErr);
+        }
+
+        return { success: true, data: updated };
+    } catch (error) {
+        console.error('Error confirming delivery:', error);
+        return { success: false, error: 'Error al confirmar cobro y entrega' };
+    }
+}
+
+export async function updateInvoiceDeliveryStatus(invoiceId: string, deliveryStatus: string) {
+    const session = await verifySession();
+    if (!session) return { success: false, error: 'Unauthorized' };
+
+    try {
+        const updated = await db.salesInvoice.update({
+            where: { id: invoiceId },
+            data: { deliveryStatus }
+        });
+
+        revalidatePath('/ruta');
+        revalidatePath('/entregas');
+        revalidatePath('/delivery-routes');
+        revalidatePath('/orders');
+
+        return { success: true, data: updated };
+    } catch (error) {
+        console.error('Error updating delivery status:', error);
+        return { success: false, error: 'Error al actualizar estado de entrega' };
+    }
+}
+
+export async function getDeliveryInvoices() {
+    const session = await verifySession();
+    if (!session) return { success: false, error: 'Unauthorized' };
+
+    try {
+        const invoices = await db.salesInvoice.findMany({
+            where: {
+                OR: [
+                    { deliveryType: 'ROUTE' },
+                    { deliveryStatus: { in: ['PENDIENTE_ENTREGA', 'EN_RUTA', 'ENTREGADO', 'COBRADO'] } }
+                ]
+            },
+            orderBy: { date: 'desc' },
+            include: {
+                customer: true,
+                user: { select: { name: true } },
+                salesInvoiceItem: {
+                    include: { product: { select: { barcode: true } } }
+                }
+            }
+        });
+        return { success: true, data: invoices };
+    } catch (error) {
+        console.error('Error fetching delivery invoices:', error);
+        return { success: false, error: 'Error al obtener pedidos de ruta' };
+    }
+}
+

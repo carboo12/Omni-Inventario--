@@ -51,6 +51,11 @@ export interface SystemSettingsData {
     enableRecipes?: boolean;
     enableBatchAndExpiration?: boolean;
     enableKitchenPrinter?: boolean;
+    enableMultiCurrency?: boolean;
+    enableWholesalePrices?: boolean;
+    enableAccountsPayable?: boolean;
+    enablePettyCashExpenses?: boolean;
+    enableSerialNumbers?: boolean;
 }
 
 export async function getSettings(...args: any[]): Promise<any> {

@@ -2409,6 +2409,22 @@ __export(dashboard_exports, {
   getDashboardStats: () => getDashboardStats
 });
 init_db();
+
+// src/lib/inventory-status.ts
+var DEFAULT_MIN_STOCK = 10;
+function resolveStockStatus(quantity, minStock) {
+  const qty = Number(quantity) || 0;
+  const rawMin = Number(minStock);
+  const min = Number.isFinite(rawMin) && rawMin > 0 ? rawMin : DEFAULT_MIN_STOCK;
+  if (qty <= 0) return "Agotado";
+  if (qty <= min) return "Stock Bajo";
+  return "En Stock";
+}
+function isLowStock(quantity, minStock) {
+  return resolveStockStatus(quantity, minStock) !== "En Stock";
+}
+
+// src/lib/actions/dashboard.ts
 async function getDashboardStats(role, inventoryType, userId) {
   const today = /* @__PURE__ */ new Date();
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
@@ -2517,13 +2533,13 @@ async function getDashboardStats(role, inventoryType, userId) {
   }
   const lowStockProductIds = /* @__PURE__ */ new Set();
   for (const item of inventoryItems) {
-    const total = stockByProduct.get(item.productId || item.productName) || 0;
-    const min = item.product?.minStock ?? 10;
-    if (total <= 0 || total < min) {
-      lowStockProductIds.add(item.productId);
+    const id = item.productId || item.productName;
+    const total = stockByProduct.get(id) || 0;
+    if (isLowStock(total, item.product?.minStock)) {
+      lowStockProductIds.add(id);
     }
   }
-  const lowStockCount = lowStockProductIds.size + productVariants.filter((item) => item.stock > 0 && item.stock < (item.product.minStock || 1)).length;
+  const lowStockCount = lowStockProductIds.size + productVariants.filter((item) => isLowStock(item.stock, item.product?.minStock)).length;
   const expiringProductsCount = inventoryItems.filter((item) => {
     return item.expiryDate > todayIso && item.expiryDate <= next30DaysIso;
   }).length;
@@ -6511,10 +6527,15 @@ __export(quotations_exports, {
 init_db();
 async function createQuote(data) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sin sesi\xF3n activa. Inicie sesi\xF3n nuevamente." };
   try {
-    const subtotal = data.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-    const userId = session.userId;
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) {
+      return { success: false, error: "La cotizaci\xF3n debe tener al menos un producto." };
+    }
+    const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const total = Number.isFinite(data.total) && data.total > 0 ? data.total : subtotal;
+    const userId = session.userId ?? null;
     const quote = await db_default.quote.create({
       data: {
         id: generateUUID(),
@@ -6523,13 +6544,13 @@ async function createQuote(data) {
         expirationDays: data.expirationDays || 30,
         subtotal,
         tax: 0,
-        total: data.total || subtotal,
+        total,
         status: "PENDING",
         notes: data.notes || null,
         clientId: data.clientId || null,
-        userId: userId || null,
+        userId,
         items: {
-          create: data.items.map((item) => ({
+          create: items.map((item) => ({
             id: generateUUID(),
             productId: item.productId || null,
             productName: item.productName,
@@ -6552,18 +6573,19 @@ async function createQuote(data) {
 }
 async function getQuotes(search) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sin sesi\xF3n activa. Inicie sesi\xF3n nuevamente." };
   try {
     const where = {};
     if (search) {
-      const searchNum = parseInt(search.replace(/^COT-/i, "").replace(/^0+/, ""), 10);
+      const term = search.trim();
+      const searchNum = parseInt(term.replace(/^COT-/i, "").replace(/^0+/, ""), 10);
       if (Number.isFinite(searchNum) && searchNum > 0) {
         where.OR = [
           { quoteNumber: searchNum },
-          { customerName: { contains: search } }
+          { customerName: { contains: term } }
         ];
       } else {
-        where.customerName = { contains: search };
+        where.customerName = { contains: term };
       }
     }
     const quotes = await db_default.quote.findMany({
@@ -6571,7 +6593,13 @@ async function getQuotes(search) {
       orderBy: { createdAt: "desc" },
       include: { items: true, user: true, customer: true }
     });
-    return { success: true, data: quotes };
+    const now = Date.now();
+    const data = quotes.map((q) => {
+      const expiresAt = new Date(q.createdAt).getTime() + (q.expirationDays || 30) * 864e5;
+      const isExpired = expiresAt < now;
+      return { ...q, expiresAt: new Date(expiresAt).toISOString(), status: q.status === "PENDING" && isExpired ? "EXPIRED" : q.status };
+    });
+    return { success: true, data };
   } catch (error) {
     console.error("Error fetching quotes:", error);
     return { success: false, error: "Error al obtener cotizaciones" };
@@ -6775,17 +6803,25 @@ async function convertQuoteToInvoice(quoteId, sessionId, userId, inventoryType, 
 }
 async function cancelQuote(quoteId) {
   const session = await verifySession();
-  if (!session) return { success: false, error: "Unauthorized" };
+  if (!session) return { success: false, error: "Sin sesi\xF3n activa. Inicie sesi\xF3n nuevamente." };
   try {
-    await db_default.quote.update({
+    const quote = await db_default.quote.findUnique({ where: { id: quoteId } });
+    if (!quote) return { success: false, error: "Cotizaci\xF3n no encontrada" };
+    if (quote.status === "CONVERTED") {
+      return { success: false, error: "No se puede anular una cotizaci\xF3n ya facturada" };
+    }
+    if (quote.status === "CANCELLED") {
+      return { success: true, data: quote };
+    }
+    const updated = await db_default.quote.update({
       where: { id: quoteId },
       data: { status: "CANCELLED" }
     });
     revalidatePath("/quotations");
-    return { success: true };
+    return { success: true, data: updated };
   } catch (error) {
     console.error("Error cancelling quote:", error);
-    return { success: false, error: "Error al cancelar cotizaci\xF3n" };
+    return { success: false, error: "Error al anular cotizaci\xF3n" };
   }
 }
 
@@ -7892,6 +7928,7 @@ __export(sales_exports, {
   getLastSale: () => getLastSale
 });
 init_db();
+import { Prisma } from "@prisma/client";
 
 // src/lib/presentations.ts
 var getBulkPresentationOptions = (product) => {
@@ -7922,6 +7959,31 @@ var resolvePresentationFactor = (product, presentation, presentationName, presen
   return 1;
 };
 
+// src/lib/stock-policy.ts
+var INSUFFICIENT_STOCK_CODE = "INSUFFICIENT_STOCK";
+var InsufficientStockError = class extends Error {
+  constructor(productId, productName, available, requested) {
+    super(buildInsufficientStockMessage(productName, available, requested));
+    this.code = INSUFFICIENT_STOCK_CODE;
+    this.name = "InsufficientStockError";
+    this.productId = productId;
+    this.productName = productName;
+    this.available = available;
+    this.requested = requested;
+  }
+};
+function allowsNegativeStock(product) {
+  return product?.allowNegativeStock === true;
+}
+function buildInsufficientStockMessage(productName, available, requested) {
+  const max = Math.max(0, available);
+  return `Stock insuficiente para "${productName}". Existencia m\xE1xima disponible: ${formatUnits(max)} (solicitado: ${formatUnits(requested)}).`;
+}
+function formatUnits(value) {
+  const rounded = Math.round((Number(value) || 0) * 100) / 100;
+  return `${rounded} unidades`;
+}
+
 // src/lib/actions/sales.ts
 var CreditAuthRequiredError = class extends Error {
   constructor() {
@@ -7929,12 +7991,34 @@ var CreditAuthRequiredError = class extends Error {
     this.requiresAdmin = true;
   }
 };
+var STOCK_TX_MAX_ATTEMPTS = 3;
+async function runStockSafeTransaction(fn) {
+  let lastError;
+  for (let attempt = 1; attempt <= STOCK_TX_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await db_default.$transaction(fn, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 5e3,
+        timeout: 15e3
+      });
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "P2034" || attempt === STOCK_TX_MAX_ATTEMPTS) throw error;
+      await new Promise((resolve2) => setTimeout(resolve2, 25 * attempt));
+    }
+  }
+  throw lastError;
+}
 async function consumeIngredientStock(tx, ingredient, requiredUnits, transactionId, userId, inventoryType) {
   if (requiredUnits <= 0) return;
   const inventoryItems = await tx.inventoryItem.findMany({
     where: { productId: ingredient.id, inventoryType },
     orderBy: { expiryDate: "asc" }
   });
+  const available = inventoryItems.reduce((sum, i) => sum + (i.quantity || 0), 0);
+  if (!allowsNegativeStock(ingredient) && requiredUnits > available) {
+    throw new InsufficientStockError(ingredient.id, ingredient.name, available, requiredUnits);
+  }
   let remaining = requiredUnits;
   for (const invItem of inventoryItems) {
     if (remaining <= 0) break;
@@ -8041,7 +8125,7 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
     const roundedSubtotal = Math.round(lineTotals * 100) / 100;
     const roundedTax = Math.round((roundedTotalAmount - roundedSubtotal) * 100) / 100;
     let createdInvoiceNumber = 0;
-    await db_default.$transaction(async (tx) => {
+    await runStockSafeTransaction(async (tx) => {
       for (const item of items) {
         const variantId = item.product.variantId;
         const parentProductId = item.product.parentProductId || item.product.id;
@@ -8052,7 +8136,7 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
         if (enableRecipes && productType === "RECIPE_ITEM") {
           const recipeLines = await tx.recipeItem.findMany({
             where: { productId: parentProductId },
-            include: { ingredient: { select: { id: true, name: true, isFractional: true } } }
+            include: { ingredient: { select: { id: true, name: true, isFractional: true, allowNegativeStock: true } } }
           });
           if (recipeLines.length > 0) {
             for (const line of recipeLines) {
@@ -8063,6 +8147,21 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           }
         }
         if (variantId) {
+          const variantRecord = await tx.productVariant.findUnique({
+            where: { id: variantId },
+            include: { size: true, color: true, product: true }
+          });
+          if (!variantRecord) {
+            throw new Error(`La variante del producto no existe.`);
+          }
+          if (!allowsNegativeStock(variantRecord.product) && physicalUnits > Math.max(0, variantRecord.stock)) {
+            throw new InsufficientStockError(
+              variantRecord.productId || parentProductId,
+              `${variantRecord.product.name} - ${variantRecord.size.name} - ${variantRecord.color.name}`,
+              variantRecord.stock,
+              physicalUnits
+            );
+          }
           const updatedVariant = await tx.productVariant.update({
             where: { id: variantId },
             data: { stock: { decrement: physicalUnits } },
@@ -8091,6 +8190,19 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           },
           orderBy: { expiryDate: "asc" }
         });
+        const productPolicy = await tx.product.findUnique({
+          where: { id: parentProductId },
+          select: { allowNegativeStock: true }
+        });
+        const availableForProduct = inventoryItems.reduce((sum, i) => sum + (i.quantity || 0), 0);
+        if (!allowsNegativeStock(productPolicy) && physicalUnits > Math.max(0, availableForProduct)) {
+          throw new InsufficientStockError(
+            parentProductId,
+            item.product.name,
+            availableForProduct,
+            physicalUnits
+          );
+        }
         let remainingToSell = physicalUnits;
         for (const invItem of inventoryItems) {
           if (remainingToSell <= 0) break;
@@ -8313,6 +8425,17 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
     return { success: true, invoiceNumber: createdInvoiceNumber };
   } catch (error) {
     console.error("Error creating sale:", error);
+    if (error instanceof InsufficientStockError) {
+      return {
+        success: false,
+        error: error.message,
+        code: INSUFFICIENT_STOCK_CODE,
+        productId: error.productId,
+        productName: error.productName,
+        available: error.available,
+        requested: error.requested
+      };
+    }
     if (error instanceof CreditAuthRequiredError) {
       return { success: false, error: error.message, requiresAdmin: true };
     }
@@ -9271,10 +9394,21 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { compress } from "hono/compress";
 var __dirname = fileURLToPath(new URL(".", import.meta.url));
 var PORT = Number(process.env.PORT || 9003);
 var FRONTEND_DIR = resolve(__dirname, "../dist");
 var app = buildDispatcherApp();
+app.use("*", compress());
+app.use("*", async (c, next) => {
+  await next();
+  const pathname = c.req.path;
+  if (pathname.startsWith("/assets/") || pathname.startsWith("/_next/static/")) {
+    c.header("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (pathname === "/sw.js" || pathname === "/manifest.json" || pathname === "/manifest.webmanifest" || pathname.endsWith(".html") || pathname === "/") {
+    c.header("Cache-Control", "no-cache, must-revalidate");
+  }
+});
 var frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 app.use("*", cors({
   origin: (origin) => {

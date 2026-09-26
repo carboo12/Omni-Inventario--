@@ -16,12 +16,20 @@ export async function createQuote(data: {
   total: number;
 }) {
   const session = await verifySession();
-  if (!session) return { success: false, error: 'Unauthorized' };
+  if (!session) return { success: false, error: 'Sin sesión activa. Inicie sesión nuevamente.' };
 
   try {
-    const subtotal = data.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-    const userId = (session as any).userId;
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) {
+      return { success: false, error: 'La cotización debe tener al menos un producto.' };
+    }
 
+    const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const total = Number.isFinite(data.total) && data.total > 0 ? data.total : subtotal;
+    const userId = (session as any).userId ?? null;
+
+    // quoteNumber es autoincremental en BD (COT-0000001, COT-0000002, ...);
+    // el registro se persiste junto con sus ítems en la misma transacción.
     const quote = await db.quote.create({
       data: {
         id: generateUUID(),
@@ -30,13 +38,13 @@ export async function createQuote(data: {
         expirationDays: data.expirationDays || 30,
         subtotal,
         tax: 0,
-        total: data.total || subtotal,
+        total,
         status: 'PENDING',
         notes: data.notes || null,
         clientId: data.clientId || null,
-        userId: userId || null,
+        userId,
         items: {
-          create: data.items.map(item => ({
+          create: items.map(item => ({
             id: generateUUID(),
             productId: item.productId || null,
             productName: item.productName,
@@ -61,29 +69,43 @@ export async function createQuote(data: {
 
 export async function getQuotes(search?: string) {
   const session = await verifySession();
-  if (!session) return { success: false, error: 'Unauthorized' };
+  if (!session) return { success: false, error: 'Sin sesión activa. Inicie sesión nuevamente.' };
 
   try {
     const where: any = {};
     if (search) {
-      const searchNum = parseInt(search.replace(/^COT-/i, '').replace(/^0+/, ''), 10);
+      const term = search.trim();
+      const searchNum = parseInt(term.replace(/^COT-/i, '').replace(/^0+/, ''), 10);
       if (Number.isFinite(searchNum) && searchNum > 0) {
         where.OR = [
           { quoteNumber: searchNum },
-          { customerName: { contains: search } },
+          { customerName: { contains: term } },
         ];
       } else {
-        where.customerName = { contains: search };
+        where.customerName = { contains: term };
       }
     }
 
+    // Sin filtro por usuario: cualquier usuario autenticado de la sucursal
+    // (incluido el rol Cashier) debe ver todas las cotizaciones emitidas en ella.
+    // El modelo no tiene columna companyId porque la base es de una sola empresa;
+    // el aislamiento se da por la base de datos/sucursal, no por el rol.
     const quotes = await db.quote.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: { items: true, user: true, customer: true }
     });
 
-    return { success: true, data: quotes };
+    // El estado PENDING es el que se guarda; la vigencia se deriva aquí para que
+    // la tabla no muestre "Pendiente" una cotización que ya venció.
+    const now = Date.now();
+    const data = (quotes as any[]).map((q) => {
+      const expiresAt = new Date(q.createdAt).getTime() + (q.expirationDays || 30) * 86400000;
+      const isExpired = expiresAt < now;
+      return { ...q, expiresAt: new Date(expiresAt).toISOString(), status: q.status === 'PENDING' && isExpired ? 'EXPIRED' : q.status };
+    });
+
+    return { success: true, data };
   } catch (error) {
     console.error('Error fetching quotes:', error);
     return { success: false, error: 'Error al obtener cotizaciones' };
@@ -318,18 +340,27 @@ export async function convertQuoteToInvoice(quoteId: string, sessionId: string, 
 
 export async function cancelQuote(quoteId: string) {
   const session = await verifySession();
-  if (!session) return { success: false, error: 'Unauthorized' };
+  if (!session) return { success: false, error: 'Sin sesión activa. Inicie sesión nuevamente.' };
 
   try {
-    await db.quote.update({
+    const quote = await db.quote.findUnique({ where: { id: quoteId } });
+    if (!quote) return { success: false, error: 'Cotización no encontrada' };
+    if (quote.status === 'CONVERTED') {
+      return { success: false, error: 'No se puede anular una cotización ya facturada' };
+    }
+    if (quote.status === 'CANCELLED') {
+      return { success: true, data: quote };
+    }
+
+    const updated = await db.quote.update({
       where: { id: quoteId },
       data: { status: 'CANCELLED' }
     });
 
     revalidatePath('/quotations');
-    return { success: true };
+    return { success: true, data: updated };
   } catch (error) {
     console.error('Error cancelling quote:', error);
-    return { success: false, error: 'Error al cancelar cotización' };
+    return { success: false, error: 'Error al anular cotización' };
   }
 }

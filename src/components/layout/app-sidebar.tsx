@@ -54,6 +54,7 @@ const navItems: NavItem[] = [
   { href: "/customers", label: "Clientes", icon: Users, roles: ["master-admin", "admin", "rutero"] },
   { href: "/customers/credit", label: "Cuentas por Cobrar", icon: Landmark, roles: ["master-admin", "admin", "cashier"] },
   { href: "/quotations", label: "Cotizaciones", icon: ClipboardList, roles: ["master-admin", "admin", "cashier"] },
+  { href: "/ruta", label: "Ruta & Entregas", icon: Truck, roles: ["master-admin", "admin", "cashier", "rutero", "dispatcher"] },
   { href: "/purchases", label: "Compras", icon: FileText, roles: ["master-admin", "admin"] },
   { href: "/suppliers", label: "Proveedores", icon: Truck, roles: ["master-admin", "admin"] },
   { href: "/reports", label: "Informes", icon: LineChart, roles: ["master-admin", "admin"] },

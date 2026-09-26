@@ -3,12 +3,15 @@ Environment variables loaded from .env
 Prisma schema loaded from prisma\schema.prisma
 Datasource "db": MySQL database "farmacia" at "localhost:3306"
 
-The database is already in sync with the Prisma schema.
+⚠️  There might be data loss when applying the changes:
+
+  • You are about to alter the column `type` on the `product` table, which contains 380 non-null values. The data in that column will be cast from `VarChar(191)` to `Enum(EnumId(7))`.
+
+
+
+Your database is now in sync with your Prisma schema. Done in 1.46s
 
 Running generate... (Use --skip-generate to skip the generators)
 [2K[1A[2K[GRunning generate... - Prisma Client
-[2K[1A[2K[GEPERM: operation not permitted, rename 'C:\Users\Rockero\Downloads\JoyeriaPlus\n
-ode_modules\.prisma\client\query_engine-windows.dll.node.tmp14532' -> 
-'C:\Users\Rockero\Downloads\JoyeriaPlus\node_modules\.prisma\client\query_engine
--windows.dll.node'
+[2K[1A[2K[G✔ Generated Prisma Client (v5.22.0) to .\node_modules\@prisma\client in 578ms
 

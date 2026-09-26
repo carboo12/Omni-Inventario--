@@ -40,6 +40,32 @@ export const getBulkPresentationOptions = (product: Product | null): BulkPresent
 };
 
 /**
+ * Resuelve la etiqueta de presentación que se imprime en el ticket (segunda línea
+ * de la columna Producto). Prioriza el nombre explícito de la presentación
+ * vendida y, si no existe, deduce entre la presentación a granel (caja legada) y
+ * la unidad base. Devuelve undefined cuando no hay información utilizable.
+ *
+ * Compartido por el POS y por la impresión de cotizaciones para que ambos
+ * impriman exactamente la misma presentación.
+ */
+export const resolvePresentationUnitLabel = (
+    product: Partial<Product> | null | undefined,
+    presentation?: string | null,
+    presentationName?: string | null
+): string | undefined => {
+    if (!product) return undefined;
+
+    const isBox = presentation === 'box' && !!product.hasBoxOption;
+    const explicit = presentationName?.trim();
+    if (explicit) return explicit;
+
+    const bulkUnit = product.bulkUnit?.trim();
+    if (isBox && bulkUnit) return bulkUnit;
+
+    return product.baseUnit?.trim() || undefined;
+};
+
+/**
  * Resuelve el factor de conversión a la unidad base de una presentación vendida.
  * Prioriza el factor congelado en el carrito (presentationFactor); si no, lo deduce
  * del producto según la clave de presentación o el nombre guardado. Retorna 1 para

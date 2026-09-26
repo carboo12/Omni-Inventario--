@@ -47,6 +47,21 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { ProductAddWizard } from '@/components/pos/product-add-wizard';
 import { usePersistedCart } from '@/hooks/use-persisted-cart';
 import { resolvePresentationFactor } from '@/lib/presentations';
+import {
+  allowsNegativeStock,
+  buildInsufficientStockMessage,
+  buildNoStockMessage,
+  clampQuantityToStock,
+  getProductStock,
+} from '@/lib/stock-policy';
+import { EncargoConfirmDialog, requestEncargoConfirmation } from '@/components/pos/encargo-confirm-dialog';
+
+/** `true` si la venta deja el inventario en negativo (solo con `allowNegativeStock`). */
+const computeIsEncargo = (product: Product, physicalUnits: number): boolean => {
+  if (!allowsNegativeStock(product)) return false;
+  if ((product as any).type === 'RECIPE_ITEM') return false;
+  return physicalUnits > getProductStock(product);
+};
 
 interface DispatcherPOSProps {
   products: Product[];
@@ -160,8 +175,8 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
     setWizardProduct({ product });
   };
 
-  const handleWizardConfirm = (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
-    addItemToCart(product, presentation, priceLevel, quantity, presentationName, presentationFactor);
+  const handleWizardConfirm = async (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
+    await addItemToCart(product, presentation, priceLevel, quantity, presentationName, presentationFactor);
     // Limpiar el buscador y los selectores temporales para agilizar el siguiente artículo.
     setWizardProduct(null);
     setSearchTerm('');
@@ -172,25 +187,48 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
     searchInputRef.current?.focus();
   };
 
-  const addItemToCart = (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
+  const addItemToCart = async (product: Product, presentation: 'unit' | 'box' | string, priceLevel: number, quantity: number, presentationName?: string, presentationFactor?: number) => {
     const currentStock = getPOSProductStock(product, inventory, userInventoryType);
-    if (currentStock <= 0) {
-      toast({ title: 'Sin Existencias', description: `"${product.name}" tiene existencia 0.`, variant: 'destructive' });
+    const allowEncargo = allowsNegativeStock(product);
+    // Sin existencias: solo se permite si el producto está marcado para venta
+    // bajo encargo; en cualquier otro caso el POS bloquea la venta.
+    if (currentStock <= 0 && !allowEncargo) {
+      toast({ title: 'Sin Existencias', description: buildNoStockMessage(), variant: 'destructive' });
       return;
     }
-    const qty = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
-    if (qty <= 0) return;
+    const requested = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
+    if (requested <= 0) return;
 
     // Factor de conversión a la unidad base (presentación fija o legado caja).
     const factor = resolvePresentationFactor(product, presentation, presentationName, presentationFactor);
     const unitsToConsume = factor;
     const itemInCart = cart.find(item => item.product.id === product.id);
     const existingConsumption = itemInCart ? itemInCart.quantity * resolvePresentationFactor(itemInCart.product, itemInCart.presentation, itemInCart.presentationName, itemInCart.presentationFactor) : 0;
+    const requestedUnits = existingConsumption + requested * unitsToConsume;
 
-    if (existingConsumption + qty * unitsToConsume > currentStock) {
-      toast({ title: 'Límite de Existencias', description: `Solo hay ${currentStock} unidades disponibles.`, variant: 'destructive' });
-      return;
+    // Producto marcado para stock negativo: se pide confirmación al cajero
+    // antes de dejarlo bajo encargo.
+    if (allowEncargo && requestedUnits > currentStock) {
+      const confirmed = await requestEncargoConfirmation({
+        productName: product.name,
+        units: requestedUnits,
+        available: currentStock,
+      });
+      if (!confirmed) return;
+    } else if (requestedUnits > currentStock) {
+      // Se limita la cantidad a Math.min(solicitado, disponible).
+      const maxQty = clampQuantityToStock(requested, currentStock - existingConsumption, false);
+      toast({
+        title: 'Límite de Existencias',
+        description: buildInsufficientStockMessage(product.name, currentStock, requestedUnits),
+        variant: 'destructive',
+      });
+      if (maxQty <= 0) return;
+      return addItemToCart(product, presentation, priceLevel, maxQty, presentationName, presentationFactor);
     }
+
+    const qty = requested;
+    const isEncargo = computeIsEncargo(product, existingConsumption + qty * unitsToConsume);
 
     setCart(prev => {
       const existingItem = prev.find(item => item.product.id === product.id && item.presentation === presentation);
@@ -199,11 +237,11 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
       if (existingItem) {
         return prev.map(item =>
           item.product.id === product.id && item.presentation === presentation
-            ? { ...item, quantity: Math.round((item.quantity + qty) * 100) / 100 }
+            ? { ...item, quantity: Math.round((item.quantity + qty) * 100) / 100, isEncargo: item.isEncargo || isEncargo }
             : item
         );
       }
-      return [...prev, { id: product.id, product, quantity: qty, presentation, presentationName, presentationFactor: factor, unitPrice, priceLevel }];
+      return [...prev, { id: product.id, product, quantity: qty, presentation, presentationName, presentationFactor: factor, unitPrice, priceLevel, isEncargo }];
     });
   };
 
@@ -909,13 +947,16 @@ export function DispatcherPOS({ products, inventory }: DispatcherPOSProps) {
       />
 
       {/* Wizard compartido: presentación → cantidad → nivel de precio */}
-      <ProductAddWizard
-        product={wizardProduct?.product ?? null}
-        defaultPriceLevel={customerPriceLevel}
-        wholesaleEnabled={settings.enableWholesalePrices !== false}
-        onConfirm={handleWizardConfirm}
-        onClose={() => setWizardProduct(null)}
-      />
+   <ProductAddWizard
+   product={wizardProduct?.product ?? null}
+   defaultPriceLevel={customerPriceLevel}
+   wholesaleEnabled={settings.enableWholesalePrices !== false}
+   onConfirm={handleWizardConfirm}
+   onClose={() => setWizardProduct(null)}
+   />
+
+   {/* Confirmación de venta bajo encargo (productos con allowNegativeStock). */}
+   <EncargoConfirmDialog />
     </div>
   );
 }

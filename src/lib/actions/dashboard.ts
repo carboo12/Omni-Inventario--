@@ -2,6 +2,7 @@
 
 import db from '../db';
 import { UserRole, InventoryType } from '../types';
+import { isLowStock } from '../inventory-status';
 
 export interface DashboardStats {
     totalRevenue: number;
@@ -167,15 +168,18 @@ export async function getDashboardStats(role: UserRole, inventoryType?: Inventor
 
     const lowStockProductIds = new Set<string>();
     for (const item of inventoryItems) {
-        const total = stockByProduct.get(item.productId || item.productName) || 0;
-        const min = item.product?.minStock ?? 10;
-        if (total <= 0 || total < min) {
-            lowStockProductIds.add(item.productId);
+        const id = item.productId || item.productName;
+        const total = stockByProduct.get(id) || 0;
+        // Misma regla que usa el filtro "Stock Bajo" de /inventory:
+        // stock total del producto <= minStock  OR  stock total <= 0.
+        if (isLowStock(total, item.product?.minStock)) {
+            lowStockProductIds.add(id);
         }
     }
 
+    // Las variantes se cuentan con la misma regla (incluidas las que están en 0).
     const lowStockCount = lowStockProductIds.size
-        + productVariants.filter((item: any) => item.stock > 0 && item.stock < (item.product.minStock || 1)).length;
+        + productVariants.filter((item: any) => isLowStock(item.stock, item.product?.minStock)).length;
     const expiringProductsCount = inventoryItems.filter((item: any) => {
         return item.expiryDate > todayIso && item.expiryDate <= next30DaysIso;
     }).length;

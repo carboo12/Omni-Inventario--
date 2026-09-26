@@ -20,6 +20,7 @@ const _dashboardComponent = lazy(() => import('./app/(app)/dashboard/page'));
 const _delivery_routesComponent = lazy(() => import('./app/(app)/delivery-routes/client'));
 const _delivery_routes_newComponent = lazy(() => import('./app/(app)/delivery-routes/new/client'));
 const _delivery_routes__id_Component = lazy(() => import('./app/(app)/delivery-routes/[id]/client'));
+const _facturas__id__printComponent = lazy(() => import('./app/(app)/facturas/[id]/print/client'));
 const _inventory_categoriesComponent = lazy(() => import('./app/(app)/inventory/categories/page'));
 const _inventoryComponent = lazy(() => import('./app/(app)/inventory/client'));
 const _inventory_historyComponent = lazy(() => import('./app/(app)/inventory/history/client'));
@@ -43,6 +44,7 @@ const _purchases_orders__id_Component = lazy(() => import('./app/(app)/purchases
 const _quotationsComponent = lazy(() => import('./app/(app)/quotations/client'));
 const _reports_cash_closingsComponent = lazy(() => import('./app/(app)/reports/cash-closings/client'));
 const _reportsComponent = lazy(() => import('./app/(app)/reports/client'));
+const _rutaComponent = lazy(() => import('./app/(app)/ruta/client'));
 const _settings_auditComponent = lazy(() => import('./app/(app)/settings/audit/client'));
 const _settingsComponent = lazy(() => import('./app/(app)/settings/page'));
 const _suppliersComponent = lazy(() => import('./app/(app)/suppliers/client'));
@@ -82,6 +84,7 @@ const _dashboardFallback = LoadingFallback;
 const _delivery_routesFallback = LoadingFallback;
 const _delivery_routes_newFallback = LoadingFallback;
 const _delivery_routes__id_Fallback = LoadingFallback;
+const _facturas__id__printFallback = LoadingFallback;
 const _inventory_categoriesFallback = LoadingFallback;
 const _inventoryFallback = LoadingFallback;
 const _inventory_historyFallback = LoadingFallback;
@@ -105,6 +108,7 @@ const _purchases_orders__id_Fallback = LoadingFallback;
 const _quotationsFallback = LoadingFallback;
 const _reports_cash_closingsFallback = LoadingFallback;
 const _reportsFallback = LoadingFallback;
+const _rutaFallback = LoadingFallback;
 const _settings_auditFallback = LoadingFallback;
 const _settingsFallback = LoadingFallback;
 const _suppliersFallback = LoadingFallback;
@@ -221,6 +225,8 @@ const _delivery_routes__id_Wrapper = () => {
   if ([q_delivery_routes__id__route].some((q) => q.isPending || q.data === undefined)) return createElement(LoadingFallback);
   return createElement(Suspense, { fallback: _delivery_routes__id_Fallback() }, createElement(_delivery_routes__id_Component, queries));
 };
+
+const _facturas__id__printWrapper = () => createElement(Suspense, { fallback: _facturas__id__printFallback() }, createElement(_facturas__id__printComponent, {}));
 
 const _inventory_categoriesWrapper = () => createElement(Suspense, { fallback: _inventory_categoriesFallback() }, createElement(_inventory_categoriesComponent, {}));
 
@@ -453,6 +459,8 @@ const _reports_cash_closingsWrapper = () => {
 
 const _reportsWrapper = () => createElement(Suspense, { fallback: _reportsFallback() }, createElement(_reportsComponent, {}));
 
+const _rutaWrapper = () => createElement(Suspense, { fallback: _rutaFallback() }, createElement(_rutaComponent, {}));
+
 const _settings_auditWrapper = () => {
   const params = useRouteParams();
   const queries: any = {};
@@ -530,6 +538,7 @@ export const authenticatedPages: Record<string, PageEntry> = {
   '/delivery-routes': { Component: _delivery_routesWrapper, requiresAuth: true },
   '/delivery-routes/new': { Component: _delivery_routes_newWrapper, requiresAuth: true },
   '/delivery-routes/[id]': { Component: _delivery_routes__id_Wrapper, requiresAuth: true },
+  '/facturas/[id]/print': { Component: _facturas__id__printWrapper, requiresAuth: true },
   '/inventory/categories': { Component: _inventory_categoriesWrapper, requiresAuth: true },
   '/inventory': { Component: _inventoryWrapper, requiresAuth: true },
   '/inventory/history': { Component: _inventory_historyWrapper, requiresAuth: true },
@@ -553,6 +562,7 @@ export const authenticatedPages: Record<string, PageEntry> = {
   '/quotations': { Component: _quotationsWrapper, requiresAuth: true },
   '/reports/cash-closings': { Component: _reports_cash_closingsWrapper, requiresAuth: true },
   '/reports': { Component: _reportsWrapper, requiresAuth: true },
+  '/ruta': { Component: _rutaWrapper, requiresAuth: true },
   '/settings/audit': { Component: _settings_auditWrapper, requiresAuth: true },
   '/settings': { Component: _settingsWrapper, requiresAuth: true },
   '/suppliers': { Component: _suppliersWrapper, requiresAuth: true },

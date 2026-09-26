@@ -1,6 +1,8 @@
 // Convierte una venta ya registrada en la BD en los MISMOS datos de ticket que usa el
 // cobro directo (prepareReceiptData en pos/client.tsx). Garantiza que la reimpresión y
 // el cobro impriman exactamente la misma plantilla ESC/POS con el mismo esquema de datos.
+import { getDeliveryStatusLabel, isRouteDelivery } from './delivery-status';
+
 export const buildReceiptDataFromInvoice = (invoice: any, settings: any, ticketLabel: string) => {
     // Resuelve el nombre del cliente contemplando los distintos orígenes de datos
     // (snapshot de nombre, relación de cliente con 'name' o con 'fullName').
@@ -22,6 +24,8 @@ export const buildReceiptDataFromInvoice = (invoice: any, settings: any, ticketL
             total: item.totalPrice,
             // Cantidad + presentación exacta (el template renderiza "{quantity} {unit}").
             unit,
+            // Código del producto para la columna "Código" de la Hoja Normal.
+            code: item.product?.barcode || undefined,
             // Nivel de precio aplicado al momento del cobro (1 = base/general).
             priceLevel: item.priceLevel || 1,
             pending: !!item.isEncargo,
@@ -46,6 +50,10 @@ export const buildReceiptDataFromInvoice = (invoice: any, settings: any, ticketL
         date: new Date(invoice.date),
         cashierName: invoice.user?.name || 'Cajero',
         clientName: customerName,
+        // La dirección/teléfono de la venta a domicilio prima sobre los del cliente
+        // (pueden diferir si el cliente pidió entregar en otro punto).
+        clientAddress: invoice.deliveryAddress || invoice.customer?.address || undefined,
+        clientPhone: invoice.deliveryPhone || invoice.customer?.phone || undefined,
         items,
         subtotal,
         tax,
@@ -59,6 +67,13 @@ export const buildReceiptDataFromInvoice = (invoice: any, settings: any, ticketL
         logoSvg: settings.logoSvg,
         exchangeRate: parseFloat(settings.exchangeRate) || 36.5,
         showTotalUSD: true,
-        isReprint: true
+        isReprint: true,
+        // Datos de reparto: solo se imprimen en la factura Hoja Normal.
+        deliveryType: isRouteDelivery(invoice.deliveryType) ? 'route' : 'counter',
+        deliveryStatus: isRouteDelivery(invoice.deliveryType)
+            ? getDeliveryStatusLabel(invoice.deliveryStatus, invoice.payOnDelivery)
+            : undefined,
+        routeName: invoice.routeStop?.route?.name || undefined,
+        deliveredByName: invoice.routeStop?.route?.rutero?.name || undefined,
     };
 };

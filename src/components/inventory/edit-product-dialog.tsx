@@ -89,6 +89,8 @@ const formSchema = z.object({
   // Switches
   isFractional: z.boolean().default(false),
   trackInventory: z.boolean().default(true),
+  /** Permite vender dejando el inventario en negativo (bajo encargo). */
+  allowNegativeStock: z.boolean().default(false),
 
   // Especificaciones adicionales (Descripción 2 y Descripción 3, opcionales)
   hasExtraDetails: z.boolean().default(false),
@@ -147,6 +149,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
         costPriceNIO: product.costPriceNIO ?? 0,
         priceNIO: product.priceNIO,
         minStock: product.minStock ?? 0,
+        allowNegativeStock: (product as any).allowNegativeStock === true,
         categoryId: (product as any).categoryId || '',
         inventoryType: product.inventoryType as "pharmacy" | "general",
         batch: inventoryItem.batch,
@@ -1027,6 +1030,26 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                     )}
                   />
                 </div>
+
+                {/* Venta bajo encargo: permite vender dejando el inventario en negativo. */}
+                <FormField
+                  control={form.control}
+                  name="allowNegativeStock"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-amber-900">Permitir venta bajo encargo</FormLabel>
+                        <p className="text-[11px] text-amber-800">
+                          Si está activo, el POS permite vender sin existencias y deja el inventario en negativo (entrega pendiente).
+                          Desactivado, el POS bloquea la venta cuando no hay stock.
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} disabled={isSaving} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
                 </>
                 )}
                 {mode === 'PHARMACY' && batchExpiryEnabled && (
