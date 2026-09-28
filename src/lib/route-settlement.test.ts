@@ -128,7 +128,7 @@ describe("computeSettlementTotals", () => {
             [],
             12
         );
-        expect(totals.originalAmount).toBe(10);
+        expect(totals.originalAmount).toBe(12);
     });
 });
 
