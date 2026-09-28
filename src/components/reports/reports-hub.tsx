@@ -14,6 +14,7 @@ import {
   getReportDeadStock,
   getReportProfitMargin,
   getAgingReport,
+  getDispatcherProductivityReport,
 } from "@/lib/actions-client/reports";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ import { SalesByHourReport } from "./report-by-hour";
 import { DeadStockReport } from "./report-deadstock";
 import { ProfitMarginReport } from "./report-profit-margin";
 import { AgingReport } from "./report-aging";
+import { DispatcherReport } from "./report-dispatcher";
 
 type TabKey =
   | "resumen"
@@ -59,7 +61,8 @@ type TabKey =
   | "hora"
   | "stock"
   | "utilidad"
-  | "saldos";
+  | "saldos"
+  | "despachadores";
 
 const TAB_LABELS: Record<TabKey, string> = {
   resumen: "Resumen",
@@ -72,6 +75,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   stock: "Stock Muerto",
   utilidad: "Utilidad",
   saldos: "Antigüedad",
+  despachadores: "Por Despachador",
 };
 
 const TAB_EXPORT_TITLES: Record<TabKey, string> = {
@@ -85,6 +89,7 @@ const TAB_EXPORT_TITLES: Record<TabKey, string> = {
   stock: "Productos Sin Rotación (Stock Muerto)",
   utilidad: "Reporte de Utilidad / Margen",
   saldos: "Antigüedad de Saldos (CxC / CxP)",
+  despachadores: "Productividad de Despachadores",
 };
 
 interface TabExport {
@@ -196,6 +201,20 @@ function buildTabExport(tab: TabKey, data: any): TabExport | null {
         headers: ["Método", "Transacciones", "Monto (C$)", "Participación (%)"],
         rows: data.rows.map((r: any) => [r.label, r.transactions, n(r.total), n(r.sharePct)]),
       };
+    case "despachadores":
+      return {
+        filename: "productividad-despachadores",
+        sheet: "Despachadores",
+        headers: ["Despachador", "Nº Despachos", "Unidades", "Total Ventas (C$)", "Participación (%)", "Ticket Prom. (C$)"],
+        rows: data.rows.map((r: any) => [
+          r.dispatcherName || "Desconocido",
+          r.dispatches,
+          n(r.units),
+          n(r.revenue),
+          n(r.sharePct),
+          n(r.avgTicket),
+        ]),
+      };
     case "cajeros":
       return {
         filename: "ventas-por-cajero",
@@ -306,6 +325,8 @@ export function ReportsHub() {
   const [tab, setTab] = useState<TabKey>("resumen");
   const [filters, setFilters] = useState<ReportFilters>(DEFAULT_FILTERS);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const [dispProductIds, setDispProductIds] = useState<string[]>([]);
+  const [dispCategoryId, setDispCategoryId] = useState<string>("all");
 
   const effective = useMemo(() => {
     let from = filters.from;
@@ -378,6 +399,11 @@ export function ReportsHub() {
       queryKey: ["reports", "aging"],
       queryFn: () => getAgingReport(),
       enabled: tab === "saldos",
+    }),
+    despachadores: useQuery({
+      queryKey: ["reports", "dispatchers", effective.from, effective.to, dispProductIds, dispCategoryId],
+      queryFn: () => getDispatcherProductivityReport(effective.from, effective.to, dispProductIds, dispCategoryId),
+      enabled: tab === "despachadores",
     }),
   };
 
@@ -560,11 +586,14 @@ export function ReportsHub() {
       {/* Pestañas */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
         <TabsList className="no-print flex h-auto flex-wrap gap-1">
-          {Object.entries(TAB_LABELS).map(([key, label]) => (
-            <TabsTrigger key={key} value={key} className="text-xs">
-              {label}
-            </TabsTrigger>
-          ))}
+          {Object.entries(TAB_LABELS).map(([key, label]) => {
+            if (key === "despachadores" && queries.despachadores.data?.isDispatcherMode === false) return null;
+            return (
+              <TabsTrigger key={key} value={key} className="text-xs">
+                {label}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
         <TabsContent value="resumen">
@@ -596,6 +625,19 @@ export function ReportsHub() {
         </TabsContent>
         <TabsContent value="saldos">
           <AgingReport data={queries.saldos.data} isLoading={queries.saldos.isLoading} isError={queries.saldos.isError} onRetry={queries.saldos.refetch} />
+        </TabsContent>
+        <TabsContent value="despachadores">
+          <DispatcherReport
+            data={queries.despachadores.data}
+            isLoading={queries.despachadores.isLoading}
+            isError={queries.despachadores.isError}
+            onRetry={queries.despachadores.refetch}
+            filterData={filterData}
+            selectedProductIds={dispProductIds}
+            selectedCategoryId={dispCategoryId}
+            onProductsChange={setDispProductIds}
+            onCategoryChange={setDispCategoryId}
+          />
         </TabsContent>
       </Tabs>
     </div>

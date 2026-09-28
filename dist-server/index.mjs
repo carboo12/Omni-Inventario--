@@ -1104,9 +1104,102 @@ var getPaymentBucket = (paymentMethod) => {
 };
 var isCreditPayment = (paymentMethod) => getPaymentBucket(paymentMethod) === "credit";
 
+// src/lib/route-settlement.ts
+var PAY_ON_DELIVERY_METHOD = "Cobro contra entrega";
+var GENERIC_CUSTOMER_NAMES = ["ANONIM", "AN\xD3NIMO", "CLIENTE GENERAL", "Cliente General"];
+var ROUTE_STATUS = {
+  /** Emitido por el POS, el dinero está en la calle. */
+  PENDIENTE_LIQUIDACION: "PENDIENTE_LIQUIDACION",
+  /** Entregado y cobrado por el rutero. */
+  LIQUIDADO_Y_PAGADO: "LIQUIDADO_Y_PAGADO",
+  /** Entregado con devolución parcial: se cobra solo el neto. */
+  LIQUIDADO_CON_DEVOLUCION_PARCIAL: "LIQUIDADO_CON_DEVOLUCION_PARCIAL",
+  /** El cliente no aceptó el pedido: vuelve todo a bodega. */
+  RECHAZADO_EN_RUTA: "RECHAZADO_EN_RUTA"
+};
+var SETTLEMENT_OUTCOMES = {
+  ENTREGA_COMPLETA: "ENTREGA_COMPLETA",
+  DEVOLUCION_PARCIAL: "DEVOLUCION_PARCIAL",
+  DEVOLUCION_TOTAL: "DEVOLUCION_TOTAL"
+};
+var SETTLEMENT_FILTERS = {
+  PENDIENTES: "PENDIENTES",
+  LIQUIDADOS: "LIQUIDADOS",
+  DEVUELTOS: "DEVUELTOS"
+};
+var SETTLEMENT_FILTER_OPTIONS = [
+  { value: SETTLEMENT_FILTERS.PENDIENTES, label: "Pendientes de Cierre" },
+  { value: SETTLEMENT_FILTERS.LIQUIDADOS, label: "Liquidados / Cobrados" },
+  { value: SETTLEMENT_FILTERS.DEVUELTOS, label: "Devueltos / Cancelados" }
+];
+var ROUTE_STATUS_LABELS = {
+  [ROUTE_STATUS.PENDIENTE_LIQUIDACION]: "Pendiente de Cierre",
+  [ROUTE_STATUS.LIQUIDADO_Y_PAGADO]: "Liquidado y Cobrado",
+  [ROUTE_STATUS.LIQUIDADO_CON_DEVOLUCION_PARCIAL]: "Liquidado con Devoluci\xF3n",
+  [ROUTE_STATUS.RECHAZADO_EN_RUTA]: "Devuelto / Rechazado"
+};
+var ROUTE_STATUS_BADGE = {
+  [ROUTE_STATUS.PENDIENTE_LIQUIDACION]: "bg-amber-100 text-amber-800 border-amber-300",
+  [ROUTE_STATUS.LIQUIDADO_Y_PAGADO]: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  [ROUTE_STATUS.LIQUIDADO_CON_DEVOLUCION_PARCIAL]: "bg-sky-100 text-sky-800 border-sky-300",
+  [ROUTE_STATUS.RECHAZADO_EN_RUTA]: "bg-rose-100 text-rose-800 border-rose-300"
+};
+var round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+function isGenericCustomerName(name) {
+  const normalized = (name || "").trim().toUpperCase();
+  if (!normalized) return true;
+  return GENERIC_CUSTOMER_NAMES.some((generic) => generic.toUpperCase() === normalized);
+}
+function computeSettlementTotals(items, returns, invoiceTotal) {
+  const lineAmount = items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0);
+  const originalAmount = round2(Number(invoiceTotal) || lineAmount);
+  let returnedAmount = 0;
+  let returnedUnits = 0;
+  for (const line of returns) {
+    const item = items.find((candidate) => candidate.id === line.invoiceItemId);
+    if (!item) continue;
+    const quantity = Math.max(0, Math.floor(Number(line.quantity) || 0));
+    if (quantity === 0) continue;
+    const capped = Math.min(quantity, Math.max(0, Math.floor(Number(item.quantity) || 0)));
+    if (capped === 0) continue;
+    const unitValue = Number(item.quantity) > 0 ? (Number(item.totalPrice) || (Number(item.unitPrice) || 0) * Number(item.quantity)) / Number(item.quantity) : Number(item.unitPrice) || 0;
+    returnedAmount += unitValue * capped;
+    returnedUnits += capped;
+  }
+  returnedAmount = round2(returnedAmount);
+  const originalUnits = items.reduce((sum, item) => sum + Math.floor(Number(item.quantity) || 0), 0);
+  const netAmount = round2(Math.max(0, originalAmount - returnedAmount));
+  return {
+    originalUnits,
+    deliveredUnits: Math.max(0, originalUnits - returnedUnits),
+    returnedUnits,
+    originalAmount,
+    returnedAmount,
+    netAmount,
+    hasPartialReturn: returnedUnits > 0 && returnedUnits < originalUnits,
+    isFullReturn: originalUnits > 0 && returnedUnits >= originalUnits
+  };
+}
+function resolveOutcome(totals) {
+  if (totals.returnedUnits <= 0) return SETTLEMENT_OUTCOMES.ENTREGA_COMPLETA;
+  if (totals.isFullReturn) return SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL;
+  return SETTLEMENT_OUTCOMES.DEVOLUCION_PARCIAL;
+}
+function routeStatusForOutcome(outcome) {
+  switch (outcome) {
+    case SETTLEMENT_OUTCOMES.ENTREGA_COMPLETA:
+      return ROUTE_STATUS.LIQUIDADO_Y_PAGADO;
+    case SETTLEMENT_OUTCOMES.DEVOLUCION_PARCIAL:
+      return ROUTE_STATUS.LIQUIDADO_CON_DEVOLUCION_PARCIAL;
+    case SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL:
+    default:
+      return ROUTE_STATUS.RECHAZADO_EN_RUTA;
+  }
+}
+
 // src/lib/actions/cash-register.ts
 async function computeSessionBreakdown(client, sessionId) {
-  const [invoices, servicesAgg, sessionRow] = await Promise.all([
+  const [invoices, servicesAgg, settlements, sessionRow] = await Promise.all([
     client.salesInvoice.findMany({
       where: {
         sessionId,
@@ -1118,18 +1211,25 @@ async function computeSessionBreakdown(client, sessionId) {
       where: { sessionId },
       _sum: { amount: true }
     }),
+    // Pedidos en ruta cobrados por el cajero: el dinero entra a ESTA caja el día
+    // de la liquidación, no el de la venta.
+    client.routeSettlement.findMany({
+      where: { sessionId },
+      select: { collectedAmount: true, paymentMethod: true }
+    }),
     client.cashRegisterSession.findUnique({
       where: { id: sessionId },
       select: { totalReturns: true, salesAbonos: true, salesAbonosCard: true }
     })
   ]);
-  const round23 = (n) => Math.round(n * 100) / 100;
+  const round25 = (n) => Math.round(n * 100) / 100;
   let invoiceTotal = 0;
   let salesCash = 0;
   let salesCard = 0;
   let salesUSD = 0;
   let salesCredit = 0;
   for (const inv of invoices) {
+    if ((inv.paymentMethod || "") === PAY_ON_DELIVERY_METHOD) continue;
     const amount = Number(inv.totalAmount) || 0;
     invoiceTotal += amount;
     switch (getPaymentBucket(inv.paymentMethod || "")) {
@@ -1149,14 +1249,35 @@ async function computeSessionBreakdown(client, sessionId) {
         break;
     }
   }
+  for (const settlement of settlements) {
+    const amount = Number(settlement.collectedAmount) || 0;
+    if (amount <= 0) continue;
+    invoiceTotal += amount;
+    switch (getPaymentBucket(settlement.paymentMethod || "")) {
+      case "cash":
+        salesCash += amount;
+        break;
+      case "card":
+        salesCard += amount;
+        break;
+      case "usd":
+        salesUSD += amount;
+        break;
+      case "credit":
+        salesCredit += amount;
+        break;
+      default:
+        break;
+    }
+  }
   const salesServices = Number(servicesAgg._sum.amount) || 0;
   return {
-    totalSales: round23(invoiceTotal + salesServices),
-    salesCash: round23(salesCash + salesServices),
-    salesCard: round23(salesCard),
-    salesUSD: round23(salesUSD),
-    salesCredit: round23(salesCredit),
-    salesServices: round23(salesServices),
+    totalSales: round25(invoiceTotal + salesServices),
+    salesCash: round25(salesCash + salesServices),
+    salesCard: round25(salesCard),
+    salesUSD: round25(salesUSD),
+    salesCredit: round25(salesCredit),
+    salesServices: round25(salesServices),
     salesAbonos: Number(sessionRow?.salesAbonos) || 0,
     salesAbonosCard: Number(sessionRow?.salesAbonosCard) || 0,
     totalReturns: Number(sessionRow?.totalReturns) || 0
@@ -1232,7 +1353,7 @@ async function openSession(cashierId, cashierName, initialAmount, initialAmountU
 async function closeCashSession(sessionId, payload = {}) {
   const actualCash = Number(payload?.actualCash) || 0;
   const actualUSD = Number(payload?.actualUSD) || 0;
-  const round23 = (n) => Math.round(n * 100) / 100;
+  const round25 = (n) => Math.round(n * 100) / 100;
   const result = await db_default.$transaction(async (tx) => {
     const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
     if (!session) throw new Error("Session not found");
@@ -1243,11 +1364,11 @@ async function closeCashSession(sessionId, payload = {}) {
     });
     const totalOutflows = Number(outflowsAgg._sum.amount) || 0;
     const abonosCash = Math.round((breakdown.salesAbonos - breakdown.salesAbonosCard) * 100) / 100;
-    const expectedCash = round23((session.initialAmount || 0) + breakdown.salesCash + abonosCash - totalOutflows - breakdown.totalReturns);
-    const expectedUSD = round23((session.initialAmountUSD || 0) + breakdown.salesUSD);
+    const expectedCash = round25((session.initialAmount || 0) + breakdown.salesCash + abonosCash - totalOutflows - breakdown.totalReturns);
+    const expectedUSD = round25((session.initialAmountUSD || 0) + breakdown.salesUSD);
     const finalAmount = expectedCash;
-    const difference = round23(actualCash - expectedCash);
-    const differenceUSD = round23(actualUSD - expectedUSD);
+    const difference = round25(actualCash - expectedCash);
+    const differenceUSD = round25(actualUSD - expectedUSD);
     const closingTime = (/* @__PURE__ */ new Date()).toISOString();
     const updated = await tx.cashRegisterSession.update({
       where: { id: sessionId },
@@ -2108,6 +2229,14 @@ async function createOrUpdateCustomer(data) {
   if (!isAdmin) {
     data.hasCredit = false;
     data.creditLimit = 0;
+    data.creditDays = null;
+  }
+  const hasCreditDaysKey = Object.prototype.hasOwnProperty.call(data, "creditDays");
+  if (hasCreditDaysKey) {
+    const days = Number(data.creditDays);
+    data.creditDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
+  } else {
+    delete data.creditDays;
   }
   let existing = await db_default.customer.findFirst({
     where: {
@@ -2194,12 +2323,16 @@ async function updateCustomerCredit(id, data) {
     if (!session || !isAdminRole(session.role)) {
       return { success: false, error: "No autorizado. Solo el Administrador puede modificar la configuraci\xF3n de cr\xE9dito." };
     }
+    const hasCreditDaysKey = Object.prototype.hasOwnProperty.call(data, "creditDays");
+    const days = Number(data.creditDays);
+    const normalizedDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
     const customer = await db_default.customer.update({
       where: { id },
       data: {
         hasCredit: data.hasCredit,
         creditLimit: Number(data.creditLimit) || 0,
-        ...typeof data.interestRate === "number" ? { interestRate: data.interestRate } : {}
+        ...typeof data.interestRate === "number" ? { interestRate: data.interestRate } : {},
+        ...hasCreditDaysKey ? { creditDays: normalizedDays } : {}
       }
     });
     await recordAudit({
@@ -2255,7 +2388,7 @@ async function getCustomerStatement(id) {
     return { success: false, error: "No se pudo obtener el estado de cuenta" };
   }
 }
-var round2 = (n) => Math.round(n * 100) / 100;
+var round22 = (n) => Math.round(n * 100) / 100;
 async function applyPaymentToInvoices(tx, customerId, amount) {
   const invoices = await tx.salesInvoice.findMany({
     where: { customerId, status: "COMPLETED", pendingBalance: { gt: 5e-3 } },
@@ -2268,9 +2401,9 @@ async function applyPaymentToInvoices(tx, customerId, amount) {
     include: { salesInvoice: { select: { id: true } } }
   });
   const remainingByInvoice = {};
-  for (const inv of invoices) remainingByInvoice[inv.id] = round2(Number(inv.pendingBalance) || 0);
+  for (const inv of invoices) remainingByInvoice[inv.id] = round22(Number(inv.pendingBalance) || 0);
   const chunks = [];
-  let remaining = round2(amount);
+  let remaining = round22(amount);
   const takeFromInvoice = async (invoiceId, take) => {
     const bal = remainingByInvoice[invoiceId] ?? 0;
     if (bal <= 5e-3 || take <= 5e-3) return 0;
@@ -2279,8 +2412,8 @@ async function applyPaymentToInvoices(tx, customerId, amount) {
       where: { id: invoiceId },
       data: { pendingBalance: { decrement: applied } }
     });
-    remainingByInvoice[invoiceId] = round2(bal - applied);
-    return round2(applied);
+    remainingByInvoice[invoiceId] = round22(bal - applied);
+    return round22(applied);
   };
   for (const inst of installments) {
     if (remaining <= 5e-3) break;
@@ -2290,20 +2423,20 @@ async function applyPaymentToInvoices(tx, customerId, amount) {
       await tx.creditInstallment.update({ where: { id: inst.id }, data: { status: "PAID" } });
     }
     chunks.push({ invoiceId: inst.saleId, amount: applied });
-    remaining = round2(remaining - applied);
+    remaining = round22(remaining - applied);
   }
   for (const inv of invoices) {
     if (remaining <= 5e-3) break;
     const bal = remainingByInvoice[inv.id] ?? 0;
     if (bal <= 5e-3) continue;
-    const applied = round2(Math.min(bal, remaining));
+    const applied = round22(Math.min(bal, remaining));
     await tx.salesInvoice.update({
       where: { id: inv.id },
       data: { pendingBalance: { decrement: applied } }
     });
-    remainingByInvoice[inv.id] = round2(bal - applied);
+    remainingByInvoice[inv.id] = round22(bal - applied);
     chunks.push({ invoiceId: inv.id, amount: applied });
-    remaining = round2(remaining - applied);
+    remaining = round22(remaining - applied);
   }
   if (remaining > 5e-3) {
     chunks.push({ invoiceId: null, amount: remaining });
@@ -2314,12 +2447,12 @@ async function recordCreditPayment(data) {
   try {
     const session = await verifySession();
     if (!session) return { success: false, error: "No autorizado" };
-    const amount = round2(Number(data.amount));
+    const amount = round22(Number(data.amount));
     if (!amount || amount <= 0) return { success: false, error: "Monto inv\xE1lido" };
     const result = await db_default.$transaction(async (tx) => {
       const customer = await tx.customer.findUnique({ where: { id: data.customerId } });
       if (!customer) throw new Error("Cliente no encontrado");
-      if (amount > round2(Number(customer.currentBalance) || 0) + 5e-3) {
+      if (amount > round22(Number(customer.currentBalance) || 0) + 5e-3) {
         throw new Error(`El monto excede el saldo pendiente del cliente (C$ ${Number(customer.currentBalance).toFixed(2)}).`);
       }
       const chunks = await applyPaymentToInvoices(tx, data.customerId, amount);
@@ -3481,6 +3614,7 @@ async function getInitialAppData() {
       importProductsInDollars: settingsRow.importProductsInDollars,
       creditFinancingEnabled: settingsRow.creditFinancingEnabled || false,
       allowCreditSales: settingsRow.allowCreditSales ?? true,
+      defaultCreditDays: settingsRow.defaultCreditDays || 30,
       enableRecipes: settingsRow.enableRecipes ?? false,
       enableBatchAndExpiration: settingsRow.enableBatchAndExpiration ?? false,
       enableKitchenPrinter: settingsRow.enableKitchenPrinter ?? true,
@@ -3488,7 +3622,8 @@ async function getInitialAppData() {
       enableWholesalePrices: settingsRow.enableWholesalePrices ?? false,
       enableAccountsPayable: settingsRow.enableAccountsPayable ?? true,
       enablePettyCashExpenses: settingsRow.enablePettyCashExpenses ?? true,
-      enableSerialNumbers: settingsRow.enableSerialNumbers ?? false
+      enableSerialNumbers: settingsRow.enableSerialNumbers ?? false,
+      enableDeliveryRoute: settingsRow.enableDeliveryRoute ?? false
     } : null,
     businessMode,
     sessions,
@@ -6825,6 +6960,73 @@ async function cancelQuote(quoteId) {
   }
 }
 
+// src/lib/actions/receipt-settings.ts
+var receipt_settings_exports = {};
+__export(receipt_settings_exports, {
+  getReceiptSettings: () => getReceiptSettings,
+  updateReceiptSettings: () => updateReceiptSettings
+});
+init_db();
+async function getReceiptSettings() {
+  const session = await verifySession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  try {
+    const settings = await db_default.receiptSettings.findFirst();
+    if (!settings) {
+      return {
+        success: true,
+        data: {
+          fontFamily: "monospace",
+          ticketWidth: "80mm",
+          lineHeight: 1.2,
+          paddingX: 0,
+          fontSizeTitle: 16,
+          fontSizeHeader: 11,
+          fontSizeBody: 11,
+          fontSizePresentation: 9,
+          fontSizeTotals: 12,
+          fontSizeFooter: 10,
+          presentationLayout: "BELOW_NAME",
+          showLogo: true,
+          showClientInfo: true,
+          showEquivalenceUsd: true,
+          footerMessage: "\xA1Gracias por su compra!"
+        }
+      };
+    }
+    return { success: true, data: settings };
+  } catch (error) {
+    console.error("Error fetching receipt settings:", error);
+    return { success: false, error: "Error al obtener configuraci\xF3n del ticket" };
+  }
+}
+async function updateReceiptSettings(data) {
+  const session = await verifySession();
+  if (!session || session.role !== "master-admin" && session.role !== "admin") {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    const existing = await db_default.receiptSettings.findFirst();
+    if (existing) {
+      await db_default.receiptSettings.update({
+        where: { id: existing.id },
+        data
+      });
+    } else {
+      await db_default.receiptSettings.create({
+        data
+      });
+    }
+    revalidatePath("/configuracion/ticket");
+    revalidatePath("/pos");
+    revalidatePath("/facturas");
+    return { success: true };
+  } catch (error) {
+    console.error("Error updating receipt settings:", error);
+    return { success: false, error: "Error al guardar configuraci\xF3n del ticket" };
+  }
+}
+
 // src/lib/actions/reports.ts
 var reports_exports = {};
 __export(reports_exports, {
@@ -7259,7 +7461,7 @@ function unitCountFor(item) {
 function safePercent(num, den) {
   return den > 0 ? num / den * 100 : 0;
 }
-function round22(n) {
+function round23(n) {
   return Math.round(n * 100) / 100;
 }
 async function getReportSummary(from, to) {
@@ -7281,15 +7483,15 @@ async function getReportSummary(from, to) {
   const totalProfit = totalRevenue - totalCost;
   const count = invoices.length;
   return {
-    totalRevenue: round22(totalRevenue),
-    totalUnits: round22(totalUnits),
-    totalCost: round22(totalCost),
-    totalProfit: round22(totalProfit),
+    totalRevenue: round23(totalRevenue),
+    totalUnits: round23(totalUnits),
+    totalCost: round23(totalCost),
+    totalProfit: round23(totalProfit),
     marginPct: safePercent(totalProfit, totalRevenue),
     invoiceCount: count,
-    avgTicket: count > 0 ? round22(totalRevenue / count) : 0,
-    revenueUSD: round22(totalRevenue / rate),
-    profitUSD: round22(totalProfit / rate),
+    avgTicket: count > 0 ? round23(totalRevenue / count) : 0,
+    revenueUSD: round23(totalRevenue / rate),
+    profitUSD: round23(totalProfit / rate),
     exchangeRate: rate
   };
 }
@@ -7325,10 +7527,10 @@ async function getReportSalesByCategory(from, to, categoryId) {
     categoryName: r.categoryName,
     parentId: r.parentId,
     inventoryType: r.inventoryType,
-    units: round22(r.units),
-    revenue: round22(r.revenue),
-    cost: round22(r.cost),
-    profit: round22(r.revenue - r.cost),
+    units: round23(r.units),
+    revenue: round23(r.revenue),
+    cost: round23(r.cost),
+    profit: round23(r.revenue - r.cost),
     marginPct: safePercent(r.revenue - r.cost, r.revenue),
     invoiceCount: r.set.size
   })).sort((a, b) => b.revenue - a.revenue);
@@ -7341,10 +7543,10 @@ async function getReportSalesByCategory(from, to, categoryId) {
     rows,
     subcategories: rows.filter((r) => r.parentId),
     total: {
-      units: round22(rows.reduce((s, r) => s + r.units, 0)),
-      revenue: round22(totalRevenue),
-      cost: round22(rows.reduce((s, r) => s + r.cost, 0)),
-      profit: round22(rows.reduce((s, r) => s + r.profit, 0)),
+      units: round23(rows.reduce((s, r) => s + r.units, 0)),
+      revenue: round23(totalRevenue),
+      cost: round23(rows.reduce((s, r) => s + r.cost, 0)),
+      profit: round23(rows.reduce((s, r) => s + r.profit, 0)),
       marginPct: safePercent(rows.reduce((s, r) => s + r.profit, 0), totalRevenue),
       invoiceCount: new Set(invoices.map((i) => i.id)).size
     }
@@ -7397,14 +7599,14 @@ async function getReportSalesByProduct(from, to, categoryId, location) {
     barcode: r.barcode,
     categoryId: r.categoryId,
     categoryName: r.categoryName,
-    units: round22(r.units),
-    revenue: round22(r.revenue),
-    revenueUSD: round22(r.revenue / rate),
-    cost: round22(r.cost),
-    profit: round22(r.revenue - r.cost),
-    profitUSD: round22((r.revenue - r.cost) / rate),
+    units: round23(r.units),
+    revenue: round23(r.revenue),
+    revenueUSD: round23(r.revenue / rate),
+    cost: round23(r.cost),
+    profit: round23(r.revenue - r.cost),
+    profitUSD: round23((r.revenue - r.cost) / rate),
     marginPct: safePercent(r.revenue - r.cost, r.revenue),
-    avgUnitPrice: r.units > 0 ? round22(r.revenue / r.units) : 0,
+    avgUnitPrice: r.units > 0 ? round23(r.revenue / r.units) : 0,
     invoices: r.invoices
   })).sort((a, b) => b.revenue - a.revenue);
   if (categoryId && categoryId !== "all") {
@@ -7414,12 +7616,12 @@ async function getReportSalesByProduct(from, to, categoryId, location) {
   return {
     rows,
     total: {
-      units: round22(rows.reduce((s, r) => s + r.units, 0)),
-      revenue: round22(totalRevenue),
-      revenueUSD: round22(totalRevenue / rate),
-      cost: round22(rows.reduce((s, r) => s + r.cost, 0)),
-      profit: round22(rows.reduce((s, r) => s + r.profit, 0)),
-      profitUSD: round22(rows.reduce((s, r) => s + r.profit, 0) / rate),
+      units: round23(rows.reduce((s, r) => s + r.units, 0)),
+      revenue: round23(totalRevenue),
+      revenueUSD: round23(totalRevenue / rate),
+      cost: round23(rows.reduce((s, r) => s + r.cost, 0)),
+      profit: round23(rows.reduce((s, r) => s + r.profit, 0)),
+      profitUSD: round23(rows.reduce((s, r) => s + r.profit, 0) / rate),
       marginPct: safePercent(rows.reduce((s, r) => s + r.profit, 0), totalRevenue),
       invoices: new Set(invoices.map((i) => i.id)).size
     },
@@ -7477,30 +7679,30 @@ async function getReportTopSelling(from, to) {
   const unitsRows = byUnits.map((r) => ({
     productId: r.productId,
     productName: r.productName,
-    units: round22(r.units),
-    revenue: round22(r.revenue),
+    units: round23(r.units),
+    revenue: round23(r.revenue),
     revenueSharePct: r.revenueSharePct,
-    profit: round22(r.revenue - r.cost)
+    profit: round23(r.revenue - r.cost)
   }));
   const revenueRows = withCum.map((r) => ({
     productId: r.productId,
     productName: r.productName,
-    units: round22(r.units),
-    revenue: round22(r.revenue),
+    units: round23(r.units),
+    revenue: round23(r.revenue),
     revenueSharePct: r.revenueSharePct,
-    cumulativeSharePct: round22(r.cumulativeSharePct),
+    cumulativeSharePct: round23(r.cumulativeSharePct),
     isPareto80: r.cumulativeSharePct <= 80.001 || false,
-    profit: round22(r.revenue - r.cost)
+    profit: round23(r.revenue - r.cost)
   }));
   return {
     byUnits: unitsRows,
     byRevenue: revenueRows.map((r, i) => ({ ...r, isPareto80: i < paretoCount })),
-    totalRevenue: round22(totalRevenue),
-    totalUnits: round22(totalUnits),
+    totalRevenue: round23(totalRevenue),
+    totalUnits: round23(totalUnits),
     exchangeRate: rate,
     pareto: {
       count: paretoCount,
-      revenue: round22(paretoRevenue),
+      revenue: round23(paretoRevenue),
       revenueSharePct: safePercent(paretoRevenue, totalRevenue),
       headCount: Math.max(1, Math.round(base.length * 0.2))
     }
@@ -7534,14 +7736,14 @@ async function getReportPaymentMethods(from, to) {
     key: b.key,
     label: b.label,
     count: b.count,
-    total: round22(b.total),
+    total: round23(b.total),
     sharePct: safePercent(b.total, total),
     transactions: b.sets.size
   })).sort((a, b) => b.total - a.total);
   return {
     rows,
-    total: round22(total),
-    totalUSD: round22(total / rate),
+    total: round23(total),
+    totalUSD: round23(total / rate),
     exchangeRate: rate
   };
 }
@@ -7609,23 +7811,23 @@ async function getReportCashiers(from, to) {
       userId: r.userId,
       name: r.name,
       invoiceCount: r.invoiceCount,
-      revenue: round22(r.revenue),
-      revenueUSD: round22(r.revenue / rate),
-      units: round22(r.units),
-      avgTicket: r.invoiceCount > 0 ? round22(r.revenue / r.invoiceCount) : 0,
+      revenue: round23(r.revenue),
+      revenueUSD: round23(r.revenue / rate),
+      units: round23(r.units),
+      avgTicket: r.invoiceCount > 0 ? round23(r.revenue / r.invoiceCount) : 0,
       sessions: s?.sessions || 0,
-      difference: round22(s?.difference || 0),
-      differenceUSD: round22(s?.differenceUSD || 0)
+      difference: round23(s?.difference || 0),
+      differenceUSD: round23(s?.differenceUSD || 0)
     };
   }).sort((a, b) => b.revenue - a.revenue);
   return {
     rows,
     total: {
-      revenue: round22(rows.reduce((s, r) => s + r.revenue, 0)),
-      revenueUSD: round22(rows.reduce((s, r) => s + r.revenueUSD, 0)),
-      units: round22(rows.reduce((s, r) => s + r.units, 0)),
+      revenue: round23(rows.reduce((s, r) => s + r.revenue, 0)),
+      revenueUSD: round23(rows.reduce((s, r) => s + r.revenueUSD, 0)),
+      units: round23(rows.reduce((s, r) => s + r.units, 0)),
       invoices: rows.reduce((s, r) => s + r.invoiceCount, 0),
-      difference: round22(rows.reduce((s, r) => s + r.difference, 0))
+      difference: round23(rows.reduce((s, r) => s + r.difference, 0))
     },
     exchangeRate: rate
   };
@@ -7646,9 +7848,9 @@ async function getReportSalesByHour(from, to) {
   const totalSales = hours.reduce((s, h) => s + h.sales, 0);
   const peak = [...hours].sort((a, b) => b.sales - a.sales)[0];
   return {
-    hours: hours.map((h) => ({ ...h, sales: round22(h.sales), sharePct: safePercent(h.sales, totalSales) })),
-    peak: peak ? { hour: peak.hour, label: peak.label, sales: round22(peak.sales), count: peak.count } : null,
-    totalSales: round22(totalSales)
+    hours: hours.map((h) => ({ ...h, sales: round23(h.sales), sharePct: safePercent(h.sales, totalSales) })),
+    peak: peak ? { hour: peak.hour, label: peak.label, sales: round23(peak.sales), count: peak.count } : null,
+    totalSales: round23(totalSales)
   };
 }
 async function getReportDeadStock(days, to) {
@@ -7696,7 +7898,7 @@ async function getReportDeadStock(days, to) {
       barcode: p.barcode || "",
       categoryName: cat?.name || p.category || "Sin categor\xEDa",
       stockQuantity: stock,
-      costNIO: round22(stock * (p.costPriceNIO || 0)),
+      costNIO: round23(stock * (p.costPriceNIO || 0)),
       days,
       status: "Sin ventas"
     });
@@ -7707,7 +7909,7 @@ async function getReportDeadStock(days, to) {
     days: window2,
     count: rows.length,
     stockInactiveUnits: rows.reduce((s, r) => s + r.stockQuantity, 0),
-    costValueInactive: round22(rows.reduce((s, r) => s + r.costNIO, 0))
+    costValueInactive: round23(rows.reduce((s, r) => s + r.costNIO, 0))
   };
 }
 async function getReportProfitMargin(from, to) {
@@ -7735,13 +7937,13 @@ async function getReportProfitMargin(from, to) {
   const items = Array.from(agg.values()).map((r) => ({
     productId: r.productId,
     productName: r.productName,
-    units: round22(r.units),
-    avgUnitPrice: r.units > 0 ? round22(r.revenue / r.units) : 0,
-    avgUnitCost: r.units > 0 ? round22(r.cost / r.units) : 0,
-    totalRevenue: round22(r.revenue),
-    totalCost: round22(r.cost),
-    profit: round22(r.revenue - r.cost),
-    profitUSD: round22((r.revenue - r.cost) / rate),
+    units: round23(r.units),
+    avgUnitPrice: r.units > 0 ? round23(r.revenue / r.units) : 0,
+    avgUnitCost: r.units > 0 ? round23(r.cost / r.units) : 0,
+    totalRevenue: round23(r.revenue),
+    totalCost: round23(r.cost),
+    profit: round23(r.revenue - r.cost),
+    profitUSD: round23((r.revenue - r.cost) / rate),
     marginPct: safePercent(r.revenue - r.cost, r.revenue),
     invoices: r.invoices
   })).sort((a, b) => b.profit - a.profit);
@@ -7764,14 +7966,14 @@ async function getReportProfitMargin(from, to) {
     items,
     topByProfit: items.slice(0, 15),
     summary: {
-      totalRevenue: round22(totalRevenue),
-      totalRevenueUSD: round22(totalRevenue / rate),
-      totalCost: round22(totalCost),
-      totalProfit: round22(totalProfit),
-      totalProfitUSD: round22(totalProfit / rate),
+      totalRevenue: round23(totalRevenue),
+      totalRevenueUSD: round23(totalRevenue / rate),
+      totalCost: round23(totalCost),
+      totalProfit: round23(totalProfit),
+      totalProfitUSD: round23(totalProfit / rate),
       marginPct: safePercent(totalProfit, totalRevenue),
       invoiceCount: new Set(invoices.map((i) => i.id)).size,
-      units: round22(items.reduce((s, r) => s + r.units, 0)),
+      units: round23(items.reduce((s, r) => s + r.units, 0)),
       positiveProducts: items.filter((r) => r.profit > 0).length,
       negativeProducts: items.filter((r) => r.profit < 0).length
     },
@@ -7818,7 +8020,7 @@ async function getAgingReport() {
   try {
     const now = /* @__PURE__ */ new Date();
     const rate = await getExchangeRateValue();
-    const round23 = (n) => Math.round(n * 100) / 100;
+    const round25 = (n) => Math.round(n * 100) / 100;
     const creditInvoices = await db_default.salesInvoice.findMany({
       where: { status: "COMPLETED", pendingBalance: { gt: 5e-3 } },
       select: {
@@ -7835,7 +8037,7 @@ async function getAgingReport() {
     const cxcByCustomer = /* @__PURE__ */ new Map();
     const cxcTotals = emptyAgingTotals();
     for (const inv of creditInvoices) {
-      const amount = round23(Number(inv.pendingBalance) || 0);
+      const amount = round25(Number(inv.pendingBalance) || 0);
       const bucket = agingBucketOf(inv.date, now);
       addToTotals(cxcTotals, bucket, amount, 1);
       const cust = inv.customer || { id: inv.customerId, fullName: "(Cliente eliminado)", phone: null, documentId: null };
@@ -7858,7 +8060,7 @@ async function getAgingReport() {
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         date: inv.date,
-        totalAmount: round23(Number(inv.totalAmount) || 0),
+        totalAmount: round25(Number(inv.totalAmount) || 0),
         pendingBalance: amount,
         bucket
       });
@@ -7875,7 +8077,7 @@ async function getAgingReport() {
     const cxpBySupplier = /* @__PURE__ */ new Map();
     const cxpTotals = emptyAgingTotals();
     for (const ap of payables) {
-      const remaining = round23((Number(ap.amount) || 0) - (Number(ap.paidAmount) || 0));
+      const remaining = round25((Number(ap.amount) || 0) - (Number(ap.paidAmount) || 0));
       if (remaining <= 5e-3) continue;
       const reference = parseDateString(ap.purchaseInvoice?.dueDate) || parseDateString(ap.purchaseInvoice?.date) || ap.createdAt;
       const bucket = agingBucketOf(reference, now);
@@ -7897,8 +8099,8 @@ async function getAgingReport() {
         invoiceNumber: ap.purchaseInvoice?.invoiceNumber,
         date: ap.purchaseInvoice?.date,
         dueDate: ap.purchaseInvoice?.dueDate,
-        amount: round23(Number(ap.amount) || 0),
-        paidAmount: round23(Number(ap.paidAmount) || 0),
+        amount: round25(Number(ap.amount) || 0),
+        paidAmount: round25(Number(ap.paidAmount) || 0),
         remaining,
         bucket
       });
@@ -7919,16 +8121,424 @@ async function getAgingReport() {
   }
 }
 
+// src/lib/actions/route-settlements.ts
+var route_settlements_exports = {};
+__export(route_settlements_exports, {
+  settleRouteOrder: () => settleRouteOrder
+});
+init_db();
+
+// src/lib/stock-tx.ts
+init_db();
+import { Prisma } from "@prisma/client";
+var STOCK_TX_MAX_ATTEMPTS = 3;
+async function runStockSafeTransaction(fn) {
+  let lastError;
+  for (let attempt = 1; attempt <= STOCK_TX_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await db_default.$transaction(fn, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 5e3,
+        timeout: 15e3
+      });
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "P2034" || attempt === STOCK_TX_MAX_ATTEMPTS) throw error;
+      await new Promise((resolve2) => setTimeout(resolve2, 25 * attempt));
+    }
+  }
+  throw lastError;
+}
+
+// src/lib/actions/route-settlements.ts
+var FALLBACK_INVENTORY_TYPE = "MOSTRADOR";
+function round24(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+async function resolveInventoryType(tx, productId, invoiceInventoryType) {
+  if (invoiceInventoryType) return invoiceInventoryType;
+  const existing = await tx.inventoryItem.findFirst({
+    where: { productId },
+    orderBy: { expiryDate: "asc" },
+    select: { inventoryType: true }
+  });
+  return existing?.inventoryType || FALLBACK_INVENTORY_TYPE;
+}
+async function restoreReturnedStock(tx, params) {
+  const { productId, productName, variantId, units, inventoryType, movementId, userId } = params;
+  const factor = Number(params.presentationFactor) || 1;
+  const physicalUnits = units * factor;
+  if (physicalUnits <= 0) return;
+  const product = await tx.product.findUnique({
+    where: { id: productId },
+    select: { id: true, name: true, type: true }
+  });
+  if (!product) return;
+  if (params.enableRecipes && product.type === "RECIPE_ITEM") {
+    const recipeLines = await tx.recipeItem.findMany({ where: { productId } });
+    if (recipeLines.length > 0) {
+      for (const line of recipeLines) {
+        const amount = physicalUnits * Number(line.quantity || 0);
+        if (amount <= 0) continue;
+        const target2 = await tx.inventoryItem.findFirst({
+          where: { productId: line.ingredientId, inventoryType },
+          orderBy: { expiryDate: "asc" }
+        });
+        if (target2) {
+          await tx.inventoryItem.update({
+            where: { id: target2.id },
+            data: { quantity: { increment: amount } }
+          });
+        } else {
+          await tx.inventoryItem.create({
+            data: {
+              id: generateUUID(),
+              productId: line.ingredientId,
+              quantity: amount,
+              inventoryType
+            }
+          });
+        }
+        await tx.inventoryMovement.create({
+          data: {
+            id: generateUUID(),
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            productName: `${productName} (insumo repuesto)`,
+            movementType: "Devoluci\xF3n",
+            movementId,
+            quantityChange: amount,
+            previousQuantity: 0,
+            newQuantity: amount,
+            userId,
+            inventoryType
+          }
+        });
+      }
+      return;
+    }
+  }
+  if (variantId) {
+    const variant = await tx.productVariant.update({
+      where: { id: variantId },
+      data: { stock: { increment: physicalUnits } },
+      include: { size: true, color: true }
+    });
+    await tx.inventoryMovement.create({
+      data: {
+        id: generateUUID(),
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        productName: `${productName} - ${variant.size?.name || ""} - ${variant.color?.name || ""}`.trim(),
+        movementType: "Devoluci\xF3n",
+        movementId,
+        quantityChange: physicalUnits,
+        previousQuantity: variant.stock - physicalUnits,
+        newQuantity: variant.stock,
+        userId,
+        inventoryType
+      }
+    });
+    return;
+  }
+  const target = await tx.inventoryItem.findFirst({
+    where: { productId, inventoryType },
+    orderBy: { expiryDate: "asc" }
+  });
+  if (target) {
+    const siblings = await tx.inventoryItem.findMany({
+      where: { productId, inventoryType },
+      select: { quantity: true }
+    });
+    const previousTotal = siblings.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+    await tx.inventoryItem.update({
+      where: { id: target.id },
+      data: { quantity: { increment: physicalUnits } }
+    });
+    await tx.inventoryMovement.create({
+      data: {
+        id: generateUUID(),
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        productName,
+        movementType: "Devoluci\xF3n",
+        movementId,
+        quantityChange: physicalUnits,
+        previousQuantity: previousTotal,
+        newQuantity: previousTotal + physicalUnits,
+        userId,
+        inventoryType
+      }
+    });
+    return;
+  }
+  await tx.inventoryItem.create({
+    data: {
+      id: generateUUID(),
+      productId,
+      quantity: physicalUnits,
+      inventoryType
+    }
+  });
+  await tx.inventoryMovement.create({
+    data: {
+      id: generateUUID(),
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      productName,
+      movementType: "Devoluci\xF3n",
+      movementId,
+      quantityChange: physicalUnits,
+      previousQuantity: 0,
+      newQuantity: physicalUnits,
+      userId,
+      inventoryType
+    }
+  });
+}
+async function settleRouteOrder(request) {
+  const session = await verifySession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  const invoiceId = (request.invoiceId || "").trim();
+  if (!invoiceId) return { success: false, error: "Pedido no seleccionado" };
+  const paymentMethod = (request.paymentMethod || "").trim();
+  const returns = Array.isArray(request.returns) ? request.returns : [];
+  const requestedOutcome = request.outcome;
+  const isFullReturnRequest = requestedOutcome === SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL;
+  if (!paymentMethod && !isFullReturnRequest) {
+    return { success: false, error: "Seleccione c\xF3mo pag\xF3 el cliente" };
+  }
+  if (paymentMethod && !/TRANSFER/i.test(paymentMethod) && getPaymentBucket(paymentMethod) === "other") {
+    return {
+      success: false,
+      error: "La liquidaci\xF3n en ruta solo admite Efectivo o Transferencia"
+    };
+  }
+  try {
+    const invoice = await db_default.salesInvoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        customer: true,
+        salesInvoiceItem: true,
+        routeSettlement: true
+      }
+    });
+    if (!invoice) return { success: false, error: "Factura no encontrada" };
+    if (invoice.routeSettlement) {
+      return { success: false, error: "Este pedido ya fue liquidado" };
+    }
+    if (invoice.status === "CANCELLED" || invoice.status === "VOID") {
+      return { success: false, error: "El pedido est\xE1 cancelado y no se puede liquidar" };
+    }
+    if ((invoice.paymentMethod || "") !== PAY_ON_DELIVERY_METHOD && invoice.isPaid) {
+      return { success: false, error: "El pedido no fue emitido con Cobro contra entrega" };
+    }
+    const alreadyPending = invoice.routeStatus === ROUTE_STATUS.PENDIENTE_LIQUIDACION;
+    if (!alreadyPending && invoice.isPaid) {
+      return { success: false, error: "El pedido ya est\xE1 pagado" };
+    }
+    const openSession2 = await db_default.cashRegisterSession.findFirst({
+      where: { status: { in: ["open", "OPEN"] } },
+      orderBy: { openingTime: "desc" }
+    });
+    if (!openSession2) {
+      return {
+        success: false,
+        error: "No hay una caja abierta. Abra la caja antes de liquidar pedidos."
+      };
+    }
+    const totals = computeSettlementTotals(invoice.salesInvoiceItem, returns, invoice.totalAmount);
+    const derivedOutcome = resolveOutcome(totals);
+    if (isFullReturnRequest && derivedOutcome !== SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL) {
+      return { success: false, error: "Para marcar devoluci\xF3n total, indique todas las unidades devueltas" };
+    }
+    if (request.outcome && request.outcome !== derivedOutcome) {
+      return {
+        success: false,
+        error: "El escenario no coincide con las cantidades devueltas. Revise el modal."
+      };
+    }
+    const outcome = derivedOutcome;
+    if (outcome === SETTLEMENT_OUTCOMES.ENTREGA_COMPLETA && returns.length > 0) {
+      const anyUnits = returns.some((line) => Number(line.quantity) > 0);
+      if (anyUnits) {
+        return { success: false, error: "No hay devoluciones en una entrega completa" };
+      }
+    }
+    const routeStatus = routeStatusForOutcome(outcome);
+    const collectedAmount = outcome === SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL ? 0 : totals.netAmount;
+    const reason = (request.reason || "").trim() || null;
+    const notes = (request.notes || "").trim() || null;
+    const movementId = `RT-${invoice.invoiceNumber}-${Date.now()}`;
+    const settings = await db_default.systemSettings.findFirst({ select: { enableRecipes: true } });
+    const enableRecipes = !!settings?.enableRecipes;
+    const result = await runStockSafeTransaction(async (tx) => {
+      const claimed = await tx.routeSettlement.findUnique({ where: { invoiceId } });
+      if (claimed) throw new Error("PEDIDO_YA_LIQUIDADO");
+      const settlement = await tx.routeSettlement.create({
+        data: {
+          id: generateUUID(),
+          invoiceId,
+          sessionId: openSession2.id,
+          userId: session.userId,
+          userName: "",
+          outcome,
+          paymentMethod: paymentMethod || "Sin cobro (devoluci\xF3n total)",
+          collectedAmount,
+          returnedAmount: totals.returnedAmount,
+          returnedUnits: totals.returnedUnits,
+          reason,
+          notes
+        }
+      });
+      let creditNoteNumber = null;
+      for (const line of returns) {
+        const item = invoice.salesInvoiceItem.find((row) => row.id === line.invoiceItemId);
+        if (!item) continue;
+        const quantity = Math.min(
+          Math.max(0, Math.floor(Number(line.quantity) || 0)),
+          Math.max(0, item.quantity)
+        );
+        if (quantity === 0) continue;
+        const inventoryType = await resolveInventoryType(tx, item.productId, invoice.inventoryType);
+        await restoreReturnedStock(tx, {
+          productId: item.productId,
+          productName: item.productName,
+          variantId: item.variantId,
+          presentationFactor: item.presentationFactor,
+          units: quantity,
+          inventoryType,
+          movementId,
+          userId: session.userId,
+          enableRecipes
+        });
+        await tx.routeReturnItem.create({
+          data: {
+            id: generateUUID(),
+            invoiceId,
+            invoiceItemId: item.id,
+            productId: item.productId,
+            productName: item.productName,
+            quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: round24(item.unitPrice * quantity)
+          }
+        });
+      }
+      if (totals.returnedAmount > 0) {
+        const creditNote = await tx.creditNote.create({
+          data: {
+            id: generateUUID(),
+            invoiceId,
+            reason: reason || (outcome === SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL ? "Devoluci\xF3n total del pedido en ruta" : "Devoluci\xF3n parcial del pedido en ruta"),
+            totalAmount: totals.returnedAmount,
+            sessionId: openSession2.id,
+            userId: session.userId
+          }
+        });
+        creditNoteNumber = creditNote.noteNumber;
+      }
+      await tx.salesInvoice.update({
+        where: { id: invoiceId },
+        data: outcome === SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL ? {
+          isPaid: false,
+          status: "CANCELLED",
+          deliveryStatus: "RECHAZADO",
+          routeStatus
+        } : {
+          isPaid: true,
+          status: "COMPLETED",
+          deliveryStatus: "COBRADO",
+          routeStatus
+        }
+      });
+      if (collectedAmount > 0) {
+        const bucket = getPaymentBucket(paymentMethod);
+        const increment = {
+          totalSales: { increment: collectedAmount }
+        };
+        if (bucket === "card") increment.salesCard = { increment: collectedAmount };
+        else increment.salesCash = { increment: collectedAmount };
+        const currentCashSession = await tx.cashRegisterSession.findUnique({ where: { id: openSession2.id }, select: { status: true } });
+        if (!currentCashSession || !["open", "OPEN"].includes(currentCashSession.status)) {
+          throw new Error("CAJA_CERRADA");
+        }
+        await tx.cashRegisterSession.update({
+          where: { id: openSession2.id },
+          data: increment
+        });
+      }
+      return { settlement, creditNoteNumber };
+    });
+    const actor = await db_default.user.findUnique({
+      where: { id: session.userId },
+      select: { name: true }
+    });
+    const userName = actor?.name || "Usuario";
+    await db_default.routeSettlement.update({
+      where: { id: result.settlement.id },
+      data: { userName }
+    });
+    try {
+      await recordAudit({
+        userId: session.userId,
+        userName,
+        action: "UPDATE",
+        entity: "Sale",
+        entityId: `FACTURA-${invoice.invoiceNumber}`,
+        description: outcome === SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL ? `Rechaz\xF3 en ruta el pedido #${invoice.invoiceNumber}: devoluci\xF3n total por C$${totals.returnedAmount.toFixed(2)}` : `Liquid\xF3 el pedido #${invoice.invoiceNumber} por C$${collectedAmount.toFixed(2)} (${paymentMethod})` + (totals.returnedAmount > 0 ? ` con devoluci\xF3n parcial de C$${totals.returnedAmount.toFixed(2)}` : ""),
+        metadata: {
+          invoiceNumber: invoice.invoiceNumber,
+          outcome,
+          routeStatus,
+          paymentMethod,
+          originalAmount: totals.originalAmount,
+          collectedAmount,
+          returnedAmount: totals.returnedAmount,
+          returnedUnits: totals.returnedUnits,
+          sessionId: openSession2.id,
+          creditNoteNumber: result.creditNoteNumber
+        }
+      });
+    } catch (auditError) {
+      console.error("Audit error:", auditError);
+    }
+    revalidatePath("/ruta");
+    revalidatePath("/entregas");
+    revalidatePath("/delivery-routes");
+    revalidatePath("/orders");
+    revalidatePath("/cash-register");
+    return {
+      success: true,
+      data: {
+        invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        outcome,
+        routeStatus,
+        originalAmount: totals.originalAmount,
+        returnedAmount: totals.returnedAmount,
+        collectedAmount,
+        returnedUnits: totals.returnedUnits,
+        creditNoteNumber: result.creditNoteNumber
+      }
+    };
+  } catch (error) {
+    if (error?.message === "PEDIDO_YA_LIQUIDADO") {
+      return { success: false, error: "Este pedido ya fue liquidado" };
+    }
+    console.error("Error settling route order:", error);
+    return { success: false, error: "Error al liquidar el pedido. No se modific\xF3 caja ni inventario." };
+  }
+}
+
 // src/lib/actions/sales.ts
 var sales_exports = {};
 __export(sales_exports, {
+  confirmDeliveryAndPayment: () => confirmDeliveryAndPayment,
   createSale: () => createSale,
+  getDeliveryInvoices: () => getDeliveryInvoices,
   getInventoryMovements: () => getInventoryMovements3,
   getInvoiceByNumber: () => getInvoiceByNumber2,
-  getLastSale: () => getLastSale
+  getLastSale: () => getLastSale,
+  updateInvoiceDeliveryStatus: () => updateInvoiceDeliveryStatus
 });
 init_db();
-import { Prisma } from "@prisma/client";
 
 // src/lib/presentations.ts
 var getBulkPresentationOptions = (product) => {
@@ -7984,6 +8594,26 @@ function formatUnits(value) {
   return `${rounded} unidades`;
 }
 
+// src/lib/credit-days.ts
+var FALLBACK_CREDIT_DAYS = 30;
+function getEffectiveCreditDays(customer, settings) {
+  const individual = customer?.creditDays;
+  if (typeof individual === "number" && Number.isFinite(individual) && individual > 0) {
+    return Math.floor(individual);
+  }
+  const global = settings?.defaultCreditDays;
+  if (typeof global === "number" && Number.isFinite(global) && global > 0) {
+    return Math.floor(global);
+  }
+  return FALLBACK_CREDIT_DAYS;
+}
+function computeCreditDueDate(invoiceDate, effectiveDays) {
+  const dueDate = new Date(invoiceDate.getTime());
+  const days = typeof effectiveDays === "number" && Number.isFinite(effectiveDays) && effectiveDays > 0 ? Math.floor(effectiveDays) : FALLBACK_CREDIT_DAYS;
+  dueDate.setDate(dueDate.getDate() + days);
+  return dueDate;
+}
+
 // src/lib/actions/sales.ts
 var CreditAuthRequiredError = class extends Error {
   constructor() {
@@ -7991,24 +8621,6 @@ var CreditAuthRequiredError = class extends Error {
     this.requiresAdmin = true;
   }
 };
-var STOCK_TX_MAX_ATTEMPTS = 3;
-async function runStockSafeTransaction(fn) {
-  let lastError;
-  for (let attempt = 1; attempt <= STOCK_TX_MAX_ATTEMPTS; attempt++) {
-    try {
-      return await db_default.$transaction(fn, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        maxWait: 5e3,
-        timeout: 15e3
-      });
-    } catch (error) {
-      lastError = error;
-      if (error?.code !== "P2034" || attempt === STOCK_TX_MAX_ATTEMPTS) throw error;
-      await new Promise((resolve2) => setTimeout(resolve2, 25 * attempt));
-    }
-  }
-  throw lastError;
-}
 async function consumeIngredientStock(tx, ingredient, requiredUnits, transactionId, userId, inventoryType) {
   if (requiredUnits <= 0) return;
   const inventoryItems = await tx.inventoryItem.findMany({
@@ -8103,10 +8715,11 @@ async function consumeIngredientStock(tx, ingredient, requiredUnits, transaction
     });
   }
 }
-async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId, financing, adminAuthorized) {
+async function createSale(items, sessionId, userId, inventoryType, totalAmount, paymentMethod, customerId, financing, adminAuthorized, deliveryDetails) {
   console.log("--- DEBUG createSale ---");
   console.log("paymentMethod:", paymentMethod);
   console.log("customerId:", customerId);
+  console.log("deliveryDetails:", deliveryDetails);
   const session = await verifySession();
   if (!session) return { success: false, error: "Unauthorized" };
   try {
@@ -8125,13 +8738,43 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
     const roundedSubtotal = Math.round(lineTotals * 100) / 100;
     const roundedTax = Math.round((roundedTotalAmount - roundedSubtotal) * 100) / 100;
     let createdInvoiceNumber = 0;
+    const isCobroContraEntrega = paymentMethod === "Cobro contra entrega" || deliveryDetails?.isPaid === false;
+    const isPaid = deliveryDetails?.isPaid !== void 0 ? deliveryDetails.isPaid : !isCobroContraEntrega;
+    const deliveryType = deliveryDetails?.deliveryType || (isCobroContraEntrega ? "ROUTE" : "COUNTER");
+    const deliveryStatus = deliveryDetails?.deliveryStatus || (deliveryType === "ROUTE" ? "PENDIENTE_ENTREGA" : "DELIVERED");
+    const routeStatus = isCobroContraEntrega ? ROUTE_STATUS.PENDIENTE_LIQUIDACION : null;
+    const routeCustomer = isCobroContraEntrega && customerId ? await db_default.customer.findUnique({ where: { id: customerId }, select: { fullName: true } }) : null;
+    if (isCobroContraEntrega && (!routeCustomer || isGenericCustomerName(routeCustomer.fullName))) {
+      return { success: false, error: "Seleccione un cliente real para emitir un pedido con Cobro contra entrega." };
+    }
+    if (isCobroContraEntrega && (!(deliveryDetails?.deliveryAddress || "").trim() || !(deliveryDetails?.deliveryPhone || "").trim())) {
+      return { success: false, error: "La direcci\xF3n y tel\xE9fono son obligatorios para despachos en ruta." };
+    }
     await runStockSafeTransaction(async (tx) => {
+      if (customerId && deliveryType === "ROUTE") {
+        const contactAddress = (deliveryDetails?.deliveryAddress || "").trim();
+        const contactPhone = (deliveryDetails?.deliveryPhone || "").trim();
+        if (contactAddress || contactPhone) {
+          const currentCustomer = await tx.customer.findUnique({
+            where: { id: customerId },
+            select: { address: true, phone: true }
+          });
+          if (currentCustomer) {
+            await tx.customer.update({
+              where: { id: customerId },
+              data: {
+                ...contactAddress && !currentCustomer.address ? { address: contactAddress } : {},
+                ...contactPhone && !currentCustomer.phone ? { phone: contactPhone } : {}
+              }
+            });
+          }
+        }
+      }
       for (const item of items) {
         const variantId = item.product.variantId;
         const parentProductId = item.product.parentProductId || item.product.id;
         const factor = resolvePresentationFactor(item.product, item.presentation, item.presentationName, item.presentationFactor);
         const physicalUnits = item.quantity * factor;
-        const unitPrice = typeof item.unitPrice === "number" && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO;
         const productType = item.product.type || "STANDARD";
         if (enableRecipes && productType === "RECIPE_ITEM") {
           const recipeLines = await tx.recipeItem.findMany({
@@ -8300,6 +8943,13 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           sessionId,
           userId,
           customerId,
+          deliveryType,
+          deliveryStatus,
+          deliveryAddress: deliveryDetails?.deliveryAddress || null,
+          deliveryPhone: deliveryDetails?.deliveryPhone || null,
+          isPaid,
+          routeStatus,
+          inventoryType,
           salesInvoiceItem: {
             create: items.map((item) => {
               const invUnitPrice = typeof item.unitPrice === "number" && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO;
@@ -8356,9 +9006,16 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           where: { id: customerId },
           data: { currentBalance: { increment: financedTotal } }
         });
+        const companySettings = await tx.systemSettings.findFirst({
+          select: { defaultCreditDays: true }
+        });
+        const effectiveDays = getEffectiveCreditDays(customer, companySettings);
         await tx.salesInvoice.update({
           where: { id: salesInvoice.id },
-          data: { pendingBalance: { increment: financedTotal } }
+          data: {
+            pendingBalance: { increment: financedTotal },
+            dueDate: computeCreditDueDate(/* @__PURE__ */ new Date(), effectiveDays)
+          }
         });
         if (financing && financing.installments > 0) {
           const totalInstallments = Math.max(1, Math.floor(Number(financing.installments) || 1));
@@ -8381,29 +9038,31 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           });
         }
       }
-      const updateData = {
-        totalSales: { increment: roundedTotalAmount }
-      };
-      switch (getPaymentBucket(paymentMethod)) {
-        case "cash":
-          updateData.salesCash = { increment: roundedTotalAmount };
-          break;
-        case "card":
-          updateData.salesCard = { increment: roundedTotalAmount };
-          break;
-        case "usd":
-          updateData.salesUSD = { increment: roundedTotalAmount };
-          break;
-        case "credit":
-          updateData.salesCredit = { increment: roundedTotalAmount };
-          break;
-        case "other":
-          break;
+      if (isPaid) {
+        const updateData = {
+          totalSales: { increment: roundedTotalAmount }
+        };
+        switch (getPaymentBucket(paymentMethod)) {
+          case "cash":
+            updateData.salesCash = { increment: roundedTotalAmount };
+            break;
+          case "card":
+            updateData.salesCard = { increment: roundedTotalAmount };
+            break;
+          case "usd":
+            updateData.salesUSD = { increment: roundedTotalAmount };
+            break;
+          case "credit":
+            updateData.salesCredit = { increment: roundedTotalAmount };
+            break;
+          case "other":
+            break;
+        }
+        await tx.cashRegisterSession.update({
+          where: { id: sessionId },
+          data: updateData
+        });
       }
-      await tx.cashRegisterSession.update({
-        where: { id: sessionId },
-        data: updateData
-      });
     });
     revalidatePath("/pos");
     revalidatePath("/inventory");
@@ -8485,7 +9144,10 @@ async function getInvoiceByNumber2(invoiceNumber) {
       where: { invoiceNumber: parsed },
       include: {
         salesInvoiceItem: {
-          orderBy: { id: "asc" }
+          orderBy: { id: "asc" },
+          // El código (código de barras) alimenta la columna "Código" de la
+          // factura en Hoja Normal; no interviene en el ticket de 80 mm.
+          include: { product: { select: { barcode: true } } }
         },
         customer: true,
         user: true
@@ -8523,7 +9185,129 @@ async function getLastSale(sessionId) {
     return { success: true, data: invoice };
   } catch (error) {
     console.error("Error fetching last sale:", error);
-    return { success: false, error: "Error al obtener la \xC3\xBAltima venta" };
+    return { success: false, error: "Error al obtener la \xFAltima venta" };
+  }
+}
+async function confirmDeliveryAndPayment(invoiceId, sessionId) {
+  const session = await verifySession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  try {
+    const invoice = await db_default.salesInvoice.findUnique({
+      where: { id: invoiceId },
+      include: { customer: true, salesInvoiceItem: true }
+    });
+    if (!invoice) {
+      return { success: false, error: "Factura no encontrada" };
+    }
+    const wasUnpaid = !invoice.isPaid;
+    let activeSessionId = sessionId || invoice.sessionId;
+    if (wasUnpaid) {
+      if (!activeSessionId) {
+        const openSession2 = await db_default.cashRegisterSession.findFirst({
+          where: { status: "OPEN" },
+          orderBy: { openingTime: "desc" }
+        });
+        if (openSession2) {
+          activeSessionId = openSession2.id;
+        }
+      }
+      if (activeSessionId) {
+        const isCash = getPaymentBucket(invoice.paymentMethod) === "cash";
+        const isCard = getPaymentBucket(invoice.paymentMethod) === "card";
+        const isUSD = getPaymentBucket(invoice.paymentMethod) === "usd";
+        const sessionUpdate = {
+          totalSales: { increment: invoice.totalAmount }
+        };
+        if (isCard) {
+          sessionUpdate.salesCard = { increment: invoice.totalAmount };
+        } else if (isUSD) {
+          sessionUpdate.salesUSD = { increment: invoice.totalAmount };
+        } else {
+          sessionUpdate.salesCash = { increment: invoice.totalAmount };
+        }
+        await db_default.cashRegisterSession.update({
+          where: { id: activeSessionId },
+          data: sessionUpdate
+        });
+      }
+    }
+    const updated = await db_default.salesInvoice.update({
+      where: { id: invoiceId },
+      data: {
+        isPaid: true,
+        deliveryStatus: "COBRADO"
+      }
+    });
+    revalidatePath("/ruta");
+    revalidatePath("/entregas");
+    revalidatePath("/delivery-routes");
+    revalidatePath("/orders");
+    try {
+      const actor = await db_default.user.findUnique({ where: { id: session.userId }, select: { name: true } });
+      await recordAudit({
+        userId: session.userId,
+        userName: actor?.name || "Usuario",
+        action: "UPDATE",
+        entity: "Sale",
+        entityId: `FACTURA-${updated.invoiceNumber}`,
+        description: `Confirm\xF3 cobro y entrega del pedido #${updated.invoiceNumber} por C$${updated.totalAmount.toFixed(2)}`,
+        metadata: { invoiceNumber: updated.invoiceNumber, totalAmount: updated.totalAmount }
+      });
+    } catch (auditErr) {
+      console.error("Audit error:", auditErr);
+    }
+    return { success: true, data: updated };
+  } catch (error) {
+    console.error("Error confirming delivery:", error);
+    return { success: false, error: "Error al confirmar cobro y entrega" };
+  }
+}
+async function updateInvoiceDeliveryStatus(invoiceId, deliveryStatus) {
+  const session = await verifySession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  try {
+    const updated = await db_default.salesInvoice.update({
+      where: { id: invoiceId },
+      data: { deliveryStatus }
+    });
+    revalidatePath("/ruta");
+    revalidatePath("/entregas");
+    revalidatePath("/delivery-routes");
+    revalidatePath("/orders");
+    return { success: true, data: updated };
+  } catch (error) {
+    console.error("Error updating delivery status:", error);
+    return { success: false, error: "Error al actualizar estado de entrega" };
+  }
+}
+async function getDeliveryInvoices() {
+  const session = await verifySession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  try {
+    const invoices = await db_default.salesInvoice.findMany({
+      where: {
+        OR: [
+          { deliveryType: "ROUTE" },
+          { deliveryStatus: { in: ["PENDIENTE_ENTREGA", "EN_RUTA", "ENTREGADO", "COBRADO"] } }
+        ]
+      },
+      orderBy: { date: "desc" },
+      include: {
+        customer: true,
+        user: { select: { name: true } },
+        // La estación de liquidación necesita saber si el pedido ya se cerró
+        // y cómo se liquidó (neto cobrado y devoluciones).
+        routeSettlement: true,
+        routeReturnItems: true,
+        salesInvoiceItem: {
+          include: { product: { select: { barcode: true } } }
+        }
+      }
+    });
+    return { success: true, data: invoices };
+  } catch (error) {
+    console.error("Error fetching delivery invoices:", error);
+    return { success: false, error: "Error al obtener pedidos de ruta" };
   }
 }
 
@@ -8569,6 +9353,7 @@ async function getSettings() {
       importProductsInDollars: false,
       creditFinancingEnabled: false,
       allowCreditSales: true,
+      defaultCreditDays: 30,
       enableRecipes: false,
       enableBatchAndExpiration: false,
       enableKitchenPrinter: true,
@@ -8576,7 +9361,8 @@ async function getSettings() {
       enableWholesalePrices: false,
       enableAccountsPayable: true,
       enablePettyCashExpenses: true,
-      enableSerialNumbers: false
+      enableSerialNumbers: false,
+      enableDeliveryRoute: false
     };
   }
   return {
@@ -8616,6 +9402,7 @@ async function getSettings() {
     importProductsInDollars: settings.importProductsInDollars,
     creditFinancingEnabled: settings.creditFinancingEnabled,
     allowCreditSales: settings.allowCreditSales,
+    defaultCreditDays: settings.defaultCreditDays,
     enableRecipes: settings.enableRecipes,
     enableBatchAndExpiration: settings.enableBatchAndExpiration,
     enableKitchenPrinter: settings.enableKitchenPrinter,
@@ -8623,7 +9410,8 @@ async function getSettings() {
     enableWholesalePrices: settings.enableWholesalePrices,
     enableAccountsPayable: settings.enableAccountsPayable,
     enablePettyCashExpenses: settings.enablePettyCashExpenses,
-    enableSerialNumbers: settings.enableSerialNumbers
+    enableSerialNumbers: settings.enableSerialNumbers,
+    enableDeliveryRoute: settings.enableDeliveryRoute ?? false
   };
 }
 async function updateSettings(data) {
@@ -8632,6 +9420,7 @@ async function updateSettings(data) {
     return { success: false, error: "Unauthorized" };
   }
   const existing = await db_default.systemSettings.findFirst();
+  const enableDeliveryRoute = typeof data.enableDeliveryRoute === "boolean" ? data.enableDeliveryRoute : existing?.enableDeliveryRoute ?? false;
   if (existing) {
     await db_default.systemSettings.update({
       where: { id: existing.id },
@@ -8668,6 +9457,7 @@ async function updateSettings(data) {
         importProductsInDollars: data.importProductsInDollars,
         creditFinancingEnabled: data.creditFinancingEnabled,
         allowCreditSales: data.allowCreditSales,
+        defaultCreditDays: data.defaultCreditDays,
         enableRecipes: data.enableRecipes,
         enableBatchAndExpiration: data.enableBatchAndExpiration,
         enableKitchenPrinter: data.enableKitchenPrinter,
@@ -8675,7 +9465,8 @@ async function updateSettings(data) {
         enableWholesalePrices: data.enableWholesalePrices,
         enableAccountsPayable: data.enableAccountsPayable,
         enablePettyCashExpenses: data.enablePettyCashExpenses,
-        enableSerialNumbers: data.enableSerialNumbers
+        enableSerialNumbers: data.enableSerialNumbers,
+        enableDeliveryRoute
       }
     });
   } else {
@@ -8715,6 +9506,7 @@ async function updateSettings(data) {
         importProductsInDollars: data.importProductsInDollars || false,
         creditFinancingEnabled: data.creditFinancingEnabled || false,
         allowCreditSales: data.allowCreditSales ?? true,
+        defaultCreditDays: data.defaultCreditDays && data.defaultCreditDays > 0 ? Math.floor(data.defaultCreditDays) : 30,
         enableRecipes: data.enableRecipes ?? false,
         enableBatchAndExpiration: data.enableBatchAndExpiration ?? false,
         enableKitchenPrinter: data.enableKitchenPrinter ?? true,
@@ -8722,12 +9514,16 @@ async function updateSettings(data) {
         enableWholesalePrices: data.enableWholesalePrices ?? false,
         enableAccountsPayable: data.enableAccountsPayable ?? true,
         enablePettyCashExpenses: data.enablePettyCashExpenses ?? true,
-        enableSerialNumbers: data.enableSerialNumbers ?? false
+        enableSerialNumbers: data.enableSerialNumbers ?? false,
+        enableDeliveryRoute
       }
     });
   }
   revalidatePath("/");
-  return { success: true };
+  const savedSettings = await db_default.systemSettings.findFirst({
+    select: { enableDeliveryRoute: true }
+  });
+  return { success: true, data: { enableDeliveryRoute: savedSettings?.enableDeliveryRoute ?? false } };
 }
 
 // src/lib/actions/suppliers.ts
@@ -9289,7 +10085,9 @@ var actionModules = {
   "purchase-orders": purchase_orders_exports,
   "purchases": purchases_exports,
   "quotations": quotations_exports,
+  "receipt-settings": receipt_settings_exports,
   "reports": reports_exports,
+  "route-settlements": route_settlements_exports,
   "sales": sales_exports,
   "settings": settings_exports,
   "suppliers": suppliers_exports,

@@ -1362,3 +1362,105 @@ export async function getAgingReport() {
         return { success: false, error: 'No se pudo generar el reporte de antigüedad de saldos' };
     }
 }
+
+// ---------------------------------------------------------------------------
+// PRODUCTIVIDAD DE DESPACHADORES
+// ---------------------------------------------------------------------------
+export async function getDispatcherProductivityReport(
+    from?: string,
+    to?: string,
+    productIds?: string[],
+    categoryId?: string,
+) {
+    const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+    const rate = await getExchangeRateValue();
+    const { productById } = await getReportProductCatalog();
+
+    const settings = await db.systemSettings.findFirst({ select: { workflow: true } });
+    const isDispatcherMode = !settings?.workflow || settings.workflow === 'dispatcher-cashier';
+
+    const heldSaleWhere: any = { status: 'BILLED' };
+    if (start || end) {
+        heldSaleWhere.createdAt = {};
+        if (start) heldSaleWhere.createdAt.gte = start;
+        if (end) heldSaleWhere.createdAt.lte = end;
+    }
+
+    const heldSales = await db.heldSale.findMany({
+        where: heldSaleWhere,
+        select: { id: true, dispatcherId: true, dispatcherName: true, invoiceId: true, total: true, items: true },
+        orderBy: { createdAt: 'asc' },
+    });
+
+    const invoiceIds = heldSales.map((hs) => hs.invoiceId).filter((id): id is string => !!id);
+    const invoicesMap = new Map<string, any>();
+    if (invoiceIds.length > 0) {
+        const invoices = await db.salesInvoice.findMany({
+            where: { id: { in: invoiceIds }, status: 'COMPLETED' },
+            select: { id: true, totalAmount: true, salesInvoiceItem: { select: { productId: true, productName: true, quantity: true, unitPrice: true, totalPrice: true, presentationFactor: true } } },
+        });
+        for (const inv of invoices) invoicesMap.set(inv.id, inv);
+    }
+
+    const categoryProductIds = new Set<string>();
+    if (categoryId && categoryId !== 'all') {
+        for (const [pid, p] of productById.entries()) {
+            if ((p as any).categoryId === categoryId || (p as any).parentId === categoryId) categoryProductIds.add(pid);
+        }
+    }
+
+    const filterByProduct = Array.isArray(productIds) && productIds.length > 0;
+    const filterByCategory = !!(categoryId && categoryId !== 'all');
+    const hasFilter = filterByProduct || filterByCategory;
+
+    interface DispRow { dispatcherId: string; dispatcherName: string; dispatches: number; units: number; revenue: number; }
+    const perDispatcher = new Map<string, DispRow>();
+    const ensureDispatcher = (id: string, name: string): DispRow => {
+        if (!perDispatcher.has(id)) perDispatcher.set(id, { dispatcherId: id, dispatcherName: name || 'Despachador', dispatches: 0, units: 0, revenue: 0 });
+        return perDispatcher.get(id)!;
+    };
+
+    for (const hs of heldSales) {
+        const inv = hs.invoiceId ? invoicesMap.get(hs.invoiceId) : null;
+        const items: any[] = inv?.salesInvoiceItem || [];
+        if (hasFilter) {
+            const filtered = items.filter((item: any) => {
+                if (filterByProduct && productIds!.includes(item.productId)) return true;
+                if (filterByCategory && categoryProductIds.has(item.productId)) return true;
+                return false;
+            });
+            if (filtered.length === 0) continue;
+            const row = ensureDispatcher(hs.dispatcherId, hs.dispatcherName);
+            row.dispatches += 1;
+            for (const item of filtered) { row.units += unitCountFor(item); row.revenue += Number(item.totalPrice) || 0; }
+        } else {
+            const row = ensureDispatcher(hs.dispatcherId, hs.dispatcherName);
+            row.dispatches += 1;
+            row.revenue += inv ? Number(inv.totalAmount) || 0 : Number(hs.total) || 0;
+            for (const item of items) row.units += unitCountFor(item);
+        }
+    }
+
+    const vals = Array.from(perDispatcher.values());
+    const totalRevenue = vals.reduce((s, r) => s + r.revenue, 0);
+    const totalDispatches = vals.reduce((s, r) => s + r.dispatches, 0);
+    const totalUnits = vals.reduce((s, r) => s + r.units, 0);
+
+    const rows = vals.map((r) => ({
+        dispatcherId: r.dispatcherId, dispatcherName: r.dispatcherName, dispatches: r.dispatches,
+        units: round2(r.units), revenue: round2(r.revenue), revenueUSD: round2(r.revenue / rate),
+        sharePct: safePercent(r.revenue, totalRevenue),
+        avgTicket: r.dispatches > 0 ? round2(r.revenue / r.dispatches) : 0,
+        avgItems: r.dispatches > 0 ? round2(r.units / r.dispatches) : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const topDispatcher = rows.length > 0 ? rows[0] : null;
+    const avgItemsPerDispatch = totalDispatches > 0 ? round2(totalUnits / totalDispatches) : 0;
+
+    return {
+        isDispatcherMode, rows,
+        total: { revenue: round2(totalRevenue), revenueUSD: round2(totalRevenue / rate), dispatches: totalDispatches, units: round2(totalUnits), avgItemsPerDispatch },
+        topDispatcher: topDispatcher ? { name: topDispatcher.dispatcherName, revenue: topDispatcher.revenue, sharePct: topDispatcher.sharePct } : null,
+        exchangeRate: rate, activeDispatchers: rows.length,
+    };
+}

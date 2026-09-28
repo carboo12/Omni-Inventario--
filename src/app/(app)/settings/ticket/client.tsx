@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { updateReceiptSettings, getReceiptSettings } from '@/lib/actions-client/receipt-settings';
+import { buildInlineItemText, formatUnitLabel } from '@/lib/receipt-presentation';
 import { resetReceiptSettingsCache } from '@/hooks/use-receipt-settings';
 import {
     Save, Type, AlignLeft, Layout, Eye, RotateCcw,
@@ -69,26 +70,10 @@ const MOCK_SALE = {
 // ─────────────────────────────────────────────
 //  Componente de vista previa (WYSIWYG)
 // ─────────────────────────────────────────────
-const GENERIC_UNITS = ['ud', 'unidad', 'unid', 'un', 'pza', 'pz'];
-
-/** Presentación con la línea secundaria: se envuelve en paréntesis (Abajo del Nombre). */
-function formatUnitLabel(unit?: string): string | null {
-    if (!unit) return null;
-    const trimmed = unit.trim();
-    if (!trimmed) return null;
-    if (GENERIC_UNITS.includes(trimmed.toLowerCase())) return null;
-    if (trimmed.startsWith('(') && trimmed.endsWith(')')) return trimmed;
-    return `(${trimmed})`;
-}
-
-/** Presentación en línea continua: sin paréntesis ni cursiva (En Línea con la Cantidad). */
-function formatInlinePresentation(unit?: string): string | null {
-    if (!unit) return null;
-    const unwrapped = unit.trim().replace(/^\((.*)\)$/, '$1').trim();
-    if (!unwrapped) return null;
-    if (GENERIC_UNITS.includes(unwrapped.toLowerCase())) return null;
-    return unwrapped;
-}
+/**
+ * Las dos disposiciones comparten el formateo de `receipt-presentation` con el
+ * POS y con el HTML impreso, así la vista previa no difiere del papel.
+ */
 
 function ReceiptPreview({ settings }: { settings: ReceiptSettings }) {
     // Fallback defensivo para cada propiedad
@@ -181,10 +166,13 @@ function ReceiptPreview({ settings }: { settings: ReceiptSettings }) {
                 </thead>
                 <tbody>
                     {MOCK_SALE.items.map((item, i) => {
-                        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación] [Nombre] [P.U.] [Total]
+                        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación de:] [Nombre] [P.U.] [Total]
                         // ABAJO DEL NOMBRE → [Cantidad] [Nombre] [P.U.] [Total] + presentación en 2.ª línea
+                        const inlineItem = isInline
+                            ? buildInlineItemText(item.description, item.unit)
+                            : null;
                         const presentationText = isInline
-                            ? formatInlinePresentation(item.unit)
+                            ? inlineItem?.presentation
                             : formatUnitLabel(item.unit);
                         return (
                             <tr key={i} style={{ borderTop: '1px dashed #aaa' }}>
@@ -199,7 +187,7 @@ function ReceiptPreview({ settings }: { settings: ReceiptSettings }) {
                                                     {presentationText}
                                                 </span>
                                             )}
-                                            <span>{item.description}</span>
+                                            <span>{inlineItem?.name}</span>
                                         </div>
                                     ) : (
                                         <>
@@ -347,9 +335,16 @@ export default function TicketSettingsClient() {
         }
     };
 
+    /**
+     * "Restablecer Valores por Defecto": vuelve el formulario a
+     * DEFAULT_RECEIPT_SETTINGS sin tocar la BD; el usuario confirma con Guardar.
+     */
     const handleReset = () => {
-        setSettings(DEFAULT_RECEIPT_SETTINGS);
-        toast({ title: 'Restablecido', description: 'Valores por defecto cargados. Presiona Guardar para confirmar.' });
+        setSettings({ ...DEFAULT_RECEIPT_SETTINGS });
+        toast({
+            title: 'Valores por defecto restaurados',
+            description: 'El formulario volvió a la configuración predeterminada. Presiona "Guardar Configuración" para aplicarla y guardarla en la base de datos.',
+        });
     };
 
     // ── Estado de carga ──
@@ -378,7 +373,7 @@ export default function TicketSettingsClient() {
                 <div className="flex gap-2 shrink-0">
                     <Button variant="outline" onClick={handleReset} className="gap-2">
                         <RotateCcw className="w-4 h-4" />
-                        Restablecer
+                        Restablecer Valores por Defecto
                     </Button>
                     <Button onClick={handleSave} disabled={isSaving} className="gap-2">
                         {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -535,9 +530,9 @@ export default function TicketSettingsClient() {
                                     <div>
                                         <div className="font-semibold text-sm">En Línea con la Cantidad</div>
                                         <div className="text-xs text-muted-foreground mt-0.5">
-                                            La cantidad, la presentación y el nombre se muestran en una sola línea continua (más compacto).
+                                            La cantidad, la presentación y el nombre se muestran en una sola línea continua, unidos con "de:" (más compacto).
                                         </div>
-                                        <div className="mt-1.5 font-mono text-xs bg-muted rounded px-2 py-1 whitespace-pre overflow-x-auto">2 Cajas Amoxicilina 500mg       150       300</div>
+                                        <div className="mt-1.5 font-mono text-xs bg-muted rounded px-2 py-1 whitespace-pre overflow-x-auto">2 Cajas de: Amoxicilina 500mg       150       300</div>
                                     </div>
                                 </label>
                             </RadioGroup>

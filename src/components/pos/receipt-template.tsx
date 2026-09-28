@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, formatNumber } from '@/lib/utils';
+import { buildInlineItemText, formatUnitLabel } from '@/lib/receipt-presentation';
 import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import { PENDING_COLLECTION_BANNER } from '@/lib/route-settlement';
 
@@ -44,34 +45,6 @@ interface ReceiptProps {
     /** Cobro contra entrega: agrega la leyenda de pago pendiente. */
     pendingCollection?: boolean;
 }
-
-const GENERIC_UNITS = ['ud', 'unidad', 'unid', 'un', 'pza', 'pz'];
-
-function formatUnitLabel(unit?: string): string | null {
-    if (!unit) return null;
-    const trimmed = unit.trim();
-    if (!trimmed) return null;
-    const lower = trimmed.toLowerCase();
-    if (GENERIC_UNITS.includes(lower)) {
-        return null;
-    }
-    if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
-        return trimmed;
-    }
-    return `(${trimmed})`;
-}
-
-/** Presentación en línea continua: sin paréntesis ni cursiva (En Línea con la Cantidad). */
-function formatInlinePresentation(unit?: string): string | null {
-    if (!unit) return null;
-    const unwrapped = unit.trim().replace(/^\((.*)\)$/, '$1').trim();
-    if (!unwrapped) return null;
-    if (GENERIC_UNITS.includes(unwrapped.toLowerCase())) {
-        return null;
-    }
-    return unwrapped;
-}
-
 export const ReceiptTemplate: React.FC<ReceiptProps> = ({
     pharmacyName,
     address,
@@ -173,10 +146,15 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 </thead>
                 <tbody>
                     {items.map((item, index) => {
-                        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación] [Nombre] [P. Unit] [Total]
+                        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación de:] [Nombre] [P. Unit] [Total]
                         // ABAJO DEL NOMBRE → [Cantidad] [Nombre] [P. Unit] [Total] + presentación en 2.ª línea
+                        // El texto en línea se arma en `receipt-presentation` para que coincida
+                        // con el HTML impreso: "1 Paca de: AZUCAR EMPACADA".
+                        const inlineItem = isInline
+                            ? buildInlineItemText(item.description, item.unit)
+                            : null;
                         const presentationText = isInline
-                            ? formatInlinePresentation(item.unit)
+                            ? inlineItem?.presentation
                             : formatUnitLabel(item.unit);
                         return (
                             <tr key={index} className="item-row border-t border-dashed border-black">
@@ -193,7 +171,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                                                     {presentationText}
                                                 </span>
                                             )}
-                                            <span>{item.description}</span>
+                                            <span>{inlineItem?.name}</span>
                                         </div>
                                     ) : (
                                         <>

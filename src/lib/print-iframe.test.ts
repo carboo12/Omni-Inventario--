@@ -125,10 +125,10 @@ const SALE: ReceiptHtmlData = {
 const row = (html: string, index: number) => html.split("<tbody>")[1].split("</tbody>")[0].split("</tr>")[index];
 
 describe("buildReceiptHtml: INLINE_QTY (En Línea con la Cantidad)", () => {
-  it("ordena la línea como [Cantidad] [Presentación] [Nombre] [P.U.] [Total]", () => {
+  it("ordena la línea como [Cantidad] [Presentación de:] [Nombre] [P.U.] [Total]", () => {
     const html = row(buildReceiptHtml(SALE, { presentationLayout: "INLINE_QTY" }), 0);
     expect(html).toMatch(/<td class="col-cant"[^>]*>2<\/td>/);
-    expect(html).toMatch(/item-presentation[^>]*>Cajas<\/span><span class="item-name">Amoxicilina 500mg<\/span>/);
+    expect(html).toMatch(/item-presentation[^>]*>Cajas de:<\/span><span class="item-name">Amoxicilina 500mg<\/span>/);
     expect(html.indexOf(">2<")).toBeLessThan(html.indexOf("Cajas"));
     expect(html.indexOf("Cajas")).toBeLessThan(html.indexOf("Amoxicilina 500mg"));
     expect(html.indexOf("Amoxicilina 500mg")).toBeLessThan(html.indexOf(">150.00<"));
@@ -150,6 +150,7 @@ describe("buildReceiptHtml: INLINE_QTY (En Línea con la Cantidad)", () => {
   it("omite la presentación cuando es genérica (ud) y no entre paréntesis", () => {
     const html = buildReceiptHtml(SALE, { presentationLayout: "INLINE_QTY" });
     expect(row(html, 1)).not.toContain("item-presentation");
+    expect(row(html, 1)).not.toContain("de:");
   });
 
   it("elimina los paréntesis que ya venían en el dato de presentación", () => {
@@ -157,7 +158,7 @@ describe("buildReceiptHtml: INLINE_QTY (En Línea con la Cantidad)", () => {
       { ...SALE, items: [{ ...SALE.items[0], unit: "(Caja x 30 cáp.)" }] },
       { presentationLayout: "INLINE_QTY" },
     );
-    expect(row(html, 0)).toContain(">Caja x 30 cáp.</span>");
+    expect(row(html, 0)).toContain(">Caja x 30 cáp. de:</span>");
     expect(row(html, 0)).not.toContain("(Caja x 30 cáp.)");
   });
 
@@ -166,6 +167,49 @@ describe("buildReceiptHtml: INLINE_QTY (En Línea con la Cantidad)", () => {
     const first = row(html, 0);
     expect(first).toMatch(/<div[^>]*>Amoxicilina 500mg<\/div>\s*<div[^>]*>\(Cajas\)<\/div>/);
     expect(first).not.toContain("item-presentation");
+  });
+});
+
+describe("buildReceiptHtml: INLINE_QTY con conector 'de:'", () => {
+  const inline = (description: string, unit?: string) =>
+    buildReceiptHtml(
+      { ...SALE, items: [{ quantity: 1, description, price: 10, total: 10, unit }] },
+      { presentationLayout: "INLINE_QTY" },
+    );
+
+  it("une presentación y nombre con 'de:' cuando el nombre no repite la presentación", () => {
+    expect(row(inline("ARROZ 80/20 VERDE 50LBS", "Medio Quintal"), 0))
+      .toContain('>Medio Quintal de:</span><span class="item-name">ARROZ 80/20 VERDE 50LBS</span>');
+  });
+
+  it("no repite la presentación cuando el nombre ya empieza con ella", () => {
+    expect(row(inline("Paca Azúcar Empacada", "Paca"), 0))
+      .toContain('>Paca de:</span><span class="item-name">Azúcar Empacada</span>');
+  });
+
+  it("elimina el prefijo sin importar mayúsculas, tildes ni acentos", () => {
+    expect(row(inline("PACA AZUCAR", "Paca"), 0))
+      .toContain('>Paca de:</span><span class="item-name">AZUCAR</span>');
+    expect(row(inline("Medio Bidón de Aceite", "Medio Bidón"), 0))
+      .toContain('>Medio Bidón de:</span><span class="item-name">Aceite</span>');
+  });
+
+  it("no duplica el conector si el nombre ya traía 'de'", () => {
+    expect(row(inline("Cajetilla de Cigarillos", "Cajetilla"), 0))
+      .toContain('>Cajetilla de:</span><span class="item-name">Cigarillos</span>');
+  });
+
+  it("imprime la presentación una sola vez si el nombre es sólo la presentación", () => {
+    const first = row(inline("Paca", "Paca"), 0);
+    expect(first).toContain('>Paca</span>');
+    expect(first).not.toContain("de:");
+    expect(first).toContain('<span class="item-name"></span>');
+  });
+
+  it("omite la presentación y el conector cuando la unidad es genérica", () => {
+    const first = row(inline("Paca Azúcar", "PZA"), 0);
+    expect(first).not.toContain("item-presentation");
+    expect(first).toContain('<span class="item-name">Paca Azúcar</span>');
   });
 });
 
@@ -187,6 +231,6 @@ describe("buildQuoteReceiptHtml: propaga el diseño del ticket", () => {
       },
       { presentationLayout: "INLINE_QTY" },
     );
-    expect(row(html, 0)).toMatch(/item-presentation[^>]*>Cajas<\/span><span class="item-name">Amoxicilina 500mg<\/span>/);
+    expect(row(html, 0)).toMatch(/item-presentation[^>]*>Cajas de:<\/span><span class="item-name">Amoxicilina 500mg<\/span>/);
   });
 });

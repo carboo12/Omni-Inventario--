@@ -3,6 +3,7 @@
 import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { PENDING_COLLECTION_BANNER } from './route-settlement';
+import { buildInlineItemText, formatUnitLabel } from './receipt-presentation';
 
 /** Identificador del iframe de impresión, para poder limpiar el anterior. */
 const PRINT_IFRAME_ID = 'print-receipt-iframe';
@@ -350,41 +351,11 @@ function fmtNum(value: number | string | null | undefined): string {
     });
 }
 
-const GENERIC_UNITS = ['ud', 'unidad', 'unid', 'un', 'pza', 'pz'];
-
 /**
- * Presentación para la línea secundaria (Abajo del Nombre): se envuelve en
- * paréntesis para separarla visualmente del nombre del producto.
+ * Las presentaciones se formatean en `receipt-presentation` (fuente única
+ * compartida con la vista previa del POS y la de /settings/ticket) para que
+ * papel y pantalla impriman exactamente la misma línea de ítem.
  */
-function formatUnitLabel(unit?: string): string | null {
-    if (!unit) return null;
-    const trimmed = unit.trim();
-    if (!trimmed) return null;
-    const lower = trimmed.toLowerCase();
-    if (GENERIC_UNITS.includes(lower)) {
-        return null;
-    }
-    if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
-        return trimmed;
-    }
-    return `(${trimmed})`;
-}
-
-/**
- * Presentación para la línea continua (En Línea con la Cantidad): sin
- * paréntesis ni cursiva, para que el texto fluya junto a la cantidad y al
- * nombre dentro de la misma línea. Los paréntesis que ya venían en el dato se
- * eliminan y las unidades genéricas ("ud", "unidad", "pza"...) se omiten.
- */
-function formatInlinePresentation(unit?: string): string | null {
-    if (!unit) return null;
-    const unwrapped = unit.trim().replace(/^\((.*)\)$/, '$1').trim();
-    if (!unwrapped) return null;
-    if (GENERIC_UNITS.includes(unwrapped.toLowerCase())) {
-        return null;
-    }
-    return unwrapped;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Build ticket HTML (ReceiptTemplate equivalent)                    */
@@ -525,16 +496,17 @@ export function buildReceiptHtml(data: ReceiptHtmlData, receiptSettings?: Dynami
         const priceCell = `<td class="col-price" style="${priceCellStyle}">${fmtNum(item.price)}</td>`;
         const totalCell = `<td class="col-total" style="${priceCellStyle}">${fmtNum(item.total)}</td>`;
 
-        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación] [Nombre] [P.U.] [Total]
+        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación de:] [Nombre] [P.U.] [Total]
         if (isInlinePresentation) {
-            const presentationText = formatInlinePresentation(item.unit);
-            const presentationSpan = presentationText
-                ? `<span class="item-presentation" style="font-size:${dynFontSizePresentation}px;margin:0 3px;">${escapeHtml(presentationText)}</span>`
+            // "1 Paca de: AZUCAR EMPACADA" (sin repetir la presentación del nombre).
+            const inlineItem = buildInlineItemText(item.description, item.unit);
+            const presentationSpan = inlineItem.presentation
+                ? `<span class="item-presentation" style="font-size:${dynFontSizePresentation}px;margin:0 3px;">${escapeHtml(inlineItem.presentation)}</span>`
                 : '';
             return `<tr class="item-row" style="border-top:1px dashed #000;">
             ${qtyCell}
             <td class="col-prod" style="vertical-align:top;text-align:left;padding:4px 1px;word-break:break-word;overflow-wrap:break-word;">
-                <div style="font-size:${dynFontSizeBody}px;">${presentationSpan}<span class="item-name">${escapeHtml(item.description)}</span></div>
+                <div style="font-size:${dynFontSizeBody}px;">${presentationSpan}<span class="item-name">${escapeHtml(inlineItem.name)}</span></div>
             </td>
             ${priceCell}
             ${totalCell}

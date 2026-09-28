@@ -73,3 +73,7 @@ export async function getReportFilters(...args: any[]): Promise<any> {
 export async function getAgingReport(...args: any[]): Promise<any> {
   return callAction('reports', 'getAgingReport', args);
 }
+
+export async function getDispatcherProductivityReport(...args: any[]): Promise<any> {
+  return callAction('reports', 'getDispatcherProductivityReport', args);
+}
