@@ -17,6 +17,7 @@ import { createOutflowAction, getSessionOutflows } from "@/lib/actions/cash-regi
 import { getInvoiceByNumber, getLastSale } from "@/lib/actions/sales";
 import { buildReceiptDataFromInvoice } from "@/lib/ticket-data";
 import { printReceiptHtml, buildReceiptHtml, buildZReportHtml } from "@/lib/print-iframe";
+import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { useSettings } from "@/hooks/use-settings";
 import { AlertCircle } from "lucide-react";
 import { formatTicketNumber, parseTicketSearch } from "@/lib/utils";
@@ -39,6 +40,8 @@ export default function CashCountPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [docNumber, setDocNumber] = useState("");
     const [docType, setDocType] = useState("factura");
+    // Diseño del ticket elegido en /settings/ticket (se aplica al reimprimir).
+    const receiptSettings = useReceiptSettings();
 
     if (user && ADMIN_ROLES.includes(user.role)) {
         return <AdminCashSupervision />;
@@ -194,7 +197,7 @@ export default function CashCountPage() {
                 // Imprime el ticket térmico en un iframe aislado (sin window.print()
                 // de la ventana principal) para evitar saltos de página en tickets largos.
                 const ticketData = buildReceiptDataFromInvoice(result.data, settings, formatTicketNumber(result.data.invoiceNumber));
-                printReceiptHtml(buildReceiptHtml(ticketData));
+                printReceiptHtml(buildReceiptHtml(ticketData, receiptSettings));
             } else {
                 toast({ title: "Error", description: result.error || "No se encontró la factura.", variant: "destructive" });
             }
@@ -215,7 +218,7 @@ export default function CashCountPage() {
                 // Imprime el ticket térmico en un iframe aislado (sin window.print()
                 // de la ventana principal) para evitar saltos de página en tickets largos.
                 const ticketData = buildReceiptDataFromInvoice(result.data, settings, formatTicketNumber(result.data.invoiceNumber));
-                printReceiptHtml(buildReceiptHtml(ticketData));
+                printReceiptHtml(buildReceiptHtml(ticketData, receiptSettings));
             } else {
                 toast({ title: "Error", description: result.error || "No se encontró la última venta.", variant: "destructive" });
             }

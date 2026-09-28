@@ -3,6 +3,7 @@
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ReceiptHtmlData } from './print-iframe';
+import { PENDING_COLLECTION_BANNER } from './route-settlement';
 
 export function printA4Html(htmlContent: string) {
     if (typeof document === 'undefined') return;
@@ -328,6 +329,13 @@ export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
     const deliveryBadgeHtml = deliveryType === 'route'
         ? `<div><span class="delivery-badge">Pedido para Ruta / Domicilio</span></div>`
         : '';
+    // Cobro contra entrega: la hoja que viaja con el paquete lo deja explícito.
+    const pendingCollectionHtml = data.pendingCollection
+        ? `<div style="margin-top:6px;padding:5px 8px;border:2px solid #dc2626;border-radius:5px;background:#fef2f2;text-align:center;">
+             <p style="color:#dc2626;font-weight:900;font-size:13px;margin:0;">${escapeHtml(PENDING_COLLECTION_BANNER)}</p>
+             <p style="color:#dc2626;font-size:10px;margin:2px 0 0;">El rutero entrega y cobra; el importe se liquida en caja al volver.</p>
+           </div>`
+        : '';
     const deliveryMetaHtml = deliveryType === 'route'
         ? [
             deliveryStatus ? `<p class="client-row"><strong>Estado de entrega:</strong> ${escapeHtml(deliveryStatus)}</p>` : '',
@@ -377,6 +385,7 @@ export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
       ${deliveryMetaHtml}
       ${deliveryBadgeHtml}
     </div>
+    ${pendingCollectionHtml}
   </div>
 
   <table class="items-table">

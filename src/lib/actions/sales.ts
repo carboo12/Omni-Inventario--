@@ -16,6 +16,10 @@ import {
     InsufficientStockError,
     allowsNegativeStock,
 } from '../stock-policy';
+import { getEffectiveCreditDays, computeCreditDueDate } from '../credit-days';
+import { ROUTE_STATUS } from '../route-settlement';
+import { isGenericCustomerName } from '../route-settlement';
+import { runStockSafeTransaction } from '../stock-tx';
 
 export interface SaleFinancing {
     installments: number;
@@ -31,36 +35,6 @@ class CreditAuthRequiredError extends Error {
 }
 
 /** Número de intentos ante conflictos de escritura (carreras de stock). */
-const STOCK_TX_MAX_ATTEMPTS = 3;
-
-/**
- * Ejecuta la transacción de venta con aislamiento SERIALIZABLE y reintenta ante
- * conflictos de escritura (Prisma P2034). Esto hace que la comprobación de
- * existencias y el descuento FIFO sean atómicos: dos cajeros cobrando el mismo
- * producto a la vez no pueden ambos pasar la validación y dejar el stock en
- * negativo. Con el aislamiento por defecto (REPEATABLE READ) la lectura previa
- * al descuento no está protegida contra esas carreras.
- */
-async function runStockSafeTransaction<T>(
-    fn: (tx: Prisma.TransactionClient) => Promise<T>
-): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= STOCK_TX_MAX_ATTEMPTS; attempt++) {
-        try {
-            return await db.$transaction(fn, {
-                isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-                maxWait: 5000,
-                timeout: 15000,
-            });
-        } catch (error: any) {
-            lastError = error;
-            // P2034: transacción en conflicto o deadlock. Se reintenta con backoff.
-            if (error?.code !== 'P2034' || attempt === STOCK_TX_MAX_ATTEMPTS) throw error;
-            await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
-        }
-    }
-    throw lastError;
-}
 
 /** Consume la materia prima (INGREDIENT) de una receta dentro de la transacción
  * de venta de un platillo preparado (RECIPE_ITEM). Reproduce el descuento FIFO
@@ -253,8 +227,43 @@ export async function createSale(
         const isPaid = deliveryDetails?.isPaid !== undefined ? deliveryDetails.isPaid : !isCobroContraEntrega;
         const deliveryType = deliveryDetails?.deliveryType || (isCobroContraEntrega ? 'ROUTE' : 'COUNTER');
         const deliveryStatus = deliveryDetails?.deliveryStatus || (deliveryType === 'ROUTE' ? 'PENDIENTE_ENTREGA' : 'DELIVERED');
+        // El pedido en ruta queda abierto en la estación de liquidación: el dinero
+        // viaja con el rutero y no entra a caja hasta que el cajero lo recibe.
+        const routeStatus = isCobroContraEntrega ? ROUTE_STATUS.PENDIENTE_LIQUIDACION : null;
+
+        const routeCustomer = isCobroContraEntrega && customerId
+            ? await db.customer.findUnique({ where: { id: customerId }, select: { fullName: true } })
+            : null;
+        if (isCobroContraEntrega && (!routeCustomer || isGenericCustomerName(routeCustomer.fullName))) {
+            return { success: false, error: 'Seleccione un cliente real para emitir un pedido con Cobro contra entrega.' };
+        }
+        if (isCobroContraEntrega && (!(deliveryDetails?.deliveryAddress || '').trim() || !(deliveryDetails?.deliveryPhone || '').trim())) {
+            return { success: false, error: 'La dirección y teléfono son obligatorios para despachos en ruta.' };
+        }
 
         await runStockSafeTransaction(async (tx) => {
+            // El contacto que el cajero escribió en el despacho se guarda en el
+            // cliente: la próxima venta a ruta ya llega prellenada.
+            if (customerId && deliveryType === 'ROUTE') {
+                const contactAddress = (deliveryDetails?.deliveryAddress || '').trim();
+                const contactPhone = (deliveryDetails?.deliveryPhone || '').trim();
+                if (contactAddress || contactPhone) {
+                    const currentCustomer = await tx.customer.findUnique({
+                        where: { id: customerId },
+                        select: { address: true, phone: true },
+                    });
+                    if (currentCustomer) {
+                        await tx.customer.update({
+                            where: { id: customerId },
+                            data: {
+                                ...(contactAddress && !currentCustomer.address ? { address: contactAddress } : {}),
+                                ...(contactPhone && !currentCustomer.phone ? { phone: contactPhone } : {}),
+                            },
+                        });
+                    }
+                }
+            }
+
             for (const item of items) {
                 const variantId = (item.product as any).variantId;
                 const parentProductId = (item.product as any).parentProductId || item.product.id;
@@ -459,6 +468,8 @@ export async function createSale(
                     deliveryAddress: deliveryDetails?.deliveryAddress || null,
                     deliveryPhone: deliveryDetails?.deliveryPhone || null,
                     isPaid: isPaid,
+                    routeStatus: routeStatus,
+                    inventoryType: inventoryType,
                     salesInvoiceItem: {
                         create: items.map(item => {
                             const invUnitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0
@@ -528,9 +539,19 @@ export async function createSale(
                     data: { currentBalance: { increment: financedTotal } }
                 });
 
+                // Plazo de crédito: prevalece el del cliente (creditDays) y, si no
+                // tiene uno propio, se aplica el ajuste global del negocio.
+                const companySettings = await tx.systemSettings.findFirst({
+                    select: { defaultCreditDays: true }
+                });
+                const effectiveDays = getEffectiveCreditDays(customer, companySettings);
+
                 await tx.salesInvoice.update({
                     where: { id: salesInvoice.id },
-                    data: { pendingBalance: { increment: financedTotal } }
+                    data: {
+                        pendingBalance: { increment: financedTotal },
+                        dueDate: computeCreditDueDate(new Date(), effectiveDays)
+                    }
                 });
 
                 if (financing && financing.installments > 0) {
@@ -857,6 +878,10 @@ export async function getDeliveryInvoices() {
             include: {
                 customer: true,
                 user: { select: { name: true } },
+                // La estación de liquidación necesita saber si el pedido ya se cerró
+                // y cómo se liquidó (neto cobrado y devoluciones).
+                routeSettlement: true,
+                routeReturnItems: true,
                 salesInvoiceItem: {
                     include: { product: { select: { barcode: true } } }
                 }

@@ -19,12 +19,14 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 
 export interface SelectedClient {
-    id?: string;
-    name: string;
-    phone?: string;
-    priceLevel?: number;
-    interestRate?: number;
-}
+  id?: string;
+  name: string;
+  phone?: string;
+  /** Dirección registrada: prellena el despacho a ruta. */
+  address?: string;
+  priceLevel?: number;
+  interestRate?: number;
+  }
 
 interface AssignClientDialogProps {
     isOpen: boolean;
@@ -54,6 +56,7 @@ export function AssignClientDialog({
         hasCredit: false,
         creditLimit: 0,
         interestRate: 0,
+        creditDays: null as number | null,
     });
 
     useEffect(() => {
@@ -69,6 +72,7 @@ export function AssignClientDialog({
                 hasCredit: false,
                 creditLimit: 0,
                 interestRate: 0,
+                creditDays: null,
             });
         }
     }, [isOpen, currentName]);
@@ -277,6 +281,25 @@ export function AssignClientDialog({
                                                     value={formData.interestRate}
                                                     onChange={(e) => setFormData({...formData, interestRate: parseFloat(e.target.value) || 0})}
                                                 />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs font-black uppercase text-slate-500">Plazo Crédito (Días)</Label>
+                                                <Input
+                                                    type="number"
+                                                    min={0}
+                                                    placeholder="Ej. 15"
+                                                    className="h-11 border-primary/30"
+                                                    value={formData.creditDays ?? ''}
+                                                    onChange={(e) => {
+                                                        const value = e.target.value;
+                                                        setFormData({
+                                                            ...formData,
+                                                            // Campo vacío = null = usar el valor global
+                                                            creditDays: value === '' ? null : Math.max(0, Math.floor(Number(value) || 0))
+                                                        });
+                                                    }}
+                                                />
+                                                <p className="text-[11px] text-slate-500">Dejar vacío para usar el valor global</p>
                                             </div>
                                         </div>
                                     )}

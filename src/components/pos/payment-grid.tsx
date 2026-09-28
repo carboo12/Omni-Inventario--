@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AlertTriangle } from 'lucide-react';
 import { ArrowLeft, Truck, Store, DollarSign, CreditCard, Banknote } from 'lucide-react';
 import { cn, formatNumber } from '@/lib/utils';
 import { useSettings } from '@/hooks/use-settings';
+import { isGenericCustomerName } from '@/lib/route-settlement';
 
 export interface PaymentDeliveryDetails {
     deliveryType: 'COUNTER' | 'ROUTE';
@@ -21,12 +23,19 @@ interface PaymentGridProps {
     onCancel: () => void;
     onComplete: (amountPaid: number, change: number, method: string, deliveryDetails?: PaymentDeliveryDetails) => void;
     customerName?: string;
+    /** Datos de contacto del cliente asignado: prellenan el despacho a ruta. */
+    customerPhone?: string;
+    customerAddress?: string;
 }
 
 type PaymentStep = 'method-selection' | 'currency-selection' | 'cash-entry';
 type Currency = 'NIO' | 'USD';
 
-export function PaymentGrid({ total, onCancel, onComplete, customerName }: PaymentGridProps) {
+/** Mensaje exigido para despachos en ruta sin dirección o teléfono. */
+const ROUTE_CONTACT_ERROR = 'La dirección y teléfono son obligatorios para despachos en ruta';
+const ROUTE_CUSTOMER_ERROR = 'Los pedidos para ruta requieren un cliente real, no se permite un cliente genérico o anónimo';
+
+export function PaymentGrid({ total, onCancel, onComplete, customerName, customerPhone, customerAddress }: PaymentGridProps) {
     const { settings } = useSettings();
     const [step, setStep] = useState<PaymentStep>('method-selection');
     const [paymentMethod, setPaymentMethod] = useState<string>('');
@@ -37,6 +46,41 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
     const [dispatchType, setDispatchType] = useState<'COUNTER' | 'ROUTE'>('COUNTER');
     const [deliveryAddress, setDeliveryAddress] = useState<string>('');
     const [deliveryPhone, setDeliveryPhone] = useState<string>('');
+    const [routeError, setRouteError] = useState<string | null>(null);
+    const hasMissingSavedContact = !customerAddress?.trim() || !customerPhone?.trim();
+    const enableDeliveryRoute = settings.enableDeliveryRoute === true;
+
+    useEffect(() => {
+        if (!enableDeliveryRoute) {
+            setDispatchType('COUNTER');
+            setRouteError(null);
+        }
+    }, [enableDeliveryRoute]);
+
+    // El contacto del cliente asignado se ofrece como valor inicial: si el cajero
+    // escribe otro, manda lo que se escribió.
+    useEffect(() => {
+        if (customerAddress) setDeliveryAddress(prev => (prev.trim() ? prev : customerAddress));
+        if (customerPhone) setDeliveryPhone(prev => (prev.trim() ? prev : customerPhone));
+    }, [customerAddress, customerPhone]);
+
+    // Un cliente genérico o anónimo nunca puede generar un pedido para ruta.
+    const hasRealCustomer = !isGenericCustomerName(customerName);
+    const missingContact = !deliveryAddress.trim() || !deliveryPhone.trim();
+    const routeCustomerError = !hasRealCustomer ? ROUTE_CUSTOMER_ERROR : null;
+    const routeBlockedReason = routeCustomerError || ((missingContact || hasMissingSavedContact) ? ROUTE_CONTACT_ERROR : null);
+
+    const validateRouteDispatch = (): boolean => {
+        if (dispatchType !== 'ROUTE') return true;
+        const customerError = !hasRealCustomer;
+        const contactError = !deliveryAddress.trim() || !deliveryPhone.trim();
+        if (customerError || contactError) {
+            setRouteError(customerError ? ROUTE_CUSTOMER_ERROR : ROUTE_CONTACT_ERROR);
+            return false;
+        }
+        setRouteError(null);
+        return true;
+    };
 
     const buildDeliveryDetails = (isPaid: boolean): PaymentDeliveryDetails | undefined => {
         if (dispatchType === 'COUNTER') {
@@ -56,6 +100,7 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
     };
 
     const handleMethodSelect = (method: string) => {
+        if (!validateRouteDispatch()) return;
         if (method === 'Efectivo') {
             setPaymentMethod('Efectivo');
             if (!settings.allowDollars || settings.enableMultiCurrency === false) {
@@ -150,7 +195,7 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
                 </div>
 
                 {/* Selector de Tipo de Despacho (Mostrador vs Ruta/Domicilio) */}
-                <div className="p-3 bg-amber-50/70 border-b border-amber-200">
+                {enableDeliveryRoute && <div className="p-3 bg-amber-50/70 border-b border-amber-200">
                     <p className="text-xs font-bold text-amber-900 mb-2 uppercase tracking-wide">Tipo de Despacho:</p>
                     <div className="grid grid-cols-2 gap-3">
                         <Button
@@ -187,8 +232,9 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
                                     size={30}
                                     placeholder="Dirección exacta para el repartidor"
                                     value={deliveryAddress}
-                                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                                    className="h-8 text-xs bg-white mt-1 border-amber-300"
+                                    onChange={(e) => { setDeliveryAddress(e.target.value); setRouteError(null); }}
+                                    aria-invalid={!!routeError && missingContact}
+                                    className={cn("h-8 text-xs bg-white mt-1", routeError && missingContact ? "border-red-600 ring-1 ring-red-600" : "border-amber-300")}
                                 />
                             </div>
                             <div>
@@ -197,13 +243,24 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
                                     size={20}
                                     placeholder="Teléfono del cliente"
                                     value={deliveryPhone}
-                                    onChange={(e) => setDeliveryPhone(e.target.value)}
-                                    className="h-8 text-xs bg-white mt-1 border-amber-300"
+                                    onChange={(e) => { setDeliveryPhone(e.target.value); setRouteError(null); }}
+                                    aria-invalid={!!routeError && missingContact}
+                                    className={cn("h-8 text-xs bg-white mt-1", routeError && missingContact ? "border-red-600 ring-1 ring-red-600" : "border-amber-300")}
                                 />
                             </div>
                         </div>
                     )}
-                </div>
+
+                    {dispatchType === 'ROUTE' && routeError && (
+                        <div
+                            role="alert"
+                            className="mt-3 flex items-start gap-2 rounded-md border-2 border-red-600 bg-red-50 px-3 py-2 text-red-700"
+                        >
+                            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                            <p className="text-xs font-bold leading-snug">{routeError}</p>
+                        </div>
+                    )}
+                </div>}
 
                 {/* Main Grid Buttons */}
                 <div className="flex-1 p-4 grid grid-cols-2 xl:grid-cols-3 gap-4 w-full content-start min-h-0">
@@ -224,11 +281,18 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
                     {/* Cobro contra entrega (Solo para ruta) */}
                     {dispatchType === 'ROUTE' && (
                         <div
-                            className="col-span-1 min-h-[100px] bg-amber-600 hover:bg-amber-700 text-white rounded-lg cursor-pointer p-4 transition-colors flex flex-col justify-center"
+                            className={cn(
+                                "col-span-1 min-h-[100px] rounded-lg p-4 transition-colors flex flex-col justify-center",
+                                routeBlockedReason
+                                    ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"
+                                    : "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                            )}
                             onClick={() => handleMethodSelect('Cobro contra entrega')}
                         >
                             <span className="font-bold text-base block flex items-center gap-2"><Truck className="w-5 h-5" /> COBRO CONTRA ENTREGA</span>
-                            <span className="text-xs opacity-90 block mt-1">Pendiente de cobro por repartidor</span>
+                            <span className="text-xs opacity-90 block mt-1">
+                                {routeBlockedReason ? 'Complete los datos del cliente' : 'Pendiente de cobro por repartidor'}
+                            </span>
                         </div>
                     )}
 
@@ -237,14 +301,14 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName }: Payme
                         <div 
                             className={cn(
                                 "col-span-1 min-h-[100px] text-white rounded-lg p-4 transition-colors flex flex-col justify-center",
-                                customerName && customerName !== 'ANÓNIMO' && customerName !== 'Cliente General'
+                                hasRealCustomer
                                     ? "bg-[#673AB7] hover:bg-[#5E35B1] cursor-pointer" 
                                     : "bg-gray-300 cursor-not-allowed opacity-50"
                             )}
-                            onClick={() => (customerName && customerName !== 'ANÓNIMO' && customerName !== 'Cliente General') && handleMethodSelect('Credito')}
+                            onClick={() => hasRealCustomer && handleMethodSelect('Credito')}
                         >
                             <span className="font-bold text-lg block">CRÉDITO</span>
-                            <span className="text-xs opacity-80 block mt-1">{customerName && customerName !== 'Cliente General' ? 'Cargo a cuenta' : 'Requiere Cliente'}</span>
+                            <span className="text-xs opacity-80 block mt-1">{hasRealCustomer ? 'Cargo a cuenta' : 'Requiere Cliente'}</span>
                         </div>
                     )}
 

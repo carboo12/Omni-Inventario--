@@ -106,10 +106,36 @@ function prismaTypeImports(filePath) {
   return [...names];
 }
 
+// Tipos importados con `import type` desde un módulo hermano de `src/lib`
+// (specifier relativo '../x'). Como el wrapper vive en `src/lib/actions-client/`,
+// el mismo specifier sigue resolviendo al mismo archivo. Se re-emiten tal cual:
+// `import type` se borra en compilación, así que nada de código server llega al bundle.
+function siblingTypeImports(filePath) {
+  const src = readFileSync(filePath, 'utf8');
+  const result = [];
+  const re = /import\s+type\s*\{([^}]*)\}\s*from\s*['"](\.\.\/[^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const names = m[1]
+      .split(',')
+      .map((part) => part.trim().replace(/\s+as\s+\w+/, ''))
+      .filter(Boolean);
+    if (names.length > 0) result.push({ names, from: m[2] });
+  }
+  if (src.includes('export interface RouteSettlementRequest') && src.includes('export interface RouteSettlementResult')) {
+    const groups = result.find((group) => group.from === '../route-settlement');
+    const names = ['RouteSettlementRequest', 'RouteSettlementResult'];
+    if (groups) groups.names.push(...names.filter((name) => !groups.names.includes(name)));
+    else result.push({ names, from: '../route-settlement' });
+  }
+  return result;
+}
+
 for (const { abs, name } of allFiles) {
   const fns = exportedFns(abs);
-  const types = exportedTypes(abs);
+  const types = name === 'route-settlements' ? [] : exportedTypes(abs);
   const typeImports = prismaTypeImports(abs);
+  const siblingTypes = siblingTypeImports(abs);
 
   if (fns.length === 0 && types.length === 0) continue;
 
@@ -123,6 +149,10 @@ for (const { abs, name } of allFiles) {
     lines.push(`import type { ${typeImports.join(', ')} } from '@prisma/client';`);
     lines.push('');
   }
+  for (const group of siblingTypes) {
+    lines.push(`import type { ${group.names.join(', ')} } from '${group.from}';`);
+  }
+  if (siblingTypes.length > 0) lines.push('');
   // Copiar declaraciones de tipos inline (evita importar el módulo server original).
   if (types.length > 0) {
     lines.push('// Tipos copiados del action original (para no arrastrar código server al bundle).');
@@ -132,6 +162,14 @@ for (const { abs, name } of allFiles) {
     }
   }
   for (const fn of fns) {
+    if (name === 'route-settlements' && fn === 'settleRouteOrder') {
+      lines.push(`export async function ${fn}(request: RouteSettlementRequest): Promise<RouteSettlementResult> {`);
+      lines.push(`  return callAction('${name}', '${fn}', [request]) as Promise<RouteSettlementResult>;`);
+      lines.push(`}`);
+      lines.push('');
+      total++;
+      continue;
+    }
     lines.push(`export async function ${fn}(...args: any[]): Promise<any> {`);
     lines.push(`  return callAction('${name}', '${fn}', args);`);
     lines.push(`}`);

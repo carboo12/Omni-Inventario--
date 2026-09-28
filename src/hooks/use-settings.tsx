@@ -43,6 +43,8 @@ interface Settings {
   licenseStatus?: string;
   invoiceAlertDays: number;
   creditFinancingEnabled: boolean;
+  /** Días límite de crédito por defecto (CxC) para clientes sin plazo propio. */
+  defaultCreditDays: number;
   importProductsInDollars: boolean;
   currency: string;
   allowCreditSales: boolean;
@@ -54,6 +56,7 @@ interface Settings {
   enableAccountsPayable: boolean;
   enablePettyCashExpenses: boolean;
   enableSerialNumbers: boolean;
+  enableDeliveryRoute: boolean;
 }
 
 interface SettingsContextType {
@@ -98,6 +101,7 @@ const defaultSettings: Settings = {
   licenseStatus: "unregistered",
   invoiceAlertDays: 5,
   creditFinancingEnabled: false,
+  defaultCreditDays: 30,
   importProductsInDollars: false,
   currency: "NIO",
   allowCreditSales: true,
@@ -109,6 +113,7 @@ const defaultSettings: Settings = {
   enableAccountsPayable: true,
   enablePettyCashExpenses: true,
   enableSerialNumbers: false,
+  enableDeliveryRoute: false,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -167,6 +172,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         invoiceAlertDays: dbSettings.invoiceAlertDays || 5,
         importProductsInDollars: dbSettings.importProductsInDollars || false,
         creditFinancingEnabled: dbSettings.creditFinancingEnabled || false,
+        defaultCreditDays: dbSettings.defaultCreditDays || 30,
         currency: dbSettings.currency || "NIO",
         allowCreditSales: dbSettings.allowCreditSales ?? true,
         enableRecipes: dbSettings.enableRecipes ?? false,
@@ -177,6 +183,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         enableAccountsPayable: dbSettings.enableAccountsPayable ?? true,
         enablePettyCashExpenses: dbSettings.enablePettyCashExpenses ?? true,
         enableSerialNumbers: dbSettings.enableSerialNumbers ?? false,
+        enableDeliveryRoute: dbSettings.enableDeliveryRoute ?? false,
       }));
     }
     setSettingsLoaded(true);
@@ -219,6 +226,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         importProductsInDollars: settings.importProductsInDollars,
         creditFinancingEnabled: settings.creditFinancingEnabled,
         allowCreditSales: settings.allowCreditSales,
+        defaultCreditDays: settings.defaultCreditDays,
         enableRecipes: settings.enableRecipes,
         enableBatchAndExpiration: settings.enableBatchAndExpiration,
         enableKitchenPrinter: settings.enableKitchenPrinter,
@@ -227,9 +235,19 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         enableAccountsPayable: settings.enableAccountsPayable,
         enablePettyCashExpenses: settings.enablePettyCashExpenses,
         enableSerialNumbers: settings.enableSerialNumbers,
+        enableDeliveryRoute: settings.enableDeliveryRoute,
       };
 
-      await updateSettings(dataToSave);
+      const result = await updateSettings(dataToSave);
+      if (!result?.success) {
+        throw new Error(result?.error || 'No se pudieron guardar las configuraciones.');
+      }
+      if (result.data) {
+        setSettings((current) => ({
+          ...current,
+          enableDeliveryRoute: result.data!.enableDeliveryRoute ?? false,
+        }));
+      }
       // Revalidación global: se recargan los datos iniciales (incluye Settings)
       // para que el estado de toda la app refleje inmediatamente los cambios
       // guardados sin necesidad de reiniciar el servidor.

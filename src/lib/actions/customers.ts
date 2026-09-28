@@ -18,6 +18,12 @@ export async function createOrUpdateCustomer(data: {
     hasCredit?: boolean;
     creditLimit?: number;
     interestRate?: number;
+    /**
+     * Plazo de crédito propio del cliente (días). `null` = usar el ajuste global
+     * de SystemSettings.defaultCreditDays. Si se omite en una actualización, se
+     * conserva el valor ya guardado en la base de datos.
+     */
+    creditDays?: number | null;
     priceLevel?: number;
 }) {
     const trimmedName = data.fullName.trim();
@@ -30,6 +36,17 @@ export async function createOrUpdateCustomer(data: {
     if (!isAdmin) {
         data.hasCredit = false;
         data.creditLimit = 0;
+        data.creditDays = null;
+    }
+
+    // El plazo de crédito se normaliza a entero positivo o null (null = ajuste global).
+    // `undefined` significa "no enviado": en una actualización se preserva el valor actual.
+    const hasCreditDaysKey = Object.prototype.hasOwnProperty.call(data, 'creditDays');
+    if (hasCreditDaysKey) {
+        const days = Number(data.creditDays);
+        data.creditDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
+    } else {
+        delete data.creditDays;
     }
 
     // Check if customer exists by name or document
@@ -126,7 +143,7 @@ export async function searchOrCreateCustomer(fullName: string, documentId?: stri
     return customer;
 }
 
-export async function updateCustomerCredit(id: string, data: { hasCredit: boolean, creditLimit: number, interestRate?: number }) {
+export async function updateCustomerCredit(id: string, data: { hasCredit: boolean, creditLimit: number, interestRate?: number, creditDays?: number | null }) {
     try {
         // SEGURIDAD: solo Administrador puede habilitar crédito o modificar límites.
         const session = await verifySession();
@@ -134,12 +151,19 @@ export async function updateCustomerCredit(id: string, data: { hasCredit: boolea
             return { success: false, error: 'No autorizado. Solo el Administrador puede modificar la configuración de crédito.' };
         }
 
+        // Plazo propio del cliente: entero positivo o null (null = ajuste global).
+        // Si no se envía el campo, se conserva el valor actual.
+        const hasCreditDaysKey = Object.prototype.hasOwnProperty.call(data, 'creditDays');
+        const days = Number(data.creditDays);
+        const normalizedDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
+
         const customer = await db.customer.update({
             where: { id },
             data: {
                 hasCredit: data.hasCredit,
                 creditLimit: Number(data.creditLimit) || 0,
                 ...(typeof data.interestRate === 'number' ? { interestRate: data.interestRate } : {}),
+                ...(hasCreditDaysKey ? { creditDays: normalizedDays } : {}),
             }
         });
 

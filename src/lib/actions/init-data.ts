@@ -40,6 +40,7 @@ export interface InitialAppData {
     importProductsInDollars: boolean | null;
     creditFinancingEnabled: boolean;
     allowCreditSales: boolean;
+    defaultCreditDays: number;
     enableRecipes: boolean;
     enableBatchAndExpiration: boolean;
     enableKitchenPrinter: boolean;
@@ -48,6 +49,7 @@ export interface InitialAppData {
     enableAccountsPayable: boolean;
     enablePettyCashExpenses: boolean;
     enableSerialNumbers: boolean;
+    enableDeliveryRoute: boolean;
   } | null;
   businessMode: BusinessMode;
   sessions: Array<{
@@ -188,6 +190,7 @@ export async function getInitialAppData(): Promise<InitialAppData> {
           importProductsInDollars: settingsRow.importProductsInDollars,
           creditFinancingEnabled: settingsRow.creditFinancingEnabled || false,
           allowCreditSales: settingsRow.allowCreditSales ?? true,
+          defaultCreditDays: settingsRow.defaultCreditDays || 30,
           enableRecipes: settingsRow.enableRecipes ?? false,
           enableBatchAndExpiration: settingsRow.enableBatchAndExpiration ?? false,
           enableKitchenPrinter: settingsRow.enableKitchenPrinter ?? true,
@@ -196,6 +199,7 @@ export async function getInitialAppData(): Promise<InitialAppData> {
           enableAccountsPayable: settingsRow.enableAccountsPayable ?? true,
           enablePettyCashExpenses: settingsRow.enablePettyCashExpenses ?? true,
           enableSerialNumbers: settingsRow.enableSerialNumbers ?? false,
+          enableDeliveryRoute: settingsRow.enableDeliveryRoute ?? false,
         }
       : null,
     businessMode,

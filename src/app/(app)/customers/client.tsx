@@ -89,6 +89,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
         hasCredit: false,
         creditLimit: 0,
         interestRate: 0,
+        creditDays: null as number | null,
         priceLevel: 1
     });
 
@@ -111,6 +112,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                 hasCredit: customer.hasCredit,
                 creditLimit: customer.creditLimit,
                 interestRate: (customer as any).interestRate || 0,
+                creditDays: (customer as any).creditDays ?? null,
                 priceLevel: (customer as any).priceLevel || 1
             });
         } else {
@@ -123,6 +125,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                 hasCredit: false,
                 creditLimit: 0,
                 interestRate: 0,
+                creditDays: null,
                 priceLevel: 1
             });
         }
@@ -144,7 +147,9 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                 address: formData.address || null,
                 // SEGURIDAD: si el usuario no es Admin, forzar crédito deshabilitado
                 hasCredit: isAdmin ? formData.hasCredit : false,
-                creditLimit: isAdmin ? formData.creditLimit : 0
+                creditLimit: isAdmin ? formData.creditLimit : 0,
+                // Plazo de crédito propio del cliente. null = usar el ajuste global.
+                creditDays: isAdmin ? formData.creditDays : null
             });
 
             queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -381,7 +386,7 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                             {!isAdmin && <span className="text-xs text-muted-foreground">(Solo administrador)</span>}
                         </div>
                         {formData.hasCredit && (
-                            <div className="grid grid-cols-2 gap-3 bg-primary/5 p-3 rounded-lg border border-primary/10">
+                            <div className="grid grid-cols-3 gap-3 bg-primary/5 p-3 rounded-lg border border-primary/10">
                                 <div>
                                     <Label htmlFor="creditLimit">Límite Crédito (C$)</Label>
                                     <Input 
@@ -402,6 +407,26 @@ export default function CustomersClient({ initialCustomers }: CustomersClientPro
                                         value={formData.interestRate} 
                                         onChange={(e) => setFormData({...formData, interestRate: parseFloat(e.target.value) || 0})}
                                     />
+                                </div>
+                                <div>
+                                    <Label htmlFor="creditDays" className="whitespace-nowrap">Plazo Crédito (Días)</Label>
+                                    <Input
+                                        id="creditDays"
+                                        type="number"
+                                        min={0}
+                                        placeholder="Ej. 15"
+                                        disabled={!isAdmin}
+                                        value={formData.creditDays ?? ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setFormData({
+                                                ...formData,
+                                                // Campo vacío = null = usar el valor global del negocio
+                                                creditDays: value === '' ? null : Math.max(0, Math.floor(Number(value) || 0))
+                                            });
+                                        }}
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">Dejar vacío para usar el valor global</p>
                                 </div>
                             </div>
                         )}

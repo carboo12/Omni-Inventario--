@@ -37,7 +37,9 @@ import * as products from '../src/lib/actions/products';
 import * as purchase_orders from '../src/lib/actions/purchase-orders';
 import * as purchases from '../src/lib/actions/purchases';
 import * as quotations from '../src/lib/actions/quotations';
+import * as receipt_settings from '../src/lib/actions/receipt-settings';
 import * as reports from '../src/lib/actions/reports';
+import * as route_settlements from '../src/lib/actions/route-settlements';
 import * as sales from '../src/lib/actions/sales';
 import * as settings from '../src/lib/actions/settings';
 import * as suppliers from '../src/lib/actions/suppliers';
@@ -84,7 +86,9 @@ export const actionModules = {
   'purchase-orders': purchase_orders,
   'purchases': purchases,
   'quotations': quotations,
+  'receipt-settings': receipt_settings,
   'reports': reports,
+  'route-settlements': route_settlements,
   'sales': sales,
   'settings': settings,
   'suppliers': suppliers,

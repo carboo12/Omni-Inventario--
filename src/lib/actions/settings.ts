@@ -50,6 +50,9 @@ export interface SystemSettingsData {
     creditFinancingEnabled?: boolean;
 
     allowCreditSales?: boolean;
+    /// Días límite de crédito por defecto (CxC). Un cliente con creditDays propio
+    /// prevalece sobre este valor.
+    defaultCreditDays?: number;
     enableRecipes?: boolean;
     enableBatchAndExpiration?: boolean;
     enableKitchenPrinter?: boolean;
@@ -58,6 +61,7 @@ export interface SystemSettingsData {
     enableAccountsPayable?: boolean;
     enablePettyCashExpenses?: boolean;
     enableSerialNumbers?: boolean;
+    enableDeliveryRoute?: boolean;
 }
 
 import { verifySession } from '../session';
@@ -123,6 +127,7 @@ export async function getSettings(): Promise<SystemSettingsData> {
             importProductsInDollars: false,
             creditFinancingEnabled: false,
             allowCreditSales: true,
+            defaultCreditDays: 30,
             enableRecipes: false,
             enableBatchAndExpiration: false,
             enableKitchenPrinter: true,
@@ -130,7 +135,8 @@ export async function getSettings(): Promise<SystemSettingsData> {
             enableWholesalePrices: false,
             enableAccountsPayable: true,
             enablePettyCashExpenses: true,
-            enableSerialNumbers: false
+            enableSerialNumbers: false,
+            enableDeliveryRoute: false,
         };
     }
 
@@ -171,6 +177,7 @@ export async function getSettings(): Promise<SystemSettingsData> {
         importProductsInDollars: settings.importProductsInDollars,
         creditFinancingEnabled: settings.creditFinancingEnabled,
         allowCreditSales: settings.allowCreditSales,
+        defaultCreditDays: settings.defaultCreditDays,
         enableRecipes: settings.enableRecipes,
         enableBatchAndExpiration: settings.enableBatchAndExpiration,
         enableKitchenPrinter: settings.enableKitchenPrinter,
@@ -178,7 +185,8 @@ export async function getSettings(): Promise<SystemSettingsData> {
         enableWholesalePrices: settings.enableWholesalePrices,
         enableAccountsPayable: settings.enableAccountsPayable,
         enablePettyCashExpenses: settings.enablePettyCashExpenses,
-        enableSerialNumbers: settings.enableSerialNumbers
+        enableSerialNumbers: settings.enableSerialNumbers,
+        enableDeliveryRoute: settings.enableDeliveryRoute ?? false,
     };
 }
 
@@ -189,6 +197,12 @@ export async function updateSettings(data: SystemSettingsData) {
     }
 
     const existing = await db.systemSettings.findFirst();
+    // `false` es un valor válido y debe llegar intacto a Prisma. Si un cliente
+    // desactualizado omite el campo, se conserva el valor existente en vez de
+    // volver a habilitar silenciosamente el módulo.
+    const enableDeliveryRoute = typeof data.enableDeliveryRoute === 'boolean'
+        ? data.enableDeliveryRoute
+        : existing?.enableDeliveryRoute ?? false;
 
     if (existing) {
         await db.systemSettings.update({
@@ -226,6 +240,7 @@ export async function updateSettings(data: SystemSettingsData) {
                 importProductsInDollars: data.importProductsInDollars,
                 creditFinancingEnabled: data.creditFinancingEnabled,
                 allowCreditSales: data.allowCreditSales,
+                defaultCreditDays: data.defaultCreditDays,
                 enableRecipes: data.enableRecipes,
                 enableBatchAndExpiration: data.enableBatchAndExpiration,
                 enableKitchenPrinter: data.enableKitchenPrinter,
@@ -233,7 +248,8 @@ export async function updateSettings(data: SystemSettingsData) {
                 enableWholesalePrices: data.enableWholesalePrices,
                 enableAccountsPayable: data.enableAccountsPayable,
                 enablePettyCashExpenses: data.enablePettyCashExpenses,
-                enableSerialNumbers: data.enableSerialNumbers
+                enableSerialNumbers: data.enableSerialNumbers,
+                enableDeliveryRoute,
             }
         });
     } else {
@@ -273,6 +289,7 @@ export async function updateSettings(data: SystemSettingsData) {
                 importProductsInDollars: data.importProductsInDollars || false,
                 creditFinancingEnabled: data.creditFinancingEnabled || false,
                 allowCreditSales: data.allowCreditSales ?? true,
+                defaultCreditDays: data.defaultCreditDays && data.defaultCreditDays > 0 ? Math.floor(data.defaultCreditDays) : 30,
                 enableRecipes: data.enableRecipes ?? false,
                 enableBatchAndExpiration: data.enableBatchAndExpiration ?? false,
                 enableKitchenPrinter: data.enableKitchenPrinter ?? true,
@@ -280,11 +297,15 @@ export async function updateSettings(data: SystemSettingsData) {
                 enableWholesalePrices: data.enableWholesalePrices ?? false,
                 enableAccountsPayable: data.enableAccountsPayable ?? true,
                 enablePettyCashExpenses: data.enablePettyCashExpenses ?? true,
-                enableSerialNumbers: data.enableSerialNumbers ?? false
+                enableSerialNumbers: data.enableSerialNumbers ?? false,
+                enableDeliveryRoute,
             } as any
         });
     }
 
     revalidatePath('/');
-    return { success: true };
+    const savedSettings = await db.systemSettings.findFirst({
+        select: { enableDeliveryRoute: true },
+    });
+    return { success: true, data: { enableDeliveryRoute: savedSettings?.enableDeliveryRoute ?? false } };
 }

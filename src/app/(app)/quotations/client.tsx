@@ -29,6 +29,7 @@ import { cancelQuote, getQuoteByNumber, getQuotes } from '@/lib/actions/quotatio
 import { getProducts } from '@/lib/actions/products';
 import { QUOTATIONS_LIST_QUERY_KEY, formatQuoteNumber, stageQuoteForPOS } from '@/lib/quotations-nav';
 import { printReceiptHtml, buildQuoteReceiptHtml } from '@/lib/print-iframe';
+import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import { formatQuotationForPrint } from '@/lib/quotation-print';
 import type { QuotationPrintSource } from '@/lib/quotation-print';
 import { resolvePresentationUnitLabel } from '@/lib/presentations';
@@ -46,6 +47,8 @@ export default function QuotationsClient({ initialQuotes }: QuotationsClientProp
     const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [quoteToCancel, setQuoteToCancel] = useState<Quotation | null>(null);
+    // Diseño del ticket elegido en /settings/ticket.
+    const receiptSettings = useReceiptSettings();
     const { settings } = useSettings();
     const { toast } = useToast();
 
@@ -173,7 +176,7 @@ export default function QuotationsClient({ initialQuotes }: QuotationsClientProp
                 resolveUnitByProductId: (productId) => unitByProductId.get(productId),
             });
 
-            printReceiptHtml(buildQuoteReceiptHtml(printData));
+            printReceiptHtml(buildQuoteReceiptHtml(printData, receiptSettings));
         } catch (error) {
             console.error('Error al imprimir la cotización:', error);
             toast({

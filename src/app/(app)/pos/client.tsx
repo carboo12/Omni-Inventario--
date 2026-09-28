@@ -44,6 +44,7 @@ import { EncargoConfirmDialog, requestEncargoConfirmation } from '@/components/p
 import type { SaleFinancing } from '@/lib/actions/sales';
 import { buildReceiptDataFromInvoice } from '@/lib/ticket-data';
 import { printReceiptHtml, buildReceiptHtml, buildRetiroReceiptHtml, buildQuoteReceiptHtml } from '@/lib/print-iframe';
+import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import { printA4Html, buildA4ReceiptHtml } from '@/lib/print-a4';
 import { createQuote, getQuoteByNumber } from '@/lib/actions/quotations';
 import { QUOTATIONS_LIST_QUERY_KEY, clearStagedQuoteForPOS, readStagedQuoteForPOS } from '@/lib/quotations-nav';
@@ -62,6 +63,7 @@ import { ItemEditDialog } from '@/components/pos/item-edit-dialog';
 import { usePersistedCart } from '@/hooks/use-persisted-cart';
 import { usePOSData } from '@/hooks/use-pos-data';
 import { resolvePresentationFactor, resolvePresentationUnitLabel } from '@/lib/presentations';
+import { isGenericCustomerName } from '@/lib/route-settlement';
 
 const AssignClientDialog = dynamic(
     () => import('@/components/pos/assign-client-dialog').then((mod) => ({ default: mod.AssignClientDialog })),
@@ -111,6 +113,8 @@ const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, 
     deliveryStatus?: string;
     routeName?: string;
     deliveredByName?: string;
+    /** Cobro contra entrega: el ticket debe avisar que el dinero quedó en la ruta. */
+    pendingCollection?: boolean;
 }) => {
     return {
         pharmacyName: settings.ticketHeader.name,
@@ -155,6 +159,7 @@ const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, 
         deliveryStatus: delivery?.deliveryStatus,
         routeName: delivery?.routeName,
         deliveredByName: delivery?.deliveredByName,
+        pendingCollection: !!delivery?.pendingCollection,
     };
 };
 
@@ -331,6 +336,9 @@ const CashierPOS = ({ products, inventory }: POSComponentProps) => {
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { settings } = useSettings();
+    // Diseño del ticket elegido en /settings/ticket (fuentes, ancho y
+    // disposición de la presentación). Se pasa a los constructores de impresión.
+    const receiptSettings = useReceiptSettings();
     const enableRecipes = !!settings.enableRecipes;
     const pathname = usePathname();
 const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unlockPendingSale, addPendingSale, deletePendingSale } = usePendingSales();
@@ -414,7 +422,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         // que el reinicio ocurre ANTES de abrirse el diálogo. El timer re-afirma cierre
         // + foco al cerrar la ventana para que el modal de resumen no quede visible.
         if (printFormat === 'ticket') {
-            printReceiptHtml(buildReceiptHtml(saleForPrint));
+            printReceiptHtml(buildReceiptHtml(saleForPrint, receiptSettings));
             resetAfterPrint();
             setSaleForPrint(null);
             safetyTimer = window.setTimeout(() => {
@@ -463,7 +471,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
             if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
             if (safetyTimer !== undefined) window.clearTimeout(safetyTimer);
         };
-    }, [saleForPrint, printAreaId, printFormat]);
+    }, [saleForPrint, printAreaId, printFormat, receiptSettings]);
     const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
     const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
@@ -585,7 +593,8 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                         description: item.product.name,
                         price: typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO,
                         total: (typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO) * item.quantity,
-                        // Presentación en 2.ª línea, igual que el ticket de venta.
+                        // Presentación del ítem; la imprime el ticket según el diseño
+                        // elegido en /settings/ticket (2.ª línea o en línea con la cantidad).
                         unit: resolvePresentationUnitLabel(item.product, item.presentation, item.presentationName),
                     })),
                     subtotal: cartTotal,
@@ -599,7 +608,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 };
                 setLastQuoteReceipt(quoteData);
                 setTimeout(() => {
-                    printReceiptHtml(buildQuoteReceiptHtml(quoteData));
+                    printReceiptHtml(buildQuoteReceiptHtml(quoteData, receiptSettings));
                     setLastQuoteReceipt(null);
                 }, 200);
                 setQuoteCustomerName('');
@@ -672,6 +681,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                         id: result.data.clientId || cust?.id,
                         name: cust?.fullName || result.data.customerName || 'Cliente General',
                         phone: cust?.phone || result.data.customerPhone || undefined,
+                        address: cust?.address || undefined,
                         priceLevel: cust?.priceLevel,
                     });
                 }
@@ -994,7 +1004,7 @@ const handlePayment = () => {
 
         let customerId: string | undefined = undefined;
         const requiresCustomer = mode === 'JEWELRY' || paymentMethod === 'Credito' || deliveryDetails?.deliveryType === 'ROUTE';
-        const hasRealName = !!effectiveCustomerName && effectiveCustomerName.trim() !== '' && effectiveCustomerName !== 'Cliente General';
+        const hasRealName = !isGenericCustomerName(effectiveCustomerName);
         if (requiresCustomer && !hasRealName) {
             toast({ title: 'Error', description: 'Es obligatorio asignar un nombre de cliente real para crédito o despachos a ruta.', variant: 'destructive' });
             return;
@@ -1074,6 +1084,7 @@ const handlePayment = () => {
                 clientPhone: deliveryDetails?.deliveryPhone,
                 deliveryType: deliveryDetails?.deliveryType === 'ROUTE' ? 'route' : 'counter',
                 deliveryStatus: deliveryDetails?.deliveryStatus,
+                pendingCollection: deliveryDetails?.deliveryType === 'ROUTE' && deliveryDetails?.isPaid === false,
             }
         );
         saleResetAfterPrintRef.current = true;
@@ -1414,11 +1425,13 @@ return (
                             onProductSelect={addToCart}
                         />
                     ) : (
-                        <PaymentGrid
+                            <PaymentGrid
                             total={cartTotal}
                             onCancel={() => { setViewMode('products'); focusSearchInput(); }}
                             onComplete={handlePrePaymentComplete}
                             customerName={customerName || activeSale?.customerName || 'Cliente General'}
+                            customerPhone={selectedClient?.phone}
+                            customerAddress={selectedClient?.address}
                         />
                     )}
                 </div>
@@ -1592,6 +1605,9 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { settings } = useSettings();
+    // Diseño del ticket elegido en /settings/ticket (fuentes, ancho y
+    // disposición de la presentación). Se pasa a los constructores de impresión.
+    const receiptSettings = useReceiptSettings();
     const enableRecipes = !!settings.enableRecipes;
     const pathname = usePathname();
     const { addPendingSale, removePendingSale, deletePendingSale, lockPendingSale } = usePendingSales();
@@ -1615,7 +1631,7 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
     const [isPaymentSummaryOpen, setIsPaymentSummaryOpen] = useState(false);
 
     // Payment State
-    const [paymentData, setPaymentData] = useState<{ paid: number, change: number, method: string } | null>(null);
+    const [paymentData, setPaymentData] = useState<{ paid: number, change: number, method: string, deliveryDetails?: any } | null>(null);
 
     const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
     const [isHeldBillsOpen, setIsHeldBillsOpen] = useState(false);
@@ -1710,7 +1726,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         // que el reinicio ocurre ANTES de abrirse el diálogo. El timer re-afirma cierre
         // + foco al cerrar la ventana para que el modal de resumen no quede visible.
         if (printFormat === 'ticket') {
-            printReceiptHtml(buildReceiptHtml(saleForPrint));
+            printReceiptHtml(buildReceiptHtml(saleForPrint, receiptSettings));
             resetAfterPrint();
             setSaleForPrint(null);
             safetyTimer = window.setTimeout(() => {
@@ -1759,7 +1775,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
             if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
             if (safetyTimer !== undefined) window.clearTimeout(safetyTimer);
         };
-    }, [saleForPrint, printAreaId, printFormat]);
+    }, [saleForPrint, printAreaId, printFormat, receiptSettings]);
     // Credit Note / Return States
     const [isAdminAuthOpen, setIsAdminAuthOpen] = useState(false);
     // Para autorizar ventas a crédito que exceden límite / cliente en mora:
@@ -2002,12 +2018,12 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         !!saleForPrint ||
         !!lastQuoteReceipt;
 
-    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false) => {
+    const handleSuccessfulPayment = async (amountPaid: number, change: number, paymentMethod: string, financing?: SaleFinancing, adminAuthorized = false, deliveryDetails?: any) => {
         if (!user || !activeSession) return;
 
         let customerId: string | undefined = undefined;
-        const requiresCustomer = mode === 'JEWELRY' || paymentMethod === 'Credito';
-        const hasRealName = !!customerName && customerName.trim() !== '' && customerName !== 'Cliente General';
+        const requiresCustomer = mode === 'JEWELRY' || paymentMethod === 'Credito' || deliveryDetails?.deliveryType === 'ROUTE';
+        const hasRealName = !isGenericCustomerName(customerName);
         if (requiresCustomer && !hasRealName) {
             toast({ title: 'Error', description: 'Es obligatorio asignar un nombre de cliente real.', variant: 'destructive' });
             return;
@@ -2034,7 +2050,8 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
             paymentMethod as any,
             customerId,
             financing || null,
-            adminAuthorized || undefined
+            adminAuthorized || undefined,
+            deliveryDetails || undefined
         );
 
         if (!result.success) {
@@ -2060,7 +2077,26 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
             ? (isJewelry ? `Factura ${formatTicketNumber(result.invoiceNumber)}` : formatTicketNumber(result.invoiceNumber))
             : undefined;
         const finalCustomerName = customerName && customerName.trim() ? customerName.trim() : 'Cliente General';
-        const receiptData = prepareReceiptData(cart, cartTotal, cartSubtotal, taxAmount, user, settings, finalCustomerName, paymentMethod, amountPaid, change, ticketLabel);
+        const receiptData = prepareReceiptData(
+            cart,
+            cartTotal,
+            cartSubtotal,
+            taxAmount,
+            user,
+            settings,
+            finalCustomerName,
+            paymentMethod,
+            amountPaid,
+            change,
+            ticketLabel,
+            {
+                clientAddress: deliveryDetails?.deliveryAddress,
+                clientPhone: deliveryDetails?.deliveryPhone,
+                deliveryType: deliveryDetails?.deliveryType === 'ROUTE' ? 'route' : 'counter',
+                deliveryStatus: deliveryDetails?.deliveryStatus,
+                pendingCollection: deliveryDetails?.deliveryType === 'ROUTE' && deliveryDetails?.isPaid === false,
+            }
+        );
         // Se solicita imprimir SOLO cuando el portal del <ReceiptTemplate/> esté
         // montado. El reinicio de la venta (carrito/resumen/cliente/panel) se
         // ejecuta DESPUÉS de cerrar la vista previa, dentro de la tubería de impresión.
@@ -2071,13 +2107,13 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
     };
 
-    const handlePrePaymentComplete = (amountPaid: number, change: number, method: string) => {
+    const handlePrePaymentComplete = (amountPaid: number, change: number, method: string, deliveryDetails?: any) => {
         if (method === 'Credito' && settings.creditFinancingEnabled) {
             setPendingCredit({ paid: amountPaid, change });
             setIsFinancingOpen(true);
             return;
         }
-        setPaymentData({ paid: amountPaid, change, method });
+        setPaymentData({ paid: amountPaid, change, method, deliveryDetails });
         setIsPaymentSummaryOpen(true);
     };
 
@@ -2094,7 +2130,7 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         // No depender de la tuberia de impresion async para desmontarlo.
         setIsPaymentSummaryOpen(false);
         if (paymentData) {
-            handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method);
+            handleSuccessfulPayment(paymentData.paid, paymentData.change, paymentData.method, undefined, false, paymentData.deliveryDetails);
         }
         // Devolver el foco al buscador tras cerrar el modal.
         setTimeout(() => { productGridRef.current?.focusSearch(); }, 150);
@@ -2259,7 +2295,8 @@ const handleClearCart = () => {
                         description: item.product.name,
                         price: typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO,
                         total: (typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : item.product.priceNIO) * item.quantity,
-                        // Presentación en 2.ª línea, igual que el ticket de venta.
+                        // Presentación del ítem; la imprime el ticket según el diseño
+                        // elegido en /settings/ticket (2.ª línea o en línea con la cantidad).
                         unit: resolvePresentationUnitLabel(item.product, item.presentation, item.presentationName),
                     })),
                     subtotal: cartTotal,
@@ -2273,7 +2310,7 @@ const handleClearCart = () => {
                 };
                 setLastQuoteReceipt(quoteData);
                 setTimeout(() => {
-                    printReceiptHtml(buildQuoteReceiptHtml(quoteData));
+                    printReceiptHtml(buildQuoteReceiptHtml(quoteData, receiptSettings));
                     setLastQuoteReceipt(null);
                 }, 200);
                 setQuoteCustomerName('');
@@ -2346,6 +2383,7 @@ const handleClearCart = () => {
                         id: result.data.clientId || cust?.id,
                         name: cust?.fullName || result.data.customerName || 'Cliente General',
                         phone: cust?.phone || result.data.customerPhone || undefined,
+                        address: cust?.address || undefined,
                         priceLevel: cust?.priceLevel,
                     });
                 }
@@ -2663,6 +2701,8 @@ const handleClearCart = () => {
                             onCancel={() => { setViewMode('products'); focusSearchInput(); }}
                             onComplete={handlePrePaymentComplete}
                             customerName={customerName}
+                            customerPhone={selectedClient?.phone}
+                            customerAddress={selectedClient?.address}
                         />
                     )}
                 </div>

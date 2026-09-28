@@ -22,6 +22,7 @@ import {
   Landmark,
   MapPin,
   ClipboardList,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +61,7 @@ const navItems: NavItem[] = [
   { href: "/reports", label: "Informes", icon: LineChart, roles: ["master-admin", "admin"] },
   { href: "/users", label: "Usuarios", icon: Users, roles: ["master-admin", "admin"] },
   { href: "/settings", label: "Configuración", icon: Settings, roles: ["master-admin", "admin"] },
+  { href: "/settings/ticket", label: "Diseño de Ticket", icon: Printer, roles: ["master-admin", "admin"] },
 ];
 
 export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps<typeof Sidebar>['collapsible'] }) {
@@ -83,6 +85,11 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
     // 3. Oculta módulos condicionales según la Configuración del Negocio
     if (settings.allowCreditSales === false) {
       items = items.filter(item => item.href !== '/customers/credit');
+    }
+
+    if (!settings.enableDeliveryRoute) {
+      const deliveryHrefs = ['/ruta', '/entregas', '/delivery-routes', '/delivery-routes/new', '/orders'];
+      items = items.filter(item => !deliveryHrefs.includes(item.href));
     }
 
     // 4. Handle Jewelry Mode specifically

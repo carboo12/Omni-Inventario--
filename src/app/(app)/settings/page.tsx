@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Coins, DollarSign, CreditCard, ReceiptText, Percent, Download, KeyRound, Mail, Lock, RefreshCw, Eye, ShieldAlert, History, QrCode, Copy, Printer } from 'lucide-react';
+import { Coins, DollarSign, CreditCard, ReceiptText, Percent, Download, KeyRound, Mail, Lock, RefreshCw, Eye, ShieldAlert, History, QrCode, Copy, Printer, CalendarClock } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -316,6 +316,18 @@ export default function SettingsPage() {
                                     Números de Serie (IMEI/SKU individual)
                                 </Label>
                             </div>
+                            <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                                <div className="space-y-1">
+                                    <Label htmlFor="enable-delivery-route" className="font-medium cursor-pointer">Módulo de Entregas y Rutas (Delivery)</Label>
+                                    <p className="text-xs text-muted-foreground">Habilita opciones de despacho a domicilio, asignación de rutas y cobro contra entrega.</p>
+                                </div>
+                                <Switch
+                                    id="enable-delivery-route"
+                                    checked={settings.enableDeliveryRoute === true}
+                                    onCheckedChange={(checked) => handleCheckboxChange('enableDeliveryRoute', checked)}
+                                    aria-labelledby="enable-delivery-route"
+                                />
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -544,6 +556,39 @@ export default function SettingsPage() {
                                     <p className="text-xs text-muted-foreground mt-2 ml-6">
                                         Al vender al crédito podrás dividir el total en cuotas (semanal, quincenal o mensual) con interés.
                                     </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <Separator />
+
+                        {/* Plazo de crédito (CxC) */}
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-4">
+                                <CalendarClock className="w-8 h-8 text-primary mt-1" />
+                                <div className="flex-1">
+                                    <h4 className="font-semibold text-lg">Plazo de crédito</h4>
+                                    <div className="mt-3 space-y-1">
+                                        <Label htmlFor="default-credit-days" className="text-sm font-normal">
+                                            Días Límite de Crédito por Defecto
+                                        </Label>
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                id="default-credit-days"
+                                                type="number"
+                                                min={1}
+                                                max={365}
+                                                className="w-24"
+                                                value={settings.defaultCreditDays || 30}
+                                                onChange={(e) => setSettings(p => ({ ...p, defaultCreditDays: parseInt(e.target.value) || 30 }))}
+                                            />
+                                            <span className="text-sm text-muted-foreground">días</span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Plazo que se aplica a las ventas al crédito. Si un cliente tiene un plazo propio en su ficha
+                                            (Plazo Crédito), prevalece sobre este valor.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -19,6 +19,7 @@ import { InvoiceAlerts } from '@/components/purchases/invoice-alerts';
 import { AppLayout } from '@/components/layout/app-layout';
 import { useRouterState, useNavigate } from '@tanstack/react-router';
 import { canAccessRoute, CASHIER_HOME, DISPATCHER_HOME } from '@/lib/rbac';
+import { useSettings } from '@/hooks/use-settings';
 
 // Registro de páginas: path -> componente. Se puebla en src/pages-registry.tsx.
 import { matchPage } from '@/lib/route-match';
@@ -33,6 +34,12 @@ function PageRenderer() {
   const { Component, requiresAuth } = useMatchedPage();
   const { user } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { settings, loading: settingsLoading } = useSettings();
+
+  const isDeliveryRoute = ['/ruta', '/entregas', '/delivery-routes', '/orders', '/collections'].some((base) => pathname === base || pathname.startsWith(`${base}/`));
+  if (!settingsLoading && !settings.enableDeliveryRoute && isDeliveryRoute) {
+    return <RedirectTo to="/pos" />;
+  }
 
   // RBAC: si el rol no puede acceder a la ruta, reorientar al home del rol.
   if (user && requiresAuth && !canAccessRoute(user.role, pathname)) {

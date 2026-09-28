@@ -69,7 +69,7 @@ export const buildReceiptDataFromInvoice = (invoice: any, settings: any, ticketL
         showTotalUSD: true,
         isReprint: true,
         // Datos de reparto: solo se imprimen en la factura Hoja Normal.
-        deliveryType: isRouteDelivery(invoice.deliveryType) ? 'route' : 'counter',
+        deliveryType: isRouteDelivery(invoice.deliveryType) ? 'route' as const : 'counter' as const,
         deliveryStatus: isRouteDelivery(invoice.deliveryType)
             ? getDeliveryStatusLabel(invoice.deliveryStatus, invoice.payOnDelivery)
             : undefined,

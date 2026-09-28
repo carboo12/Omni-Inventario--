@@ -64,6 +64,7 @@ export default function CreditManagementClient({ initialCustomers }: CreditManag
 
     // Form States
     const [creditLimit, setCreditLimit] = useState(0);
+    const [creditDays, setCreditDays] = useState<number | null>(null);
     const [hasCredit, setHasCredit] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState(0);
     const [paymentNotes, setPaymentNotes] = useState('');
@@ -78,6 +79,7 @@ export default function CreditManagementClient({ initialCustomers }: CreditManag
         setSelectedCustomer(customer);
         setCreditLimit(customer.creditLimit || 0);
         setHasCredit(customer.hasCredit || false);
+        setCreditDays(customer.creditDays ?? null);
         setIsSettingsOpen(true);
     };
 
@@ -86,11 +88,12 @@ export default function CreditManagementClient({ initialCustomers }: CreditManag
         setIsLoading(true);
         const result = await updateCustomerCredit(selectedCustomer.id, {
             hasCredit,
-            creditLimit: Number(creditLimit)
+            creditLimit: Number(creditLimit),
+            creditDays
         });
 
         if (result.success) {
-            setCustomers(customers.map(c => c.id === selectedCustomer.id ? { ...c, hasCredit, creditLimit } : c));
+            setCustomers(customers.map(c => c.id === selectedCustomer.id ? { ...c, hasCredit, creditLimit, creditDays } : c));
             toast({ title: "Configuración Actualizada", description: "El crédito del cliente ha sido modificado." });
             setIsSettingsOpen(false);
         } else {
@@ -275,6 +278,21 @@ export default function CreditManagementClient({ initialCustomers }: CreditManag
                                 className="text-lg font-bold"
                             />
                             <p className="text-xs text-muted-foreground">Use 0 para crédito ilimitado (no recomendado).</p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="credit-days">Plazo Crédito (Días)</Label>
+                            <Input
+                                id="credit-days"
+                                type="number"
+                                min={0}
+                                placeholder="Ej. 15"
+                                value={creditDays ?? ''}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setCreditDays(value === '' ? null : Math.max(0, Math.floor(Number(value) || 0)));
+                                }}
+                            />
+                            <p className="text-xs text-muted-foreground">Dejar vacío para usar el valor global</p>
                         </div>
                     </div>
                     <DialogFooter>

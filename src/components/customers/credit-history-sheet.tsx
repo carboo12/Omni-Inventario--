@@ -74,7 +74,7 @@ export function CreditHistorySheet({ customer, onClose }: CreditHistorySheetProp
                 date: new Date(s.date),
                 type: 'DEUDA',
                 amount: s.totalAmount,
-                description: `Compra al crédito #${s.invoiceNumber ? formatTicketNumber(s.invoiceNumber) : s.id.substring(0, 5)}`,
+                description: `Compra al crédito #${s.invoiceNumber ? formatTicketNumber(s.invoiceNumber) : s.id.substring(0, 5)}${s.dueDate ? ` · Vence ${format(new Date(s.dueDate), 'dd/MM/yyyy')}` : ''}`,
                 icon: ArrowUpRight,
                 color: 'text-red-500',
                 bgColor: 'bg-red-50'

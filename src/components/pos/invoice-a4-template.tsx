@@ -2,6 +2,7 @@ import React from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, formatNumber } from '@/lib/utils';
+import { PENDING_COLLECTION_BANNER } from '@/lib/route-settlement';
 import type { ReceiptHtmlData } from '@/lib/print-iframe';
 
 export interface InvoiceA4TemplateProps {
@@ -44,6 +45,8 @@ export interface InvoiceA4TemplateProps {
     deliveryStatus?: string;
     routeName?: string;
     deliveredByName?: string;
+    /** Cobro contra entrega: agrega la leyenda de pago pendiente. */
+    pendingCollection?: boolean;
 }
 
 export const InvoiceA4Template: React.FC<InvoiceA4TemplateProps> = ({
@@ -78,6 +81,7 @@ export const InvoiceA4Template: React.FC<InvoiceA4TemplateProps> = ({
     deliveryStatus,
     routeName,
     deliveredByName,
+    pendingCollection = false,
 }) => {
     const formattedDate = typeof date === 'string'
         ? format(new Date(date), 'dd/MM/yyyy HH:mm', { locale: es })
@@ -131,6 +135,14 @@ export const InvoiceA4Template: React.FC<InvoiceA4TemplateProps> = ({
             </div>
 
             {/* Cuadro de datos del cliente: Nombre, Dirección de Entrega, Teléfono, Fecha y No. Factura */}
+            {pendingCollection && (
+                <div className="mb-4 rounded-lg border-2 border-red-600 bg-red-50 px-4 py-2 text-center">
+                    <p className="text-sm font-black tracking-wide text-red-700">{PENDING_COLLECTION_BANNER}</p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-red-700">
+                        El rutero entrega y cobra; el importe se liquida en caja al volver.
+                    </p>
+                </div>
+            )}
             <div className="grid grid-cols-2 gap-6 mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                 <div className="space-y-1 text-xs">
                     <p className="font-bold text-gray-500 uppercase tracking-wider text-[11px]">Datos del Cliente</p>

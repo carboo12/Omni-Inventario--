@@ -170,6 +170,9 @@ model Customer {
   currentBalance Float               @default(0)
   hasCredit      Boolean             @default(false)
   interestRate   Float               @default(0)
+  /// Plazo de crédito propio del cliente (días). Si es null se aplica el valor
+  /// global de SystemSettings.defaultCreditDays.
+  creditDays     Int?
   priceLevel     Int                 @default(1)
   creditPayment  CreditPayment[]
   goldPurchase   GoldPurchase[]
@@ -611,6 +614,15 @@ model SalesInvoice {
   deliveryAddress     String?
   deliveryPhone       String?
   isPaid              Boolean             @default(true)
+  /// Ciclo de liquidación del pedido para ruta. NULL en ventas de mostrador.
+  /// PENDIENTE_LIQUIDACION | LIQUIDADO_Y_PAGADO | LIQUIDADO_CON_DEVOLUCION_PARCIAL | RECHAZADO_EN_RUTA
+  routeStatus         String?
+  /// Bodega desde la que se descontó el stock (BODEGA | MOSTRADOR | ...).
+  /// Se conserva para que una devolución en ruta reponga exactamente la misma bodega.
+  inventoryType       String?
+  /// Fecha de vencimiento de la factura. Solo se calcula en ventas al crédito,
+  /// sumando el plazo efectivo del cliente (creditDays propio o el global).
+  dueDate             DateTime?
   creditNote          CreditNote?
   customer            Customer?           @relation(fields: [customerId], references: [id], map: "SalesInvoice_customerId_fkey")
   cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "SalesInvoice_sessionId_fkey")
@@ -619,11 +631,14 @@ model SalesInvoice {
   creditInstallment   CreditInstallment[]
   creditPayment       CreditPayment[]
   deliveryRouteStops  DeliveryRouteStop[]
+  routeSettlement     RouteSettlement?
+  routeReturnItems    RouteReturnItem[]
 
   @@index([customerId], map: "SalesInvoice_customerId_fkey")
   @@index([sessionId], map: "SalesInvoice_sessionId_fkey")
   @@index([userId], map: "SalesInvoice_userId_fkey")
   @@index([deliveryStatus], map: "SalesInvoice_deliveryStatus_idx")
+  @@index([routeStatus], map: "SalesInvoice_routeStatus_idx")
   @@map("salesinvoice")
 }
 
@@ -782,6 +797,9 @@ model SystemSettings {
   creditFinancingEnabled    Boolean      @default(false)
   
   allowCreditSales          Boolean      @default(true)
+  /// Días límite de crédito por defecto para las ventas al crédito (CxC).
+  /// Un cliente con Customer.creditDays propio prevalece sobre este valor.
+  defaultCreditDays         Int          @default(30)
   enableRecipes             Boolean      @default(false)
   enableBatchAndExpiration  Boolean      @default(false)
   enableKitchenPrinter      Boolean      @default(false)
@@ -791,6 +809,7 @@ model SystemSettings {
   enableAccountsPayable     Boolean      @default(true)
   enablePettyCashExpenses   Boolean      @default(true)
   enableSerialNumbers       Boolean      @default(false)
+  enableDeliveryRoute       Boolean      @default(true)
 
   @@map("systemsettings")
 }
@@ -1089,4 +1108,85 @@ enum QuoteStatus {
   CANCELLED
 
   @@map("quote_status")
+}
+
+/// Ciclo de vida de un pedido para ruta operado con "Cobro contra entrega".
+/// El pedido se emite PENDIENTE_LIQUIDACION (el dinero viaja con el rutero, no
+/// entra a caja) y se cierra en la estación de liquidación del cajero.
+model RouteSettlement {
+  id                String   @id
+  /// Factura del pedido liquidado. Una sola liquidación por pedido.
+  invoiceId         String   @unique
+  /// Caja que recibió el dinero: el día en que el cajero liquida la entrega.
+  sessionId         String
+  /// Cajero que procesó el dinero y marca de tiempo exacta del cierre.
+  userId            String
+  userName          String
+  /// ENTREGA_COMPLETA | DEVOLUCION_PARCIAL | DEVOLUCION_TOTAL
+  outcome           String
+  /// Forma de pago que usó el cliente final al momento de la entrega.
+  paymentMethod     String
+  /// Neto realmente cobrado por el rutero (0 en devolución total).
+  collectedAmount   Float    @default(0)
+  /// Valor de la mercancía devuelta (nota de crédito / ajuste).
+  returnedAmount    Float    @default(0)
+  /// Unidades físicas devueltas a bodega.
+  returnedUnits     Int      @default(0)
+  reason            String?
+  notes             String?
+  settledAt         DateTime @default(now())
+  salesInvoice      SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, map: "RouteSettlement_invoiceId_fkey")
+
+  @@index([invoiceId], map: "RouteSettlement_invoiceId_fkey")
+  @@index([sessionId], map: "RouteSettlement_sessionId_fkey")
+  @@index([settledAt], map: "RouteSettlement_settledAt_idx")
+  @@map("routesettlement")
+}
+
+/// Detalle de las unidades devueltas en una liquidación de ruta. Permite
+/// reconstruir qué productos volvió a bodega y por qué monto.
+model RouteReturnItem {
+  id            String   @id
+  invoiceId     String
+  invoiceItemId String
+  productId     String
+  productName   String
+  quantity      Int
+  unitPrice     Float
+  totalPrice    Float
+  createdAt     DateTime @default(now())
+  salesInvoice  SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, map: "RouteReturnItem_invoiceId_fkey")
+
+  @@index([invoiceId], map: "RouteReturnItem_invoiceId_fkey")
+  @@map("rutereturnitem")
+}
+
+model ReceiptSettings {
+  id                    String   @id @default(uuid())
+  companyId             String?  @unique
+  
+  // Tipografía y márgenes
+  fontFamily            String   @default("monospace")
+  ticketWidth           String   @default("80mm")
+  lineHeight            Float    @default(1.2)
+  paddingX              Int      @default(0)
+  
+  // Tamaños de Fuente (px)
+  fontSizeTitle         Int      @default(16)
+  fontSizeHeader        Int      @default(11)
+  fontSizeBody          Int      @default(11)
+  fontSizePresentation  Int      @default(9)
+  fontSizeTotals        Int      @default(12)
+  fontSizeFooter        Int      @default(10)
+  
+  // Disposición / Layout
+  presentationLayout    String   @default("BELOW_NAME")
+  showLogo              Boolean  @default(true)
+  showClientInfo        Boolean  @default(true)
+  showEquivalenceUsd    Boolean  @default(true)
+  footerMessage         String?  @default("¡Gracias por su compra!")
+  
+  updatedAt             DateTime @updatedAt
+
+  @@map("receipt_settings")
 }

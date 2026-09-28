@@ -2,6 +2,7 @@
 
 import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { PENDING_COLLECTION_BANNER } from './route-settlement';
 
 /** Identificador del iframe de impresión, para poder limpiar el anterior. */
 const PRINT_IFRAME_ID = 'print-receipt-iframe';
@@ -349,18 +350,40 @@ function fmtNum(value: number | string | null | undefined): string {
     });
 }
 
+const GENERIC_UNITS = ['ud', 'unidad', 'unid', 'un', 'pza', 'pz'];
+
+/**
+ * Presentación para la línea secundaria (Abajo del Nombre): se envuelve en
+ * paréntesis para separarla visualmente del nombre del producto.
+ */
 function formatUnitLabel(unit?: string): string | null {
     if (!unit) return null;
     const trimmed = unit.trim();
     if (!trimmed) return null;
     const lower = trimmed.toLowerCase();
-    if (['ud', 'unidad', 'unid', 'un', 'pza', 'pz'].includes(lower)) {
+    if (GENERIC_UNITS.includes(lower)) {
         return null;
     }
     if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
         return trimmed;
     }
     return `(${trimmed})`;
+}
+
+/**
+ * Presentación para la línea continua (En Línea con la Cantidad): sin
+ * paréntesis ni cursiva, para que el texto fluya junto a la cantidad y al
+ * nombre dentro de la misma línea. Los paréntesis que ya venían en el dato se
+ * eliminan y las unidades genéricas ("ud", "unidad", "pza"...) se omiten.
+ */
+function formatInlinePresentation(unit?: string): string | null {
+    if (!unit) return null;
+    const unwrapped = unit.trim().replace(/^\((.*)\)$/, '$1').trim();
+    if (!unwrapped) return null;
+    if (GENERIC_UNITS.includes(unwrapped.toLowerCase())) {
+        return null;
+    }
+    return unwrapped;
 }
 
 /* ------------------------------------------------------------------ */
@@ -416,9 +439,29 @@ export interface ReceiptHtmlData {
     routeName?: string;
     /** Nombre del repartidor que entrega. Solo Hoja Normal. */
     deliveredByName?: string;
+    /** Cobro contra entrega: imprime la leyenda de pago pendiente. */
+    pendingCollection?: boolean;
 }
 
-export function buildReceiptHtml(data: ReceiptHtmlData): string {
+export interface DynamicReceiptSettings {
+    fontFamily?: string;
+    ticketWidth?: string;
+    lineHeight?: number;
+    paddingX?: number;
+    fontSizeTitle?: number;
+    fontSizeHeader?: number;
+    fontSizeBody?: number;
+    fontSizePresentation?: number;
+    fontSizeTotals?: number;
+    fontSizeFooter?: number;
+    presentationLayout?: string;
+    showLogo?: boolean;
+    showClientInfo?: boolean;
+    showEquivalenceUsd?: boolean;
+    footerMessage?: string | null;
+}
+
+export function buildReceiptHtml(data: ReceiptHtmlData, receiptSettings?: DynamicReceiptSettings): string {
     const {
         pharmacyName, address, phone, rfc, ticketId, date,
         cashierName, clientName, clientPhone, items, subtotal, tax, total,
@@ -429,6 +472,24 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
         documentKind = 'sale',
     } = data;
 
+    // Dynamic settings with fallbacks to defaults
+    const rs = receiptSettings || {};
+    const dynFontFamily = rs.fontFamily === 'sans-serif' ? "Arial, 'Helvetica Neue', sans-serif" : "'Courier New', Courier, monospace";
+    const dynTicketWidth = rs.ticketWidth || '80mm';
+    const dynLineHeight = rs.lineHeight ?? 1.2;
+    const dynPaddingX = rs.paddingX ?? 0;
+    const dynFontSizeTitle = rs.fontSizeTitle ?? 18;
+    const dynFontSizeHeader = rs.fontSizeHeader ?? 12;
+    const dynFontSizeBody = rs.fontSizeBody ?? 12;
+    const dynFontSizePresentation = rs.fontSizePresentation ?? 10;
+    const dynFontSizeTotals = rs.fontSizeTotals ?? 12;
+    const dynFontSizeFooter = rs.fontSizeFooter ?? 12;
+    const isInlinePresentation = rs.presentationLayout === 'INLINE_QTY';
+    const dynShowClientInfo = rs.showClientInfo !== false;
+    const dynShowEquivUSD = rs.showEquivalenceUsd !== false;
+    const dynShowLogo = rs.showLogo !== false;
+    const resolvedFooterMessage = rs.footerMessage !== undefined ? (rs.footerMessage || '') : (footerMessage || '');
+
     // La plantilla unificada de 80 mm cubre venta y cotización: sólo cambian
     // el rótulo del encabezado, las líneas de metadatos y la leyenda final.
     const isQuotation = documentKind === 'quotation';
@@ -436,7 +497,7 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
     const totalUSD = total / exchangeRate;
     const dateStr = format(date, 'dd/MM/yyyy HH:mm', { locale: es });
 
-    const logoHtml = logoSvg
+    const logoHtml = (dynShowLogo && logoSvg)
         ? `<div class="logo-img" style="display:flex;align-items:center;justify-content:center;">${logoSvg}</div>`
         : '';
 
@@ -444,26 +505,55 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
         ? `<p class="reprint-badge">*** REIMPRESIÓN DE TICKET ***</p>`
         : '';
 
-    const usdHtml = showTotalUSD
-        ? `<div class="usd-row">
+    // Cobro contra entrega: el rutero lleva el dinero, por eso el ticket lo avisa.
+    const pendingCollectionHtml = data.pendingCollection
+        ? `<p class="pending-collection-badge" style="font-weight:900;font-size:${Math.max(9, dynFontSizeBody - 1)}px;border:2px solid #000;border-radius:3px;padding:1px 3px;display:inline-block;margin-top:2px;">${escapeHtml(PENDING_COLLECTION_BANNER)}</p>`
+        : '';
+
+    const usdHtml = (showTotalUSD && dynShowEquivUSD)
+        ? `<div class="usd-row" style="font-size:${dynFontSizeFooter}px;">
             <span>Equiv. USD (Tasa: ${escapeHtml(String(exchangeRate))}):</span>
             <span>$ ${fmtNum(totalUSD)}</span>
           </div>`
         : '';
 
+    // Las columnas de precio y total se imprimen sin símbolo de moneda,
+    // tal como se muestra en el diseño del ticket.
     const itemsTableRowsHtml = items.map(item => {
+        const priceCellStyle = `vertical-align:top;text-align:right;padding:4px 1px;white-space:nowrap;font-size:${dynFontSizeBody}px;`;
+        const qtyCell = `<td class="col-cant" style="vertical-align:top;text-align:left;padding:4px 1px;font-weight:bold;white-space:nowrap;font-size:${dynFontSizeBody}px;">${escapeHtml(item.quantity)}</td>`;
+        const priceCell = `<td class="col-price" style="${priceCellStyle}">${fmtNum(item.price)}</td>`;
+        const totalCell = `<td class="col-total" style="${priceCellStyle}">${fmtNum(item.total)}</td>`;
+
+        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación] [Nombre] [P.U.] [Total]
+        if (isInlinePresentation) {
+            const presentationText = formatInlinePresentation(item.unit);
+            const presentationSpan = presentationText
+                ? `<span class="item-presentation" style="font-size:${dynFontSizePresentation}px;margin:0 3px;">${escapeHtml(presentationText)}</span>`
+                : '';
+            return `<tr class="item-row" style="border-top:1px dashed #000;">
+            ${qtyCell}
+            <td class="col-prod" style="vertical-align:top;text-align:left;padding:4px 1px;word-break:break-word;overflow-wrap:break-word;">
+                <div style="font-size:${dynFontSizeBody}px;">${presentationSpan}<span class="item-name">${escapeHtml(item.description)}</span></div>
+            </td>
+            ${priceCell}
+            ${totalCell}
+        </tr>`;
+        }
+
+        // ABAJO DEL NOMBRE → [Cantidad] [Nombre] [P.U.] [Total] + presentación en 2.ª línea
         const unitLabel = formatUnitLabel(item.unit);
         const unitHtml = unitLabel
-            ? `<div style="font-size:0.9em;font-style:italic;font-weight:normal;">${escapeHtml(unitLabel)}</div>`
+            ? `<div style="font-size:${dynFontSizePresentation}px;font-style:italic;font-weight:normal;color:#444;">${escapeHtml(unitLabel)}</div>`
             : '';
         return `<tr class="item-row" style="border-top:1px dashed #000;">
-            <td class="col-cant" style="vertical-align:top;text-align:left;padding:4px 1px;font-weight:bold;white-space:nowrap;">${item.quantity}</td>
+            ${qtyCell}
             <td class="col-prod" style="vertical-align:top;text-align:left;padding:4px 1px;word-break:break-word;overflow-wrap:break-word;">
-                <div>${escapeHtml(item.description)}</div>
+                <div style="font-size:${dynFontSizeBody}px;">${escapeHtml(item.description)}</div>
                 ${unitHtml}
             </td>
-            <td class="col-price" style="vertical-align:top;text-align:right;padding:4px 1px;white-space:nowrap;">${fmtNum(item.price)}</td>
-            <td class="col-total" style="vertical-align:top;text-align:right;padding:4px 1px;white-space:nowrap;">${fmtNum(item.total)}</td>
+            ${priceCell}
+            ${totalCell}
         </tr>`;
     }).join('\n');
 
@@ -508,29 +598,34 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
         ? '<p class="thanks">*** PRESUPUESTO NO VALIDO COMO FACTURA ***</p>'
         : '<p class="thanks">*** GRACIAS POR SU COMPRA ***</p>';
 
-    return `<div class="ticket-container">
+    return `<div class="ticket-container" style="font-family:${dynFontFamily};font-size:${dynFontSizeBody}px;line-height:${dynLineHeight};padding:4mm ${dynPaddingX + 2}px;">
   <div class="ticket-header text-center">
     ${logoHtml}
-    <p class="pharmacy-name">${escapeHtml(pharmacyName)}</p>
-    <p class="info-line" style="white-space:pre-line;">${escapeHtml(address)}</p>
-    ${phone ? `<p class="info-line">${escapeHtml(phone)}</p>` : ''}
-    ${rfc ? `<p class="info-line">RFC: ${escapeHtml(rfc)}</p>` : ''}
+    <p class="pharmacy-name" style="font-size:${dynFontSizeTitle}px;">${escapeHtml(pharmacyName)}</p>
+    <p class="info-line" style="white-space:pre-line;font-size:${dynFontSizeHeader}px;">${escapeHtml(address)}</p>
+    ${phone ? `<p class="info-line" style="font-size:${dynFontSizeHeader}px;">${escapeHtml(phone)}</p>` : ''}
+    ${rfc ? `<p class="info-line" style="font-size:${dynFontSizeHeader}px;">RFC: ${escapeHtml(rfc)}</p>` : ''}
     ${reprintHtml}
+    ${pendingCollectionHtml}
   </div>
 
-  <div style="margin-top:8px;">
-    ${metaHtml}
-  </div>
+  ${dynShowClientInfo ? `<div style="margin-top:8px;">
+    ${metaHtml.replace(/class="info-line"/g, `class="info-line" style="font-size:${dynFontSizeHeader}px;"`)}
+  </div>` : `<div style="margin-top:4px;font-size:${dynFontSizeHeader}px;">
+    <p style="margin:0;">Ticket: ${escapeHtml(ticketId)}</p>
+    <p style="margin:0;">Fecha: ${dateStr}</p>
+    <p style="margin:0;">Cajero: ${escapeHtml(cashierName)}</p>
+  </div>`}
 
   <div class="detalle-factura-header">${sectionTitleHtml}</div>
 
   <table class="ticket-table">
     <thead>
       <tr>
-        <th class="col-cant" style="text-align:left;padding:3px 1px;width:12%;font-weight:bold;">Cant</th>
-        <th class="col-prod" style="text-align:left;padding:3px 1px;width:48%;">Producto</th>
-        <th class="col-price" style="text-align:right;padding:3px 1px;width:20%;">P. Unit</th>
-        <th class="col-total" style="text-align:right;padding:3px 1px;width:20%;">Total</th>
+        <th class="col-cant" style="text-align:left;padding:3px 1px;width:12%;font-weight:bold;font-size:${dynFontSizeBody}px;">Cant</th>
+        <th class="col-prod" style="text-align:left;padding:3px 1px;width:48%;font-size:${dynFontSizeBody}px;">Producto</th>
+        <th class="col-price" style="text-align:right;padding:3px 1px;width:20%;font-size:${dynFontSizeBody}px;">P. Unit</th>
+        <th class="col-total" style="text-align:right;padding:3px 1px;width:20%;font-size:${dynFontSizeBody}px;">Total</th>
       </tr>
     </thead>
     <tbody>
@@ -541,15 +636,15 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
   <div class="dashed-line"></div>
 
   <div class="ticket-totals">
-    <div class="flex-row sum-row">
+    <div class="flex-row sum-row" style="font-size:${dynFontSizeTotals}px;">
       <span>Subtotal:</span>
       <span>${currencySymbol} ${fmtNum(subtotal)}</span>
     </div>
-    <div class="flex-row sum-row">
+    <div class="flex-row sum-row" style="font-size:${dynFontSizeTotals}px;">
       <span>IVA:</span>
       <span>${currencySymbol} ${fmtNum(tax)}</span>
     </div>
-    <div class="total-row">
+    <div class="total-row" style="font-size:${dynFontSizeTotals + 6}px;">
       <span>TOTAL:</span>
       <span>${currencySymbol} ${fmtNum(total)}</span>
     </div>
@@ -562,8 +657,8 @@ export function buildReceiptHtml(data: ReceiptHtmlData): string {
 
   ${paymentHtml}
 
-  <div class="ticket-footer text-center" style="margin-top:16px;">
-    ${footerMessage ? `<p class="footer-msg">${escapeHtml(footerMessage)}</p>` : ''}
+  <div class="ticket-footer text-center" style="margin-top:16px;font-size:${dynFontSizeFooter}px;">
+    ${resolvedFooterMessage ? `<p class="footer-msg">${escapeHtml(resolvedFooterMessage)}</p>` : ''}
     ${website ? `<p class="info-line">${escapeHtml(website)}</p>` : ''}
     ${thanksHtml}
   </div>
@@ -845,8 +940,9 @@ export interface QuoteReceiptHtmlData {
  * Adaptador de compatibilidad: delega en la plantilla unificada de 80 mm
  * (`buildReceiptHtml`) con `documentKind: 'quotation'`, de modo que las
  * cotizaciones se impriman con el mismo layout, columnas y estilos que el POS.
+ * `receiptSettings` se reenvía para respetar el diseño elegido en /settings/ticket.
  */
-export function buildQuoteReceiptHtml(data: QuoteReceiptHtmlData): string {
+export function buildQuoteReceiptHtml(data: QuoteReceiptHtmlData, receiptSettings?: DynamicReceiptSettings): string {
     const {
         businessName, address, phone, rfc, quoteNumber, date,
         expirationDays, customerName, customerPhone, cashierName,
@@ -880,5 +976,5 @@ export function buildQuoteReceiptHtml(data: QuoteReceiptHtmlData): string {
         exchangeRate,
         showTotalUSD,
         documentKind: 'quotation',
-    });
+    }, receiptSettings);
 }

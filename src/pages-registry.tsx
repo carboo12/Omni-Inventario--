@@ -47,6 +47,7 @@ const _reportsComponent = lazy(() => import('./app/(app)/reports/client'));
 const _rutaComponent = lazy(() => import('./app/(app)/ruta/client'));
 const _settings_auditComponent = lazy(() => import('./app/(app)/settings/audit/client'));
 const _settingsComponent = lazy(() => import('./app/(app)/settings/page'));
+const _settings_ticketComponent = lazy(() => import('./app/(app)/settings/ticket/client'));
 const _suppliersComponent = lazy(() => import('./app/(app)/suppliers/client'));
 const _suppliers_newComponent = lazy(() => import('./app/(app)/suppliers/new/page'));
 const _usersComponent = lazy(() => import('./app/(app)/users/client'));
@@ -111,6 +112,7 @@ const _reportsFallback = LoadingFallback;
 const _rutaFallback = LoadingFallback;
 const _settings_auditFallback = LoadingFallback;
 const _settingsFallback = LoadingFallback;
+const _settings_ticketFallback = LoadingFallback;
 const _suppliersFallback = LoadingFallback;
 const _suppliers_newFallback = LoadingFallback;
 const _usersFallback = LoadingFallback;
@@ -476,6 +478,8 @@ const _settings_auditWrapper = () => {
 
 const _settingsWrapper = () => createElement(Suspense, { fallback: _settingsFallback() }, createElement(_settingsComponent, {}));
 
+const _settings_ticketWrapper = () => createElement(Suspense, { fallback: _settings_ticketFallback() }, createElement(_settings_ticketComponent, {}));
+
 const _suppliersWrapper = () => {
   const params = useRouteParams();
   const queries: any = {};
@@ -565,6 +569,7 @@ export const authenticatedPages: Record<string, PageEntry> = {
   '/ruta': { Component: _rutaWrapper, requiresAuth: true },
   '/settings/audit': { Component: _settings_auditWrapper, requiresAuth: true },
   '/settings': { Component: _settingsWrapper, requiresAuth: true },
+  '/settings/ticket': { Component: _settings_ticketWrapper, requiresAuth: true },
   '/suppliers': { Component: _suppliersWrapper, requiresAuth: true },
   '/suppliers/new': { Component: _suppliers_newWrapper, requiresAuth: true },
   '/users': { Component: _usersWrapper, requiresAuth: true },

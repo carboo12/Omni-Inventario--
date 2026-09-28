@@ -48,6 +48,9 @@ export interface SystemSettingsData {
     creditFinancingEnabled?: boolean;
 
     allowCreditSales?: boolean;
+    /// Días límite de crédito por defecto (CxC). Un cliente con creditDays propio
+    /// prevalece sobre este valor.
+    defaultCreditDays?: number;
     enableRecipes?: boolean;
     enableBatchAndExpiration?: boolean;
     enableKitchenPrinter?: boolean;
@@ -56,12 +59,13 @@ export interface SystemSettingsData {
     enableAccountsPayable?: boolean;
     enablePettyCashExpenses?: boolean;
     enableSerialNumbers?: boolean;
+    enableDeliveryRoute?: boolean;
 }
 
 export async function getSettings(...args: any[]): Promise<any> {
   return callAction('settings', 'getSettings', args);
 }
 
-export async function updateSettings(...args: any[]): Promise<any> {
-  return callAction('settings', 'updateSettings', args);
+export async function updateSettings(data: SystemSettingsData): Promise<{ success: boolean; error?: string; data?: Pick<SystemSettingsData, 'enableDeliveryRoute'> }> {
+  return callAction('settings', 'updateSettings', [data]) as Promise<{ success: boolean; error?: string; data?: Pick<SystemSettingsData, 'enableDeliveryRoute'> }>;
 }

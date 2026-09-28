@@ -41,6 +41,7 @@ export interface InitialAppData {
     importProductsInDollars: boolean | null;
     creditFinancingEnabled: boolean;
     allowCreditSales: boolean;
+    defaultCreditDays: number;
     enableRecipes: boolean;
     enableBatchAndExpiration: boolean;
     enableKitchenPrinter: boolean;
@@ -49,6 +50,7 @@ export interface InitialAppData {
     enableAccountsPayable: boolean;
     enablePettyCashExpenses: boolean;
     enableSerialNumbers: boolean;
+    enableDeliveryRoute: boolean;
   } | null;
   businessMode: BusinessMode;
   sessions: Array<{

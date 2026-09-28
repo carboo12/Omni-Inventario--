@@ -10,6 +10,7 @@ import { PrintFormatToggle } from '@/components/pos/print-format-toggle';
 import { useSettings } from '@/hooks/use-settings';
 import { printA4Html, buildA4ReceiptHtml } from '@/lib/print-a4';
 import { printReceiptHtml, buildReceiptHtml } from '@/lib/print-iframe';
+import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import type { PrintFormat } from '@/lib/print-format';
 
 interface FacturaPrintClientProps {
@@ -19,6 +20,8 @@ interface FacturaPrintClientProps {
 export default function FacturaPrintClient({ invoice }: FacturaPrintClientProps) {
     const { settings } = useSettings();
     const [printFormat, setPrintFormat] = useState<PrintFormat>('invoice');
+    // Diseño del ticket elegido en /settings/ticket.
+    const receiptSettings = useReceiptSettings();
 
     if (!invoice) {
         return (
@@ -76,7 +79,7 @@ export default function FacturaPrintClient({ invoice }: FacturaPrintClientProps)
         if (printFormat === 'invoice') {
             printA4Html(buildA4ReceiptHtml(receiptData));
         } else {
-            printReceiptHtml(buildReceiptHtml(receiptData));
+            printReceiptHtml(buildReceiptHtml(receiptData, receiptSettings));
         }
     };
 

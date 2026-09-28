@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { createNotification, notifyRegisterOpened } from './notifications';
 import { sendSessionOpening, sendSessionReport } from '../mail';
 import { getPaymentBucket } from '../payment-method';
+import { PAY_ON_DELIVERY_METHOD } from '../route-settlement';
 
 export interface CashRegisterSessionData {
     id: string;
@@ -91,7 +92,7 @@ export interface CloseCashSessionReport {
  * dentro de una $transaction sin salir de ella.
  */
 async function computeSessionBreakdown(client: any, sessionId: string): Promise<SessionSalesBreakdown> {
-    const [invoices, servicesAgg, sessionRow] = await Promise.all([
+    const [invoices, servicesAgg, settlements, sessionRow] = await Promise.all([
         client.salesInvoice.findMany({
             where: {
                 sessionId,
@@ -102,6 +103,12 @@ async function computeSessionBreakdown(client: any, sessionId: string): Promise<
         client.jewelryService.aggregate({
             where: { sessionId },
             _sum: { amount: true },
+        }),
+        // Pedidos en ruta cobrados por el cajero: el dinero entra a ESTA caja el día
+        // de la liquidación, no el de la venta.
+        client.routeSettlement.findMany({
+            where: { sessionId },
+            select: { collectedAmount: true, paymentMethod: true },
         }),
         client.cashRegisterSession.findUnique({
             where: { id: sessionId },
@@ -118,9 +125,35 @@ async function computeSessionBreakdown(client: any, sessionId: string): Promise<
     let salesCredit = 0;
 
     for (const inv of invoices) {
+        // El pedido de "Cobro contra entrega" no cuenta en la caja del día de la
+        // venta: su dinero se suma en la caja donde se liquidó (abajo). Si se sumara
+        // aquí y también allí, el arqueo contaría el mismo cobro dos veces.
+        if ((inv.paymentMethod || '') === PAY_ON_DELIVERY_METHOD) continue;
         const amount = Number(inv.totalAmount) || 0;
         invoiceTotal += amount;
         switch (getPaymentBucket(inv.paymentMethod || '')) {
+            case 'cash':
+                salesCash += amount;
+                break;
+            case 'card':
+                salesCard += amount;
+                break;
+            case 'usd':
+                salesUSD += amount;
+                break;
+            case 'credit':
+                salesCredit += amount;
+                break;
+            default:
+                break;
+        }
+    }
+
+    for (const settlement of settlements) {
+        const amount = Number(settlement.collectedAmount) || 0;
+        if (amount <= 0) continue;
+        invoiceTotal += amount;
+        switch (getPaymentBucket(settlement.paymentMethod || '')) {
             case 'cash':
                 salesCash += amount;
                 break;

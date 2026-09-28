@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, formatNumber } from '@/lib/utils';
+import { useReceiptSettings } from '@/hooks/use-receipt-settings';
+import { PENDING_COLLECTION_BANNER } from '@/lib/route-settlement';
 
 interface ReceiptItem {
     quantity: number;
@@ -39,20 +41,35 @@ interface ReceiptProps {
     showTotalUSD?: boolean;
     hasEncargoItems?: boolean;
     isReprint?: boolean;
+    /** Cobro contra entrega: agrega la leyenda de pago pendiente. */
+    pendingCollection?: boolean;
 }
+
+const GENERIC_UNITS = ['ud', 'unidad', 'unid', 'un', 'pza', 'pz'];
 
 function formatUnitLabel(unit?: string): string | null {
     if (!unit) return null;
     const trimmed = unit.trim();
     if (!trimmed) return null;
     const lower = trimmed.toLowerCase();
-    if (['ud', 'unidad', 'unid', 'un', 'pza', 'pz'].includes(lower)) {
+    if (GENERIC_UNITS.includes(lower)) {
         return null;
     }
     if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
         return trimmed;
     }
     return `(${trimmed})`;
+}
+
+/** Presentación en línea continua: sin paréntesis ni cursiva (En Línea con la Cantidad). */
+function formatInlinePresentation(unit?: string): string | null {
+    if (!unit) return null;
+    const unwrapped = unit.trim().replace(/^\((.*)\)$/, '$1').trim();
+    if (!unwrapped) return null;
+    if (GENERIC_UNITS.includes(unwrapped.toLowerCase())) {
+        return null;
+    }
+    return unwrapped;
 }
 
 export const ReceiptTemplate: React.FC<ReceiptProps> = ({
@@ -79,10 +96,16 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
     exchangeRate = 36.5,
     showTotalUSD = false,
     hasEncargoItems = false,
-    isReprint = false
+    isReprint = false,
+    pendingCollection = false
 }) => {
     const totalUSD = total / exchangeRate;
     const [isMounted, setIsMounted] = useState(false);
+    // Diseño del ticket elegido en /settings/ticket: la vista previa previa a
+    // imprimir debe mostrar exactamente la misma línea que sale por la impresora.
+    const receiptSettings = useReceiptSettings();
+    const isInline = receiptSettings?.presentationLayout === 'INLINE_QTY';
+    const presentationFontSize = receiptSettings?.fontSizePresentation;
 
     useEffect(() => {
         setIsMounted(true);
@@ -119,6 +142,11 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                         *** REIMPRESIÓN DE TICKET ***
                     </p>
                 )}
+                {pendingCollection && (
+                    <p className="mt-1 font-black text-[11px] leading-tight border-2 border-black rounded px-1 py-0.5 inline-block">
+                        {PENDING_COLLECTION_BANNER}
+                    </p>
+                )}
             </div>
 
             <div className="mt-2 text-[12px]">
@@ -145,16 +173,35 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                 </thead>
                 <tbody>
                     {items.map((item, index) => {
-                        const unitLabel = formatUnitLabel(item.unit);
+                        // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación] [Nombre] [P. Unit] [Total]
+                        // ABAJO DEL NOMBRE → [Cantidad] [Nombre] [P. Unit] [Total] + presentación en 2.ª línea
+                        const presentationText = isInline
+                            ? formatInlinePresentation(item.unit)
+                            : formatUnitLabel(item.unit);
                         return (
                             <tr key={index} className="item-row border-t border-dashed border-black">
                                 <td className="col-cant align-top text-left py-1 px-0.5 whitespace-nowrap font-bold">
                                     {item.quantity}
                                 </td>
                                 <td className="col-prod align-top text-left py-1 px-0.5 break-words font-semibold" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                                    <div>{item.description}</div>
-                                    {unitLabel && (
-                                        <div className="text-[0.9em] italic font-normal">{unitLabel}</div>
+                                    {isInline ? (
+                                        <div>
+                                            {presentationText && (
+                                                <span style={presentationFontSize
+                                                    ? { fontSize: `${presentationFontSize}px`, margin: '0 3px' }
+                                                    : { margin: '0 3px' }}>
+                                                    {presentationText}
+                                                </span>
+                                            )}
+                                            <span>{item.description}</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div>{item.description}</div>
+                                            {presentationText && (
+                                                <div className="text-[0.9em] italic font-normal">{presentationText}</div>
+                                            )}
+                                        </>
                                     )}
                                 </td>
                                 <td className="col-price align-top text-right py-1 px-0.5 whitespace-nowrap font-semibold">

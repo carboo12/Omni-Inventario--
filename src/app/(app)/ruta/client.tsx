@@ -1,23 +1,27 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import Link from '@/lib/router-nav';
-import { Truck, Search, Printer, CheckCircle2, Clock, MapPin, Phone, DollarSign, Package, FileText } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Truck, Search, Printer, CheckCircle2, MapPin, Phone, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { confirmDeliveryAndPayment, updateInvoiceDeliveryStatus } from '@/lib/actions-client/sales';
+import { settleRouteOrder } from '@/lib/actions-client/route-settlements';
 import { useRouter } from '@/lib/router-nav';
 import { printA4Html, buildA4ReceiptHtml } from '@/lib/print-a4';
 import { printReceiptHtml, buildReceiptHtml } from '@/lib/print-iframe';
+import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import { useSettings } from '@/hooks/use-settings';
 import { PrintFormatToggle } from '@/components/pos/print-format-toggle';
 import type { PrintFormat } from '@/lib/print-format';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { computeSettlementTotals, getSettlementState, SETTLEMENT_OUTCOMES, type ReturnLine, type SettlementFilter } from '@/lib/route-settlement';
 
 interface DeliveryRoutePageClientProps {
     invoices?: any[];
@@ -29,54 +33,78 @@ const statusBadgeMap: Record<string, { label: string; variant: 'default' | 'seco
     ENTREGADO: { label: 'Entregado', variant: 'secondary' },
     COBRADO: { label: 'Entregado & Cobrado', variant: 'secondary' },
     CANCELADO: { label: 'Cancelado', variant: 'destructive' },
+    RECHAZADO: { label: 'Devuelto / Rechazado', variant: 'destructive' },
 };
 
 export default function DeliveryRouteClient({ invoices: initialInvoices }: DeliveryRoutePageClientProps) {
     const [invoices, setInvoices] = useState(initialInvoices || []);
     const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('ALL');
+    const [statusFilter, setStatusFilter] = useState<SettlementFilter>('PENDIENTES');
     const [printFormat, setPrintFormat] = useState<PrintFormat>('invoice');
     const [loadingId, setLoadingId] = useState<string | null>(null);
+    const [settlingInvoice, setSettlingInvoice] = useState<any | null>(null);
+    const [returns, setReturns] = useState<ReturnLine[]>([]);
+    const [paymentMethod, setPaymentMethod] = useState('Efectivo');
+    // Diseño del ticket elegido en /settings/ticket.
+    const receiptSettings = useReceiptSettings();
     const { toast } = useToast();
     const router = useRouter();
     const { settings } = useSettings();
 
+    const settleableItems = settlingInvoice?.salesInvoiceItem || [];
+    const settlementTotals = computeSettlementTotals(settleableItems, returns, settlingInvoice?.totalAmount);
+    const routeFilterFor = (invoice: any): SettlementFilter => getSettlementState(invoice);
+
+    useEffect(() => {
+        if (!settlingInvoice) return;
+        setReturns([]);
+        setPaymentMethod('Efectivo');
+    }, [settlingInvoice?.id]);
+
     const filtered = useMemo(() => {
         return invoices.filter((inv: any) => {
+            const normalizedSearch = search.trim().toLowerCase();
             const matchesSearch =
-                !search ||
-                String(inv.invoiceNumber).includes(search) ||
-                inv.customer?.fullName?.toLowerCase().includes(search.toLowerCase()) ||
-                inv.deliveryAddress?.toLowerCase().includes(search.toLowerCase()) ||
-                inv.deliveryPhone?.includes(search);
+                !normalizedSearch ||
+                String(inv.invoiceNumber).toLowerCase().includes(normalizedSearch) ||
+                (inv.customer?.fullName || '').toLowerCase().includes(normalizedSearch) ||
+                (inv.deliveryPhone || inv.customer?.phone || '').toLowerCase().includes(normalizedSearch);
 
-            const matchesStatus =
-                statusFilter === 'ALL' ||
-                inv.deliveryStatus === statusFilter ||
-                (statusFilter === 'PENDING' && (inv.deliveryStatus === 'PENDIENTE_ENTREGA' || inv.deliveryStatus === 'EN_RUTA'));
+            const matchesStatus = routeFilterFor(inv) === statusFilter;
 
             return matchesSearch && matchesStatus;
         });
     }, [invoices, search, statusFilter]);
 
-    const handleConfirmDelivery = async (inv: any) => {
+    const handleSettle = async (inv: any, totalReturn = false) => {
         setLoadingId(inv.id);
         try {
-            const result = await confirmDeliveryAndPayment(inv.id);
+            const effectiveReturns = totalReturn
+                ? (inv.salesInvoiceItem || []).map((item: any) => ({ invoiceItemId: item.id, quantity: item.quantity }))
+                : returns;
+            const totals = computeSettlementTotals(inv.salesInvoiceItem || [], effectiveReturns, inv.totalAmount);
+            const result = await settleRouteOrder({
+                invoiceId: inv.id,
+                outcome: totalReturn ? SETTLEMENT_OUTCOMES.DEVOLUCION_TOTAL : totals.returnedUnits > 0 ? SETTLEMENT_OUTCOMES.DEVOLUCION_PARCIAL : SETTLEMENT_OUTCOMES.ENTREGA_COMPLETA,
+                paymentMethod: totalReturn ? '' : paymentMethod,
+                returns: effectiveReturns,
+                reason: totalReturn ? 'Devolución total / rechazado en ruta' : undefined,
+            });
             if (result.success) {
                 toast({
-                    title: '¡Entrega y Cobro Confirmado!',
-                    description: `Pedido #${inv.invoiceNumber} marcado como entregado/cobrado. C$${inv.totalAmount.toFixed(2)} ingresados a caja.`,
+                    title: totalReturn ? 'Devolución registrada' : 'Liquidación registrada',
+                    description: totalReturn ? `Pedido #${inv.invoiceNumber}: mercancía reingresada a bodega.` : `Pedido #${inv.invoiceNumber}: C$${Number(result.data?.collectedAmount || 0).toFixed(2)} ingresados a caja.`,
                 });
                 setInvoices(prev =>
-                    prev.map(item => item.id === inv.id ? { ...item, isPaid: true, deliveryStatus: 'COBRADO' } : item)
+                    prev.map(item => item.id === inv.id ? { ...item, isPaid: !totalReturn, deliveryStatus: totalReturn ? 'RECHAZADO' : 'COBRADO', routeStatus: result.data?.routeStatus, routeSettlement: result.data } : item)
                 );
+                setSettlingInvoice(null);
                 router.refresh();
             } else {
                 toast({ title: 'Error', description: result.error, variant: 'destructive' });
             }
         } catch (err) {
-            toast({ title: 'Error', description: 'Ocurrió un error al confirmar la entrega.', variant: 'destructive' });
+            toast({ title: 'Error', description: 'Ocurrió un error al liquidar la entrega.', variant: 'destructive' });
         } finally {
             setLoadingId(null);
         }
@@ -123,14 +151,14 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
         if (printFormat === 'invoice') {
             printA4Html(buildA4ReceiptHtml(receiptData));
         } else {
-            printReceiptHtml(buildReceiptHtml(receiptData));
+            printReceiptHtml(buildReceiptHtml(receiptData, receiptSettings));
         }
     };
 
     // Imprimir Manifiesto de Ruta (Resumen completo de entregas del día)
     const handlePrintManifest = () => {
         const routeDate = format(new Date(), 'dd/MM/yyyy', { locale: es });
-        const pendingTotal = filtered.reduce((sum, inv) => sum + (!inv.isPaid ? inv.totalAmount : 0), 0);
+        const pendingTotal = filtered.reduce((sum, inv) => sum + (routeFilterFor(inv) === 'PENDIENTES' ? inv.totalAmount : 0), 0);
         const grandTotal = filtered.reduce((sum, inv) => sum + inv.totalAmount, 0);
 
         const manifestRows = filtered.map((inv, idx) => `
@@ -227,7 +255,7 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
                 <CardHeader>
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
-                            <CardTitle className="text-lg font-bold">Pedidos Asignados del Día</CardTitle>
+                        <CardTitle className="text-lg font-bold">Liquidación de Pedidos en Ruta</CardTitle>
                             <CardDescription>{filtered.length} pedidos encontrados.</CardDescription>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
@@ -243,27 +271,27 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
                             <div className="flex gap-1">
                                 <Button
                                     size="sm"
-                                    variant={statusFilter === 'ALL' ? 'default' : 'outline'}
-                                    onClick={() => setStatusFilter('ALL')}
-                                    className="text-xs"
-                                >
-                                    Todos
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant={statusFilter === 'PENDING' ? 'default' : 'outline'}
-                                    onClick={() => setStatusFilter('PENDING')}
+                                    variant={statusFilter === 'PENDIENTES' ? 'default' : 'outline'}
+                                    onClick={() => setStatusFilter('PENDIENTES')}
                                     className="text-xs"
                                 >
                                     Pendientes
                                 </Button>
                                 <Button
                                     size="sm"
-                                    variant={statusFilter === 'COBRADO' ? 'default' : 'outline'}
-                                    onClick={() => setStatusFilter('COBRADO')}
+                                    variant={statusFilter === 'LIQUIDADOS' ? 'default' : 'outline'}
+                                    onClick={() => setStatusFilter('LIQUIDADOS')}
                                     className="text-xs"
                                 >
-                                    Cobrados
+                                    Liquidados / Cobrados
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant={statusFilter === 'DEVUELTOS' ? 'default' : 'outline'}
+                                    onClick={() => setStatusFilter('DEVUELTOS')}
+                                    className="text-xs"
+                                >
+                                    Devueltos / Cancelados
                                 </Button>
                             </div>
                         </div>
@@ -285,7 +313,6 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
                             <TableBody>
                                 {filtered.map((inv: any) => {
                                     const st = statusBadgeMap[inv.deliveryStatus] || { label: inv.deliveryStatus || 'Pendiente', variant: 'outline' };
-                                    const isPaid = inv.isPaid;
                                     return (
                                         <TableRow key={inv.id} className="hover:bg-slate-50">
                                             <TableCell className="font-mono font-bold">
@@ -311,13 +338,15 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
                                             <TableCell>
                                                 <div className="font-bold text-base text-slate-900">C$ {inv.totalAmount.toFixed(2)}</div>
                                                 <div className="mt-0.5">
-                                                    {isPaid ? (
-                                                        <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                                            ✓ Pagado ({inv.paymentMethod})
+                                                {routeFilterFor(inv) === 'PENDIENTES' ? (
+                                                    <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                                            Pendiente de cierre ({inv.paymentMethod})
                                                         </span>
+                                                    ) : routeFilterFor(inv) === 'DEVUELTOS' ? (
+                                                        <span className="inline-flex items-center text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">Devolución / cancelado</span>
                                                     ) : (
                                                         <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300">
-                                                            ⚠️ Cobro contra entrega
+                                                            ✓ {inv.routeSettlement?.paymentMethod || 'Liquidado'} · C$ {Number(inv.routeSettlement?.collectedAmount ?? inv.totalAmount).toFixed(2)}
                                                         </span>
                                                     )}
                                                 </div>
@@ -336,14 +365,14 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
                                                         <Printer className="h-3.5 w-3.5 mr-1" /> Imprimir
                                                     </Button>
 
-                                                    {!isPaid && inv.deliveryStatus !== 'COBRADO' && (
+                                                    {routeFilterFor(inv) === 'PENDIENTES' && (
                                                         <Button
                                                             size="sm"
                                                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                                                             disabled={loadingId === inv.id}
-                                                            onClick={() => handleConfirmDelivery(inv)}
+                                                            onClick={() => setSettlingInvoice(inv)}
                                                         >
-                                                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Confirmar Cobro & Entrega
+                                                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> 💵 Liquidar Entrega
                                                         </Button>
                                                     )}
                                                 </div>
@@ -363,6 +392,52 @@ export default function DeliveryRouteClient({ invoices: initialInvoices }: Deliv
                     </div>
                 </CardContent>
             </Card>
+            <Dialog open={!!settlingInvoice} onOpenChange={(open) => !open && setSettlingInvoice(null)}>
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                    {settlingInvoice && <>
+                        <DialogHeader>
+                            <DialogTitle className="text-xl">Liquidar entrega · Factura #{settlingInvoice.invoiceNumber}</DialogTitle>
+                            <DialogDescription>{settlingInvoice.customer?.fullName || 'Cliente'} · Confirme lo entregado y lo que regresó a bodega.</DialogDescription>
+                        </DialogHeader>
+                        <div className="rounded-lg border overflow-x-auto">
+                            <Table>
+                                <TableHeader><TableRow><TableHead>Producto</TableHead><TableHead>Pedido</TableHead><TableHead>Entregada</TableHead><TableHead>Devuelta</TableHead><TableHead className="text-right">Precio</TableHead></TableRow></TableHeader>
+                                <TableBody>{settleableItems.map((item: any) => {
+                                    const returned = returns.find((line) => line.invoiceItemId === item.id)?.quantity || 0;
+                                    return <TableRow key={item.id}>
+                                        <TableCell className="font-medium">{item.productName}{item.presentationName ? <span className="block text-xs text-muted-foreground">{item.presentationName}</span> : null}</TableCell>
+                                        <TableCell>{item.quantity}</TableCell>
+                                        <TableCell className="font-semibold">{Math.max(0, item.quantity - returned)}</TableCell>
+                                        <TableCell><Input aria-label={`Cantidad devuelta de ${item.productName}`} type="number" min={0} max={item.quantity} step={1} value={returned} className="h-11 w-24 text-center text-lg" onChange={(event) => {
+                                            const quantity = Math.max(0, Math.min(item.quantity, Math.floor(Number(event.target.value) || 0)));
+                                            setReturns((current) => [...current.filter((line) => line.invoiceItemId !== item.id), ...(quantity ? [{ invoiceItemId: item.id, quantity }] : [])]);
+                                        }} /></TableCell>
+                                        <TableCell className="text-right">C$ {Number(item.unitPrice).toFixed(2)}</TableCell>
+                                    </TableRow>;
+                                })}</TableBody>
+                            </Table>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-4 text-sm sm:grid-cols-4">
+                            <div><p className="text-muted-foreground">Total original</p><p className="font-bold">C$ {settlementTotals.originalAmount.toFixed(2)}</p></div>
+                            <div><p className="text-muted-foreground">Unidades devueltas</p><p className="font-bold">{settlementTotals.returnedUnits}</p></div>
+                            <div><p className="text-muted-foreground">Nota de crédito</p><p className="font-bold">C$ {settlementTotals.returnedAmount.toFixed(2)}</p></div>
+                            <div><p className="text-muted-foreground">Nuevo total neto a cobrar</p><p className="text-lg font-black text-emerald-700">C$ {settlementTotals.netAmount.toFixed(2)}</p></div>
+                        </div>
+                        {settlementTotals.returnedUnits < settlementTotals.originalUnits && <div className="space-y-2">
+                            <Label>Forma de pago recibida</Label>
+                            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                                <SelectTrigger className="h-12"><SelectValue placeholder="Seleccione forma de pago" /></SelectTrigger>
+                                <SelectContent><SelectItem value="Efectivo">Efectivo</SelectItem><SelectItem value="Transferencia">Transferencia</SelectItem></SelectContent>
+                            </Select>
+                        </div>}
+                        <DialogFooter className="gap-2 sm:gap-2">
+                            <Button variant="outline" onClick={() => setSettlingInvoice(null)}>Cancelar</Button>
+                            {settlementTotals.returnedUnits < settlementTotals.originalUnits && <Button disabled={loadingId === settlingInvoice.id} className="h-12 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => handleSettle(settlingInvoice)}><CheckCircle2 className="mr-2 h-4 w-4" />Confirmar Cierre & Registrar Pago</Button>}
+                            <Button disabled={loadingId === settlingInvoice.id} variant="destructive" className="h-12" onClick={() => handleSettle(settlingInvoice, true)}><RotateCcw className="mr-2 h-4 w-4" />Marcar Devolución Total / Rechazado</Button>
+                        </DialogFooter>
+                    </>}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
