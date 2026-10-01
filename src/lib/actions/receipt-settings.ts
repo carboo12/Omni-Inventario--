@@ -3,6 +3,7 @@
 import db from '../db';
 import { verifySession } from '../session';
 import { revalidatePath } from 'next/cache';
+import type { PresentationLayout } from '../receipt-presentation';
 
 export interface ReceiptSettingsData {
     fontFamily: string;
@@ -15,7 +16,8 @@ export interface ReceiptSettingsData {
     fontSizePresentation: number;
     fontSizeTotals: number;
     fontSizeFooter: number;
-    presentationLayout: string;
+    presentationLayout: PresentationLayout;
+    presentationCustomFormat?: string;
     showLogo: boolean;
     showClientInfo: boolean;
     showEquivalenceUsd: boolean;
@@ -43,6 +45,7 @@ export async function getReceiptSettings(): Promise<{ success: boolean; data?: R
                     fontSizeTotals: 12,
                     fontSizeFooter: 10,
                     presentationLayout: 'BELOW_NAME',
+                    presentationCustomFormat: '{cantidad} {presentacion} de: {nombre}',
                     showLogo: true,
                     showClientInfo: true,
                     showEquivalenceUsd: true,
@@ -50,7 +53,17 @@ export async function getReceiptSettings(): Promise<{ success: boolean; data?: R
                 }
             };
         }
-        return { success: true, data: settings };
+        const presentationLayout: PresentationLayout = ['BELOW_NAME', 'INLINE_QTY', 'CUSTOM'].includes(settings.presentationLayout)
+            ? settings.presentationLayout as PresentationLayout
+            : 'BELOW_NAME';
+        return {
+            success: true,
+            data: {
+                ...settings,
+                presentationLayout,
+                presentationCustomFormat: settings.presentationCustomFormat || '{cantidad} {presentacion} de: {nombre}',
+            },
+        };
     } catch (error) {
         console.error('Error fetching receipt settings:', error);
         return { success: false, error: 'Error al obtener configuración del ticket' };

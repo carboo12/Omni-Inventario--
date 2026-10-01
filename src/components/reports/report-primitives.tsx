@@ -140,10 +140,12 @@ export function ReportTable({
   headers,
   children,
   emptyRows = 0,
+  headerAlignments,
 }: {
   headers: ReactNode[];
   children?: ReactNode;
   emptyRows?: number;
+  headerAlignments?: ("left" | "center" | "right")[];
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
@@ -151,7 +153,7 @@ export function ReportTable({
         <TableHeader>
           <TableRow className="bg-slate-50 hover:bg-slate-50">
             {headers.map((h, i) => (
-              <TableHead key={i} className="whitespace-nowrap">
+              <TableHead key={i} className={cn("whitespace-nowrap", `text-${headerAlignments?.[i] || "left"}`)}>
                 {h}
               </TableHead>
             ))}

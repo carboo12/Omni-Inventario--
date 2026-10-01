@@ -1,6 +1,7 @@
 // GENERADO AUTOMÁTICAMENTE. No editar.
 // Wrappers de transporte para el módulo 'receipt-settings' (llaman a la API).
 import { callAction } from '../api-client';
+import type { PresentationLayout } from '../receipt-presentation';
 
 // Tipos copiados del action original (para no arrastrar código server al bundle).
 export interface ReceiptSettingsData {
@@ -14,7 +15,8 @@ export interface ReceiptSettingsData {
     fontSizePresentation: number;
     fontSizeTotals: number;
     fontSizeFooter: number;
-    presentationLayout: string;
+    presentationLayout: PresentationLayout;
+    presentationCustomFormat?: string;
     showLogo: boolean;
     showClientInfo: boolean;
     showEquivalenceUsd: boolean;

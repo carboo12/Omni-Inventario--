@@ -3,7 +3,7 @@
 import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { PENDING_COLLECTION_BANNER } from './route-settlement';
-import { buildInlineItemText, formatUnitLabel } from './receipt-presentation';
+import { buildCustomItemText, buildInlineItemText, formatUnitLabel, resolveReceiptFontFamily, type PresentationLayout } from './receipt-presentation';
 
 /** Identificador del iframe de impresión, para poder limpiar el anterior. */
 const PRINT_IFRAME_ID = 'print-receipt-iframe';
@@ -128,7 +128,7 @@ function buildPrintDocument(htmlContent: string): string {
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet" />
 <style>
   @page {
     margin: 0 !important;
@@ -425,7 +425,8 @@ export interface DynamicReceiptSettings {
     fontSizePresentation?: number;
     fontSizeTotals?: number;
     fontSizeFooter?: number;
-    presentationLayout?: string;
+    presentationLayout?: PresentationLayout;
+    presentationCustomFormat?: string;
     showLogo?: boolean;
     showClientInfo?: boolean;
     showEquivalenceUsd?: boolean;
@@ -445,7 +446,7 @@ export function buildReceiptHtml(data: ReceiptHtmlData, receiptSettings?: Dynami
 
     // Dynamic settings with fallbacks to defaults
     const rs = receiptSettings || {};
-    const dynFontFamily = rs.fontFamily === 'sans-serif' ? "Arial, 'Helvetica Neue', sans-serif" : "'Courier New', Courier, monospace";
+    const dynFontFamily = resolveReceiptFontFamily(rs.fontFamily);
     const dynTicketWidth = rs.ticketWidth || '80mm';
     const dynLineHeight = rs.lineHeight ?? 1.2;
     const dynPaddingX = rs.paddingX ?? 0;
@@ -456,6 +457,7 @@ export function buildReceiptHtml(data: ReceiptHtmlData, receiptSettings?: Dynami
     const dynFontSizeTotals = rs.fontSizeTotals ?? 12;
     const dynFontSizeFooter = rs.fontSizeFooter ?? 12;
     const isInlinePresentation = rs.presentationLayout === 'INLINE_QTY';
+    const isCustomPresentation = rs.presentationLayout === 'CUSTOM';
     const dynShowClientInfo = rs.showClientInfo !== false;
     const dynShowEquivUSD = rs.showEquivalenceUsd !== false;
     const dynShowLogo = rs.showLogo !== false;
@@ -495,6 +497,16 @@ export function buildReceiptHtml(data: ReceiptHtmlData, receiptSettings?: Dynami
         const qtyCell = `<td class="col-cant" style="vertical-align:top;text-align:left;padding:4px 1px;font-weight:bold;white-space:nowrap;font-size:${dynFontSizeBody}px;">${escapeHtml(item.quantity)}</td>`;
         const priceCell = `<td class="col-price" style="${priceCellStyle}">${fmtNum(item.price)}</td>`;
         const totalCell = `<td class="col-total" style="${priceCellStyle}">${fmtNum(item.total)}</td>`;
+
+        if (isCustomPresentation) {
+            const customText = buildCustomItemText(rs.presentationCustomFormat, item);
+            return `<tr class="item-row" style="border-top:1px dashed #000;">
+            <td class="col-cant" style="vertical-align:top;text-align:left;padding:4px 1px;font-weight:bold;white-space:nowrap;font-size:${dynFontSizeBody}px;"></td>
+            <td class="col-prod" style="vertical-align:top;text-align:left;padding:4px 1px;word-break:break-word;overflow-wrap:break-word;font-size:${dynFontSizeBody}px;">${escapeHtml(customText)}</td>
+            ${priceCell}
+            ${totalCell}
+        </tr>`;
+        }
 
         // EN LÍNEA CON LA CANTIDAD → [Cantidad] [Presentación de:] [Nombre] [P.U.] [Total]
         if (isInlinePresentation) {

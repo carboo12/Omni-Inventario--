@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -12,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { updateReceiptSettings, getReceiptSettings } from '@/lib/actions-client/receipt-settings';
-import { buildInlineItemText, formatUnitLabel } from '@/lib/receipt-presentation';
+import { buildCustomItemText, buildInlineItemText, formatUnitLabel, resolveReceiptFontFamily, type PresentationLayout } from '@/lib/receipt-presentation';
 import { resetReceiptSettingsCache } from '@/hooks/use-receipt-settings';
 import {
     Save, Type, AlignLeft, Layout, Eye, RotateCcw,
@@ -33,14 +34,18 @@ export const DEFAULT_RECEIPT_SETTINGS = {
     fontSizePresentation: 9,
     fontSizeTotals: 12,
     fontSizeFooter: 10,
-    presentationLayout: 'BELOW_NAME',
+    presentationLayout: 'BELOW_NAME' as PresentationLayout,
+    presentationCustomFormat: '{cantidad} {presentacion} de: {nombre}',
     showLogo: true,
     showClientInfo: true,
     showEquivalenceUsd: true,
     footerMessage: '¡Gracias por su compra!',
 };
 
-type ReceiptSettings = typeof DEFAULT_RECEIPT_SETTINGS;
+type ReceiptSettings = Omit<typeof DEFAULT_RECEIPT_SETTINGS, 'presentationLayout'> & {
+    presentationLayout: PresentationLayout;
+    presentationCustomFormat: string;
+};
 
 // ─────────────────────────────────────────────
 //  Datos simulados para vista previa
@@ -77,9 +82,7 @@ const MOCK_SALE = {
 
 function ReceiptPreview({ settings }: { settings: ReceiptSettings }) {
     // Fallback defensivo para cada propiedad
-    const fontFamily = settings?.fontFamily === 'sans-serif'
-        ? 'Arial, sans-serif'
-        : 'Courier New, monospace';
+    const fontFamily = resolveReceiptFontFamily(settings?.fontFamily);
     const ticketWidth = settings?.ticketWidth || '80mm';
     const lineHeight = settings?.lineHeight ?? 1.2;
     const paddingX = settings?.paddingX ?? 0;
@@ -90,6 +93,7 @@ function ReceiptPreview({ settings }: { settings: ReceiptSettings }) {
     const fontSizeTotals = settings?.fontSizeTotals ?? 12;
     const fontSizeFooter = settings?.fontSizeFooter ?? 10;
     const isInline = settings?.presentationLayout === 'INLINE_QTY';
+    const isCustom = settings?.presentationLayout === 'CUSTOM';
     const showLogo = settings?.showLogo !== false;
     const showClientInfo = settings?.showClientInfo !== false;
     const showEquivUSD = settings?.showEquivalenceUsd !== false;
@@ -174,13 +178,18 @@ function ReceiptPreview({ settings }: { settings: ReceiptSettings }) {
                         const presentationText = isInline
                             ? inlineItem?.presentation
                             : formatUnitLabel(item.unit);
+                        const customText = isCustom
+                            ? buildCustomItemText(settings.presentationCustomFormat, item)
+                            : '';
                         return (
                             <tr key={i} style={{ borderTop: '1px dashed #aaa' }}>
                                 <td style={{ verticalAlign: 'top', paddingTop: '2px', fontWeight: 'bold' }}>
-                                    {item.quantity}
+                                    {isCustom ? '' : item.quantity}
                                 </td>
                                 <td style={{ verticalAlign: 'top', paddingTop: '2px', wordBreak: 'break-word' }}>
-                                    {isInline ? (
+                                    {isCustom ? (
+                                        <div style={{ fontSize: `${fontSizeBody}px` }}>{customText}</div>
+                                    ) : isInline ? (
                                         <div style={{ fontSize: `${fontSizeBody}px` }}>
                                             {presentationText && (
                                                 <span style={{ fontSize: `${fontSizePresentation}px`, margin: '0 3px' }}>
@@ -409,6 +418,10 @@ export default function TicketSettingsClient() {
                                         <SelectContent>
                                             <SelectItem value="monospace">Monospace (Courier)</SelectItem>
                                             <SelectItem value="sans-serif">Sans-serif (Arial)</SelectItem>
+                                            <SelectItem value="roboto-mono">Roboto Mono (Moderna POS)</SelectItem>
+                                            <SelectItem value="inconsolata">Inconsolata (Térmica Compacta)</SelectItem>
+                                            <SelectItem value="inter">Inter / System (Limpia Moderna)</SelectItem>
+                                            <SelectItem value="ticket-classic">Ticket Clásico (Dot Matrix)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -495,7 +508,7 @@ export default function TicketSettingsClient() {
                         <CardContent>
                             <RadioGroup
                                 value={settings?.presentationLayout || 'BELOW_NAME'}
-                                onValueChange={v => update('presentationLayout', v)}
+                                onValueChange={v => update('presentationLayout', v as PresentationLayout)}
                                 className="space-y-3"
                             >
                                 <label
@@ -535,7 +548,45 @@ export default function TicketSettingsClient() {
                                         <div className="mt-1.5 font-mono text-xs bg-muted rounded px-2 py-1 whitespace-pre overflow-x-auto">2 Cajas de: Amoxicilina 500mg       150       300</div>
                                     </div>
                                 </label>
+                                <label
+                                    htmlFor="layout-custom"
+                                    className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                        settings?.presentationLayout === 'CUSTOM'
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-border hover:border-primary/40'
+                                    }`}
+                                >
+                                    <RadioGroupItem value="CUSTOM" id="layout-custom" className="mt-0.5" />
+                                    <div>
+                                        <div className="font-semibold text-sm">Personalizado (Manual)</div>
+                                        <div className="text-xs text-muted-foreground mt-0.5">
+                                            Define manualmente la estructura y orden del texto utilizando plantillas de variables dinámicas.
+                                        </div>
+                                        <div className="mt-1.5 font-mono text-xs bg-muted rounded px-2 py-1">
+                                            {buildCustomItemText(settings.presentationCustomFormat, MOCK_SALE.items[0])}
+                                        </div>
+                                    </div>
+                                </label>
                             </RadioGroup>
+                            {settings?.presentationLayout === 'CUSTOM' && (
+                                <div className="mt-4 space-y-2 rounded-lg border bg-muted/30 p-3">
+                                    <Label htmlFor="presentation-custom-format">Formato Personalizado</Label>
+                                    <Input
+                                        id="presentation-custom-format"
+                                        value={settings.presentationCustomFormat}
+                                        onChange={event => update('presentationCustomFormat', event.target.value)}
+                                        placeholder="{cantidad} {presentacion} de: {nombre}"
+                                    />
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {['{cantidad}', '{presentacion}', '{nombre}', '{precio}', '{total}'].map(variable => (
+                                            <code key={variable} className="rounded-full bg-background px-2 py-1 text-xs text-muted-foreground">{variable}</code>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Vista previa: {buildCustomItemText(settings.presentationCustomFormat, MOCK_SALE.items[0])}
+                                    </p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 

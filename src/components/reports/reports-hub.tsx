@@ -205,11 +205,10 @@ function buildTabExport(tab: TabKey, data: any): TabExport | null {
       return {
         filename: "productividad-despachadores",
         sheet: "Despachadores",
-        headers: ["Despachador", "Nº Despachos", "Unidades", "Total Ventas (C$)", "Participación (%)", "Ticket Prom. (C$)"],
+        headers: ["Despachador", "Nº Despachos", "Total Ventas (C$)", "Participación (%)", "Ticket Prom. (C$)"],
         rows: data.rows.map((r: any) => [
           r.dispatcherName || "Desconocido",
           r.dispatches,
-          n(r.units),
           n(r.revenue),
           n(r.sharePct),
           n(r.avgTicket),

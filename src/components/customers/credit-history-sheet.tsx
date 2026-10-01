@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { toBlob } from 'html-to-image';
 import {
     Card,
     CardContent,
@@ -28,6 +29,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/hooks/use-toast';
 
 interface CreditHistorySheetProps {
     customer: any;
@@ -35,6 +37,9 @@ interface CreditHistorySheetProps {
 }
 
 export function CreditHistorySheet({ customer, onClose }: CreditHistorySheetProps) {
+    const receiptCardRef = useRef<HTMLDivElement>(null);
+    const [isSharing, setIsSharing] = useState(false);
+    const { toast } = useToast();
     // 1. Cálculos de Inteligencia Crediticia
     const stats = useMemo(() => {
         const sales = customer.sales || [];
@@ -93,10 +98,57 @@ export function CreditHistorySheet({ customer, onClose }: CreditHistorySheetProp
         return events.sort((a, b) => b.date.getTime() - a.date.getTime());
     }, [customer]);
 
-    const handleWhatsAppShare = () => {
-        const text = `*FICHA DE CRÉDITO PERSONAL*\n"Omni Inventario +"\n\n*CLIENTE:* ${customer.fullName}\n*SALDO ACTUAL:* C$ ${stats.balance.toFixed(2)}\n\n*ESTADÍSTICAS:*\n- Créditos Totales: ${stats.usageFrequency}\n- Abonos Realizados: ${customer.creditPayments?.length || 0}\n- Cumplimiento: ${stats.complianceRate.toFixed(0)}%\n\nFecha de reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`;
-        const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-        window.open(url, '_blank');
+    const handleWhatsAppShare = async () => {
+        const card = receiptCardRef.current;
+        if (!card || isSharing) return;
+        setIsSharing(true);
+
+        try {
+            const blob = await toBlob(card, {
+                pixelRatio: 3,
+                backgroundColor: '#ffffff',
+                filter: (node) => !(node instanceof HTMLElement && node.classList.contains('no-image-export')),
+            });
+            if (!blob) throw new Error('No se pudo generar la imagen de la ficha.');
+
+            const safeName = String(customer.fullName || 'cliente')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'cliente';
+            const dateStamp = format(new Date(), 'yyyyMMdd_HHmm');
+            const file = new File([blob], `ficha_credito_${safeName}_${dateStamp}.png`, { type: 'image/png' });
+            const shareData = { files: [file], title: `Ficha de Crédito - ${customer.fullName}` };
+            const shareNavigator = navigator as Navigator & {
+                canShare?: (data: ShareData) => boolean;
+                share?: (data: ShareData) => Promise<void>;
+            };
+
+            if (shareNavigator.share && shareNavigator.canShare?.(shareData)) {
+                await shareNavigator.share(shareData);
+                return;
+            }
+
+            if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+                const downloadUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = downloadUrl;
+                anchor.download = file.name;
+                anchor.click();
+                URL.revokeObjectURL(downloadUrl);
+                window.open('https://wa.me/', '_blank', 'noopener,noreferrer');
+                toast({ title: 'Imagen descargada', description: 'Adjunta el PNG descargado en el chat de WhatsApp.' });
+                return;
+            }
+
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            window.open('https://wa.me/', '_blank', 'noopener,noreferrer');
+            toast({ title: 'Imagen lista para compartir', description: 'Imagen de la ficha copiada al portapapeles. ¡Pégala (Ctrl+V) en el chat de WhatsApp!' });
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            console.error('Error al compartir la ficha de crédito:', error);
+            toast({ title: 'No se pudo compartir', description: 'No fue posible generar o compartir la imagen de la ficha.', variant: 'destructive' });
+        } finally {
+            setIsSharing(false);
+        }
     };
 
     return (
@@ -252,7 +304,7 @@ export function CreditHistorySheet({ customer, onClose }: CreditHistorySheetProp
                         <CardDescription>Vista previa de ficha contable</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div id="printable-receipt" className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-6 shadow-sm font-mono text-xs space-y-4">
+                        <div id="ficha-credito-card" ref={receiptCardRef} className="bg-white text-black border-2 border-dashed border-gray-200 rounded-xl p-6 shadow-sm font-mono text-xs space-y-4">
                             <div className="text-center border-b pb-4 space-y-1">
                                 <h3 className="font-black text-sm">FICHA DE CRÉDITO PERSONAL</h3>
                                 <p className="text-gray-500 italic">"Omni Inventario + - Control Administrativo"</p>
@@ -291,12 +343,12 @@ export function CreditHistorySheet({ customer, onClose }: CreditHistorySheetProp
                                 </div>
                             </div>
 
-                            <div className="pt-4 flex justify-center gap-2 no-print">
+                            <div className="pt-4 flex justify-center gap-2 no-print no-image-export">
                                 <Button size="sm" variant="outline" className="text-[10px] font-black h-8" onClick={() => window.print()}>
                                     <Printer className="mr-2 h-3 w-3" /> IMPRIMIR FICHA
                                 </Button>
-                                <Button size="sm" className="text-[10px] font-black h-8" onClick={handleWhatsAppShare}>
-                                    COMPARTIR WHATSAPP
+                                <Button size="sm" className="text-[10px] font-black h-8" onClick={handleWhatsAppShare} disabled={isSharing}>
+                                    {isSharing ? 'GENERANDO IMAGEN…' : 'COMPARTIR WHATSAPP'}
                                 </Button>
                             </div>
                         </div>

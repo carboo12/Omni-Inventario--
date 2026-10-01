@@ -6987,6 +6987,7 @@ async function getReceiptSettings() {
           fontSizeTotals: 12,
           fontSizeFooter: 10,
           presentationLayout: "BELOW_NAME",
+          presentationCustomFormat: "{cantidad} {presentacion} de: {nombre}",
           showLogo: true,
           showClientInfo: true,
           showEquivalenceUsd: true,
@@ -6994,7 +6995,15 @@ async function getReceiptSettings() {
         }
       };
     }
-    return { success: true, data: settings };
+    const presentationLayout = ["BELOW_NAME", "INLINE_QTY", "CUSTOM"].includes(settings.presentationLayout) ? settings.presentationLayout : "BELOW_NAME";
+    return {
+      success: true,
+      data: {
+        ...settings,
+        presentationLayout,
+        presentationCustomFormat: settings.presentationCustomFormat || "{cantidad} {presentacion} de: {nombre}"
+      }
+    };
   } catch (error) {
     console.error("Error fetching receipt settings:", error);
     return { success: false, error: "Error al obtener configuraci\xF3n del ticket" };
@@ -7033,6 +7042,7 @@ __export(reports_exports, {
   getAgingReport: () => getAgingReport,
   getCashClosingReport: () => getCashClosingReport,
   getCreditPerformanceData: () => getCreditPerformanceData,
+  getDispatcherProductivityReport: () => getDispatcherProductivityReport,
   getExpiringProducts: () => getExpiringProducts,
   getLowStockInventory: () => getLowStockInventory,
   getPriceLevelAnalysis: () => getPriceLevelAnalysis,
@@ -7415,7 +7425,7 @@ async function fetchInvoicesInRange(from, to, includeUser = true) {
   });
 }
 async function getReportProductCatalog() {
-  const [products, categories] = await Promise.all([
+  const [products, categories, variants] = await Promise.all([
     db_default.product.findMany({
       select: {
         id: true,
@@ -7428,7 +7438,8 @@ async function getReportProductCatalog() {
         hasVariants: true
       }
     }),
-    db_default.category.findMany({ select: { id: true, name: true, parentId: true, inventoryType: true } })
+    db_default.category.findMany({ select: { id: true, name: true, parentId: true, inventoryType: true } }),
+    db_default.productVariant.findMany({ select: { id: true, productId: true } })
   ]);
   const catById = new Map(categories.map((c) => [c.id, c]));
   const catByName = new Map(categories.map((c) => [c.name, c]));
@@ -7448,7 +7459,8 @@ async function getReportProductCatalog() {
       parentId: cat?.parentId || null
     });
   }
-  return { productById, categories };
+  const productIdByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
+  return { productById, categories, productIdByVariantId };
 }
 function unitCountFor(item) {
   const q = Number(item.quantity) || 0;
@@ -7982,7 +7994,10 @@ async function getReportProfitMargin(from, to) {
   };
 }
 async function getReportFilters() {
-  const { categories } = await getReportProductCatalog();
+  const [{ categories }, products] = await Promise.all([
+    getReportProductCatalog(),
+    db_default.product.findMany({ select: { id: true, name: true, barcode: true, categoryId: true, category: true } })
+  ]);
   const users = await db_default.user.findMany({
     where: { role: { in: ["cashier", "dispatcher", "admin", "master-admin"] } },
     select: { id: true, name: true, role: true, assignedLocation: true },
@@ -7991,6 +8006,7 @@ async function getReportFilters() {
   const locations = Array.from(new Set(users.map((u) => u.assignedLocation || "Sin ubicaci\xF3n"))).sort();
   return {
     categories: categories.map((c) => ({ id: c.id, name: c.name, parentId: c.parentId, inventoryType: c.inventoryType })),
+    products: products.map((p) => ({ id: p.id, name: p.name, barcode: p.barcode || "", categoryId: p.categoryId, categoryName: p.category || "Sin categor\xEDa" })),
     locations,
     cashiers: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
     defaultExchangeRate: 36.5
@@ -8119,6 +8135,137 @@ async function getAgingReport() {
     console.error("Error generating aging report:", error);
     return { success: false, error: "No se pudo generar el reporte de antig\xFCedad de saldos" };
   }
+}
+async function getDispatcherProductivityReport(from, to, productIds, categoryId) {
+  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const rate = await getExchangeRateValue();
+  const { productById, categories, productIdByVariantId } = await getReportProductCatalog();
+  const normalizedCategoryId = categoryId && categoryId !== "all" ? categoryId.trim() : void 0;
+  const settings = await db_default.systemSettings.findFirst({ select: { workflow: true } });
+  const isDispatcherMode = !settings?.workflow || settings.workflow === "dispatcher-cashier";
+  const heldSaleWhere = { status: "BILLED" };
+  if (start || end) {
+    heldSaleWhere.createdAt = {};
+    if (start) heldSaleWhere.createdAt.gte = start;
+    if (end) heldSaleWhere.createdAt.lte = end;
+  }
+  const heldSales = await db_default.heldSale.findMany({
+    where: heldSaleWhere,
+    select: { id: true, dispatcherId: true, dispatcherName: true, invoiceId: true, total: true, items: true },
+    orderBy: { createdAt: "asc" }
+  });
+  const invoiceIds = heldSales.map((hs) => hs.invoiceId).filter((id) => !!id);
+  const invoicesMap = /* @__PURE__ */ new Map();
+  if (invoiceIds.length > 0) {
+    const invoices = await db_default.salesInvoice.findMany({
+      where: { id: { in: invoiceIds }, status: "COMPLETED" },
+      select: { id: true, totalAmount: true, salesInvoiceItem: { select: { productId: true, variantId: true, productName: true, quantity: true, unitPrice: true, totalPrice: true, presentationFactor: true } } }
+    });
+    for (const inv of invoices) invoicesMap.set(inv.id, inv);
+  }
+  const categoryProductIds = /* @__PURE__ */ new Set();
+  const selectedCategoryNames = /* @__PURE__ */ new Set();
+  if (normalizedCategoryId) {
+    const selectedCategory = categories.find((category) => category.id === normalizedCategoryId);
+    if (selectedCategory) selectedCategoryNames.add(selectedCategory.name);
+    if (selectedCategory) {
+      for (const category of categories) {
+        if (category.parentId === selectedCategory.id) selectedCategoryNames.add(category.name);
+      }
+    }
+    for (const [pid, p] of productById.entries()) {
+      if (p.categoryId === normalizedCategoryId || p.parentId === normalizedCategoryId || selectedCategoryNames.has(p.categoryName)) categoryProductIds.add(pid);
+    }
+  }
+  const filterByProduct = Array.isArray(productIds) && productIds.length > 0;
+  const filterByCategory = !!normalizedCategoryId;
+  const hasFilter = filterByProduct || filterByCategory;
+  const perDispatcher = /* @__PURE__ */ new Map();
+  const ensureDispatcher = (id, name) => {
+    if (!perDispatcher.has(id)) perDispatcher.set(id, { dispatcherId: id, dispatcherName: name || "Despachador", dispatches: 0, units: 0, revenue: 0 });
+    return perDispatcher.get(id);
+  };
+  const normalizeHeldItems = (value) => {
+    let raw = value;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        return [];
+      }
+    }
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item) => {
+      const product = item?.product || {};
+      const rawProductId = String(item?.productId || product.id || item?.id || "");
+      const productId = productIdByVariantId.get(rawProductId) || rawProductId;
+      const quantity = Number(item?.quantity) || 0;
+      const unitPrice = Number(item?.unitPrice ?? item?.price) || 0;
+      return {
+        productId,
+        productName: item?.productName || product.name || "",
+        quantity,
+        unitPrice,
+        totalPrice: Number(item?.totalPrice ?? item?.subtotal) || quantity * unitPrice,
+        product
+      };
+    });
+  };
+  const itemMatchesCategory = (item) => {
+    const productId = productIdByVariantId.get(String(item.variantId || "")) || String(item.productId || "");
+    const product = productById.get(productId);
+    const nestedProduct = item.product || {};
+    return categoryProductIds.has(productId) || nestedProduct.categoryId === normalizedCategoryId || nestedProduct.categoryRelation?.id === normalizedCategoryId || selectedCategoryNames.has(nestedProduct.category || "") || selectedCategoryNames.has(nestedProduct.categoryRelation?.name || "") || selectedCategoryNames.has(product?.categoryName || "");
+  };
+  for (const hs of heldSales) {
+    const inv = hs.invoiceId ? invoicesMap.get(hs.invoiceId) : null;
+    const items = inv?.salesInvoiceItem?.length ? inv.salesInvoiceItem : normalizeHeldItems(hs.items);
+    if (hasFilter) {
+      const filtered = items.filter((item) => {
+        const itemProductId = productIdByVariantId.get(String(item.variantId || "")) || productIdByVariantId.get(String(item.productId || "")) || String(item.productId || "");
+        const matchesProduct = filterByProduct && productIds.includes(itemProductId);
+        const matchesCategory = filterByCategory && itemMatchesCategory(item);
+        return filterByProduct && filterByCategory ? matchesProduct || matchesCategory : filterByProduct ? matchesProduct : matchesCategory;
+      });
+      if (filtered.length === 0) continue;
+      const row = ensureDispatcher(hs.dispatcherId, hs.dispatcherName);
+      row.dispatches += 1;
+      for (const item of filtered) {
+        row.units += unitCountFor(item);
+        row.revenue += Number(item.totalPrice) || 0;
+      }
+    } else {
+      const row = ensureDispatcher(hs.dispatcherId, hs.dispatcherName);
+      row.dispatches += 1;
+      row.revenue += inv ? Number(inv.totalAmount) || 0 : Number(hs.total) || 0;
+      for (const item of items) row.units += unitCountFor(item);
+    }
+  }
+  const vals = Array.from(perDispatcher.values());
+  const totalRevenue = vals.reduce((s, r) => s + r.revenue, 0);
+  const totalDispatches = vals.reduce((s, r) => s + r.dispatches, 0);
+  const totalUnits = vals.reduce((s, r) => s + r.units, 0);
+  const rows = vals.map((r) => ({
+    dispatcherId: r.dispatcherId,
+    dispatcherName: r.dispatcherName,
+    dispatches: r.dispatches,
+    units: round23(r.units),
+    revenue: round23(r.revenue),
+    revenueUSD: round23(r.revenue / rate),
+    sharePct: safePercent(r.revenue, totalRevenue),
+    avgTicket: r.dispatches > 0 ? round23(r.revenue / r.dispatches) : 0,
+    avgItems: r.dispatches > 0 ? round23(r.units / r.dispatches) : 0
+  })).sort((a, b) => b.revenue - a.revenue);
+  const topDispatcher = rows.length > 0 ? rows[0] : null;
+  const avgItemsPerDispatch = totalDispatches > 0 ? round23(totalUnits / totalDispatches) : 0;
+  return {
+    isDispatcherMode,
+    rows,
+    total: { revenue: round23(totalRevenue), revenueUSD: round23(totalRevenue / rate), dispatches: totalDispatches, units: round23(totalUnits), avgItemsPerDispatch },
+    topDispatcher: topDispatcher ? { name: topDispatcher.dispatcherName, revenue: topDispatcher.revenue, sharePct: topDispatcher.sharePct } : null,
+    exchangeRate: rate,
+    activeDispatchers: rows.length
+  };
 }
 
 // src/lib/actions/route-settlements.ts

@@ -466,7 +466,7 @@ async function fetchInvoicesInRange(from?: Date, to?: Date, includeUser = true):
 }
 
 async function getReportProductCatalog() {
-    const [products, categories] = await Promise.all([
+    const [products, categories, variants] = await Promise.all([
         db.product.findMany({
             select: {
                 id: true,
@@ -480,6 +480,7 @@ async function getReportProductCatalog() {
             },
         }),
         db.category.findMany({ select: { id: true, name: true, parentId: true, inventoryType: true } }),
+        db.productVariant.findMany({ select: { id: true, productId: true } }),
     ]);
 
     const catById = new Map(categories.map((c) => [c.id, c]));
@@ -502,7 +503,8 @@ async function getReportProductCatalog() {
         });
     }
 
-    return { productById, categories: categories as any[] };
+    const productIdByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
+    return { productById, categories: categories as any[], productIdByVariantId };
 }
 
 function unitCountFor(item: any): number {
@@ -1187,7 +1189,10 @@ export async function getReportProfitMargin(from?: string, to?: string) {
 // FILTROS GENERALES (categorías, ubicaciones y cajeros)
 // ---------------------------------------------------------------------------
 export async function getReportFilters() {
-    const { categories } = await getReportProductCatalog();
+    const [{ categories }, products] = await Promise.all([
+        getReportProductCatalog(),
+        db.product.findMany({ select: { id: true, name: true, barcode: true, categoryId: true, category: true } }),
+    ]);
 
     const users = (await db.user.findMany({
         where: { role: { in: ['cashier', 'dispatcher', 'admin', 'master-admin'] } },
@@ -1199,6 +1204,7 @@ export async function getReportFilters() {
 
     return {
         categories: categories.map((c: any) => ({ id: c.id, name: c.name, parentId: c.parentId, inventoryType: c.inventoryType })),
+        products: products.map((p) => ({ id: p.id, name: p.name, barcode: p.barcode || '', categoryId: p.categoryId, categoryName: p.category || 'Sin categoría' })),
         locations,
         cashiers: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
         defaultExchangeRate: 36.5,
@@ -1374,7 +1380,8 @@ export async function getDispatcherProductivityReport(
 ) {
     const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
     const rate = await getExchangeRateValue();
-    const { productById } = await getReportProductCatalog();
+    const { productById, categories, productIdByVariantId } = await getReportProductCatalog();
+    const normalizedCategoryId = categoryId && categoryId !== 'all' ? categoryId.trim() : undefined;
 
     const settings = await db.systemSettings.findFirst({ select: { workflow: true } });
     const isDispatcherMode = !settings?.workflow || settings.workflow === 'dispatcher-cashier';
@@ -1397,20 +1404,28 @@ export async function getDispatcherProductivityReport(
     if (invoiceIds.length > 0) {
         const invoices = await db.salesInvoice.findMany({
             where: { id: { in: invoiceIds }, status: 'COMPLETED' },
-            select: { id: true, totalAmount: true, salesInvoiceItem: { select: { productId: true, productName: true, quantity: true, unitPrice: true, totalPrice: true, presentationFactor: true } } },
+            select: { id: true, totalAmount: true, salesInvoiceItem: { select: { productId: true, variantId: true, productName: true, quantity: true, unitPrice: true, totalPrice: true, presentationFactor: true } } },
         });
         for (const inv of invoices) invoicesMap.set(inv.id, inv);
     }
 
     const categoryProductIds = new Set<string>();
-    if (categoryId && categoryId !== 'all') {
+    const selectedCategoryNames = new Set<string>();
+    if (normalizedCategoryId) {
+        const selectedCategory = categories.find((category: any) => category.id === normalizedCategoryId);
+        if (selectedCategory) selectedCategoryNames.add(selectedCategory.name);
+        if (selectedCategory) {
+            for (const category of categories as any[]) {
+                if (category.parentId === selectedCategory.id) selectedCategoryNames.add(category.name);
+            }
+        }
         for (const [pid, p] of productById.entries()) {
-            if ((p as any).categoryId === categoryId || (p as any).parentId === categoryId) categoryProductIds.add(pid);
+            if ((p as any).categoryId === normalizedCategoryId || (p as any).parentId === normalizedCategoryId || selectedCategoryNames.has((p as any).categoryName)) categoryProductIds.add(pid);
         }
     }
 
     const filterByProduct = Array.isArray(productIds) && productIds.length > 0;
-    const filterByCategory = !!(categoryId && categoryId !== 'all');
+    const filterByCategory = !!normalizedCategoryId;
     const hasFilter = filterByProduct || filterByCategory;
 
     interface DispRow { dispatcherId: string; dispatcherName: string; dispatches: number; units: number; revenue: number; }
@@ -1420,14 +1435,54 @@ export async function getDispatcherProductivityReport(
         return perDispatcher.get(id)!;
     };
 
+    const normalizeHeldItems = (value: unknown): any[] => {
+        let raw = value;
+        if (typeof raw === 'string') {
+            try { raw = JSON.parse(raw); } catch { return []; }
+        }
+        if (!Array.isArray(raw)) return [];
+        return raw.map((item: any) => {
+            const product = item?.product || {};
+            const rawProductId = String(item?.productId || product.id || item?.id || '');
+            const productId = productIdByVariantId.get(rawProductId) || rawProductId;
+            const quantity = Number(item?.quantity) || 0;
+            const unitPrice = Number(item?.unitPrice ?? item?.price) || 0;
+            return {
+                productId,
+                productName: item?.productName || product.name || '',
+                quantity,
+                unitPrice,
+                totalPrice: Number(item?.totalPrice ?? item?.subtotal) || quantity * unitPrice,
+                product,
+            };
+        });
+    };
+
+    const itemMatchesCategory = (item: any): boolean => {
+        const productId = productIdByVariantId.get(String(item.variantId || '')) || String(item.productId || '');
+        const product = productById.get(productId) as any;
+        const nestedProduct = item.product || {};
+        return categoryProductIds.has(productId)
+            || nestedProduct.categoryId === normalizedCategoryId
+            || nestedProduct.categoryRelation?.id === normalizedCategoryId
+            || selectedCategoryNames.has(nestedProduct.category || '')
+            || selectedCategoryNames.has(nestedProduct.categoryRelation?.name || '')
+            || selectedCategoryNames.has(product?.categoryName || '');
+    };
+
     for (const hs of heldSales) {
         const inv = hs.invoiceId ? invoicesMap.get(hs.invoiceId) : null;
-        const items: any[] = inv?.salesInvoiceItem || [];
+        const items: any[] = inv?.salesInvoiceItem?.length ? inv.salesInvoiceItem : normalizeHeldItems(hs.items);
         if (hasFilter) {
             const filtered = items.filter((item: any) => {
-                if (filterByProduct && productIds!.includes(item.productId)) return true;
-                if (filterByCategory && categoryProductIds.has(item.productId)) return true;
-                return false;
+                const itemProductId = productIdByVariantId.get(String(item.variantId || ''))
+                    || productIdByVariantId.get(String(item.productId || ''))
+                    || String(item.productId || '');
+                const matchesProduct = filterByProduct && productIds!.includes(itemProductId);
+                const matchesCategory = filterByCategory && itemMatchesCategory(item);
+                return filterByProduct && filterByCategory
+                    ? matchesProduct || matchesCategory
+                    : filterByProduct ? matchesProduct : matchesCategory;
             });
             if (filtered.length === 0) continue;
             const row = ensureDispatcher(hs.dispatcherId, hs.dispatcherName);

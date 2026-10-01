@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, formatNumber } from '@/lib/utils';
-import { buildInlineItemText, formatUnitLabel } from '@/lib/receipt-presentation';
+import { buildCustomItemText, buildInlineItemText, formatUnitLabel, resolveReceiptFontFamily } from '@/lib/receipt-presentation';
 import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import { PENDING_COLLECTION_BANNER } from '@/lib/route-settlement';
 
@@ -78,7 +78,9 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
     // imprimir debe mostrar exactamente la misma línea que sale por la impresora.
     const receiptSettings = useReceiptSettings();
     const isInline = receiptSettings?.presentationLayout === 'INLINE_QTY';
+    const isCustom = receiptSettings?.presentationLayout === 'CUSTOM';
     const presentationFontSize = receiptSettings?.fontSizePresentation;
+    const fontFamily = resolveReceiptFontFamily(receiptSettings?.fontFamily);
 
     useEffect(() => {
         setIsMounted(true);
@@ -93,6 +95,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                     ? "border text-left"
                     : "hidden print:block print:w-[80mm] print:max-w-[80mm] print:p-0 print:m-0 print:mx-0 print:h-auto print:min-h-full print:overflow-visible"
             )}
+            style={{ fontFamily }}
         >
             <div className="text-center">
                 {logoSvg && (
@@ -156,13 +159,18 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
                         const presentationText = isInline
                             ? inlineItem?.presentation
                             : formatUnitLabel(item.unit);
+                        const customText = isCustom
+                            ? buildCustomItemText(receiptSettings?.presentationCustomFormat, item)
+                            : '';
                         return (
                             <tr key={index} className="item-row border-t border-dashed border-black">
                                 <td className="col-cant align-top text-left py-1 px-0.5 whitespace-nowrap font-bold">
-                                    {item.quantity}
+                                    {isCustom ? '' : item.quantity}
                                 </td>
                                 <td className="col-prod align-top text-left py-1 px-0.5 break-words font-semibold" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                                    {isInline ? (
+                                    {isCustom ? (
+                                        <div>{customText}</div>
+                                    ) : isInline ? (
                                         <div>
                                             {presentationText && (
                                                 <span style={presentationFontSize

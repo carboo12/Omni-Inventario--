@@ -27,7 +27,7 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface DispatcherFiltersProps {
-  products: { id: string; name: string; categoryId: string | null; categoryName: string }[];
+  products: { id: string; name: string; barcode?: string; categoryId: string | null; categoryName: string }[];
   categories: { id: string; name: string }[];
   selectedProductIds: string[];
   selectedCategoryId: string;
@@ -40,7 +40,7 @@ function MultiProductCombobox({
   selectedIds,
   onChange,
 }: {
-  products: { id: string; name: string; categoryName: string }[];
+  products: { id: string; name: string; barcode?: string; categoryName: string }[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
 }) {
@@ -57,7 +57,7 @@ function MultiProductCombobox({
 
   const selectedProducts = products.filter((p) => selectedIds.includes(p.id));
   const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+    p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -247,7 +247,7 @@ export function DispatcherReportFilters({
 interface DispatcherReportProps extends ReportViewProps {
   filterData?: {
     categories?: { id: string; name: string }[];
-    products?: { id: string; name: string; categoryId: string | null; categoryName: string }[];
+    products?: { id: string; name: string; barcode?: string; categoryId: string | null; categoryName: string }[];
   };
   selectedProductIds: string[];
   selectedCategoryId: string;
@@ -272,7 +272,7 @@ export function DispatcherReport({
 
   const categories: { id: string; name: string }[] =
     filterData?.categories || [];
-  const products: { id: string; name: string; categoryId: string | null; categoryName: string }[] =
+  const products: { id: string; name: string; barcode?: string; categoryId: string | null; categoryName: string }[] =
     filterData?.products || [];
 
   const hasActiveFilter =
@@ -352,11 +352,11 @@ export function DispatcherReport({
         headers={[
           "Despachador",
           "Nº Despachos",
-          "Unidades",
           "Total Ventas (C$)",
           "Participación (%)",
           "Ticket Prom. (C$)",
         ]}
+        headerAlignments={["left", "right", "right", "right", "right"]}
         emptyRows={rows.length}
       >
         {rows.map((r: any, i: number) => (
@@ -364,7 +364,7 @@ export function DispatcherReport({
             key={r.dispatcherId}
             className="border-b last:border-0 transition-colors hover:bg-slate-50"
           >
-            <td className="p-3">
+            <td className="p-3 text-left">
               <div className="flex items-center gap-2">
                 <span
                   className={cn(
@@ -387,9 +387,6 @@ export function DispatcherReport({
             </td>
             <td className="p-3 text-right text-sm">
               {formatNumber(r.dispatches, 0)}
-            </td>
-            <td className="p-3 text-right text-sm">
-              {formatNumber(r.units, 1)}
             </td>
             <td className="p-3 text-right text-sm font-semibold">
               {formatCurrency(r.revenue)}

@@ -1181,6 +1181,7 @@ model ReceiptSettings {
   
   // Disposición / Layout
   presentationLayout    String   @default("BELOW_NAME")
+  presentationCustomFormat String @default("{cantidad} {presentacion} de: {nombre}")
   showLogo              Boolean  @default(true)
   showClientInfo        Boolean  @default(true)
   showEquivalenceUsd    Boolean  @default(true)

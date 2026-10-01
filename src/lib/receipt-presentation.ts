@@ -10,6 +10,22 @@
 /** Unidades sin contenido comercial: no aportan información al cliente. */
 const GENERIC_UNITS = ['ud', 'unidad', 'unid', 'un', 'pza', 'pz'];
 
+export type PresentationLayout = 'BELOW_NAME' | 'INLINE_QTY' | 'CUSTOM';
+
+/** Fuentes permitidas para la vista previa y el ticket impreso. */
+export const RECEIPT_FONT_FAMILIES: Record<string, string> = {
+    'sans-serif': 'Arial, Helvetica, sans-serif',
+    monospace: "'Courier New', Courier, monospace",
+    'roboto-mono': "'Roboto Mono', Consolas, monospace",
+    inconsolata: "'Inconsolata', 'Lucida Console', monospace",
+    inter: "'Inter', system-ui, -apple-system, sans-serif",
+    'ticket-classic': "'VT323', 'Merchant Copy', monospace",
+};
+
+export function resolveReceiptFontFamily(value?: string | null): string {
+    return RECEIPT_FONT_FAMILIES[value || ''] || RECEIPT_FONT_FAMILIES.monospace;
+}
+
 /** Conector entre la presentación y el nombre del producto: "1 Paca de: AZUCAR". */
 export const PRESENTATION_CONNECTOR = 'de:';
 
@@ -92,6 +108,43 @@ export interface InlineItemText {
     presentation: string | null;
     /** Nombre del producto, ya sin el prefijo de presentación repetido. */
     name: string;
+}
+
+export interface CustomReceiptItem {
+    quantity: number | string;
+    description: string;
+    unit?: string | null;
+    price?: number | string;
+    total?: number | string;
+}
+
+/** Interpola variables de una plantilla personalizada y limpia la presentación vacía. */
+export function buildCustomItemText(format: string | null | undefined, item: CustomReceiptItem): string {
+    const presentation = formatInlinePresentation(item.unit) || '';
+    const name = buildInlineItemText(item.description, item.unit).name;
+    const marker = '\u0000PRESENTACION\u0000';
+    const values: Record<string, string> = {
+        cantidad: String(item.quantity ?? ''),
+        presentacion: marker,
+        nombre: name,
+        precio: String(item.price ?? ''),
+        total: String(item.total ?? ''),
+    };
+    let result = (format || '{cantidad} {presentacion} de: {nombre}').replace(/\{(cantidad|presentacion|nombre|precio|total)\}/gi, (match, key: string) => values[key.toLowerCase()] ?? match);
+
+    if (presentation) {
+        result = result.replaceAll(marker, presentation);
+    } else {
+        const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        result = result.replace(new RegExp(`\\s*(?:[-–—:|]\\s*)?${escapedMarker}\\s*(?:de\\s*:?\\s*)?(?:[-–—:|]\\s*)?`, 'gi'), ' ');
+    }
+
+    return result
+        .replaceAll(marker, '')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+([,.;:!?])/g, '$1')
+        .replace(/^[\s|:–—-]+|[\s|:–—-]+$/g, '')
+        .trim();
 }
 
 /**
