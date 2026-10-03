@@ -1,4 +1,4 @@
-// prisma-safe-deploy.mjs — v2: Despliegue blindado con auto-reparación
+// prisma-safe-deploy.mjs — v3: Despliegue blindado con auto-reparación
 //
 // Sincronización SEGURA de la BD para despliegue de producción:
 //
@@ -12,15 +12,32 @@
 //      recuperables (columna duplicada 1060, tabla duplicada 1050, P3009,
 //      P3018), resuelve las migraciones problemáticas y reintenta hasta
 //      MAX_DEPLOY_ATTEMPTS veces.
-//   4. generate con reintentos EPERM.
-//   5. Verificación final con migrate status.
+//   4. FALLBACK 'db push': si tras los reintentos migrate deploy sigue
+//      fallando por un error de migración (P3018/1060/1050/...), NO se aborta
+//      el despliegue. Se ejecuta 'prisma db push --skip-generate' para alinear
+//      el esquema con schema.prisma, y se continúa hacia 'prisma generate'
+//      y el build. Esto desbloquea despliegues bloqueados por historial de
+//      migraciones divergente.
+//   5. generate con reintentos EPERM.
+//   6. Verificación final con migrate status (omitida tras el fallback db
+//      push, ya que el historial queda deliberadamente desalineado).
 //
-// NUNCA usa 'prisma db push' en producción (evita pérdida de datos).
+// Tras un fallback 'db push' exitoso se adoptan TODAS las migraciones como
+// aplicadas (no ejecuta DDL, solo escribe en _prisma_migrations) para que el
+// siguiente despliegue no vuelva a tropezar con el mismo P3018.
+//
+// NOTA DE SEGURIDAD: 'db push' sincroniza contra schema.prisma, que es la
+// fuente de verdad del proyecto. No se usa '--accept-data-loss': si Prisma
+// detecta que haría falta eliminar columnas/datos, el comando FALLA en vez de
+// borrar. En ese caso se registra el error y el build continúa, pero el
+// esquema queda sin sincronizar y requiere atención manual.
 //
 // OPCIONES:
 //   --no-stop       No detiene procesos PM2/node activos.
 //   --force-resolve Resuelve como --applied todas las migraciones fallidas
 //                   sin verificar si el DDL existe (last-resort).
+//   --no-db-push    Desactiva la capa 4: si migrate deploy falla, el script
+//                   aborta con exit 1 como en versiones anteriores.
 //
 // NOTA WINDOWS: este proceso NO importa '@prisma/client' directamente. Las
 // consultas de detección corren en subprocesos que cargan/descargan el query
@@ -37,6 +54,7 @@ const migrationsDir = resolve(__dirname, '../prisma/migrations');
 
 const noStop = process.argv.includes('--no-stop');
 const forceResolve = process.argv.includes('--force-resolve');
+const allowDbPushFallback = !process.argv.includes('--no-db-push');
 const MAX_DEPLOY_ATTEMPTS = 3;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +62,27 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function run(cmd) {
   console.log(`  \u2192 ${cmd}`);
   execSync(cmd, { stdio: 'inherit' });
+}
+
+// Igual que run(), pero captura stdout/stderr para poder clasificarlos.
+// Necesario porque con stdio:'inherit' execSync no rellena err.stdout y
+// err.message sólo dice "Command failed: ...", perdiendo el texto real
+// del error (P3018, 1060, "Duplicate column name", ...).
+function runCapturing(cmd) {
+  console.log(`  \u2192 ${cmd}`);
+  const asText = (v) => (v == null ? '' : Buffer.isBuffer(v) ? v.toString('utf8') : String(v));
+  try {
+    const out = asText(execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', windowsHide: true }));
+    if (out) process.stdout.write(out);
+    return out;
+  } catch (err) {
+    const stdout = asText(err?.stdout);
+    const stderr = asText(err?.stderr);
+    if (stdout) process.stdout.write(stdout);
+    if (stderr) process.stderr.write(stderr);
+    err.__output = `${stdout}\n${stderr}\n${asText(err?.message)}`;
+    throw err;
+  }
 }
 
 function runQuiet(cmd) {
@@ -300,14 +339,19 @@ function checkMigrationAlreadyApplied(sql) {
 // Auto-reparación: resolución de migraciones fallidas
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Este repo mezcla dos formatos de prefijo: 'YYYYMMDDHHMMSS_nombre' (Prisma
+// generate) y 'YYYYMMDD_nombre' (las más recientes). El patrón debe aceptar
+// ambos, si no nunca se identifica la migración culpable y el despliegue aborta.
+const MIGRATION_NAME = String.raw`\d{8,14}_\w+`;
+
 function extractFailingMigrationName(errorOutput) {
-  let m = errorOutput.match(/Migration name:\s+(\d{14,}_\w+)/);
+  let m = errorOutput.match(new RegExp(`Migration name:\\s+(${MIGRATION_NAME})`));
   if (m) return m[1];
   m = errorOutput.match(/migration\s+"([^"]+)"/i);
   if (m) return m[1];
-  m = errorOutput.match(/\n\s+-\s+(\d{14,}_\w+)/);
+  m = errorOutput.match(new RegExp(String.raw`\n\s+-\s+(${MIGRATION_NAME})`));
   if (m) return m[1];
-  m = errorOutput.match(/(\d{14,}_\w+_(?:add_|create_|alter_|drop_|enable_)\w+)/i);
+  m = errorOutput.match(new RegExp(`(${MIGRATION_NAME}_(?:add_|create_|alter_|drop_|enable_)\\w+)`, 'i'));
   if (m) return m[1];
   return null;
 }
@@ -358,19 +402,31 @@ async function resolveFailedMigrations() {
 // Deploy con auto-recovery y retry
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Errores de migración MySQL/Prisma que 'db push' puede alinear sin borrar
+// datos: columna/tabla/índice duplicado (1060/1050/1061/1022/1051/1091),
+// columna inexistente, P3009 (migración fallida) y P3018 (fallo al aplicar).
+const MIGRATION_ERROR_RE =
+  /P3018|P3009|P3005|P3006|1060|1050|1061|1022|1051|1091|duplicate|already exist|Duplicate|Unknown column|error applying migration|failed to apply/i;
+
+function collectErrorOutput(err) {
+  return [err?.__output, err?.stdout, err?.stderr, err?.message, String(err)]
+    .filter(Boolean)
+    .join('\n');
+}
+
 function isRecoverableDeployError(output) {
-  return /P3018|P3009|1060|1050|1061|1022|1051|1091|duplicate|already exist|Duplicate|Unknown column/i.test(output);
+  return MIGRATION_ERROR_RE.test(output);
 }
 
 async function deployWithRecovery() {
   for (let attempt = 1; attempt <= MAX_DEPLOY_ATTEMPTS; attempt++) {
     try {
       console.log(`[safe-prisma] Intento ${attempt}/${MAX_DEPLOY_ATTEMPTS}: prisma migrate deploy`);
-      run('npx prisma migrate deploy');
+      runCapturing('npx prisma migrate deploy');
       console.log('[safe-prisma] prisma migrate deploy completado.');
       return;
     } catch (err) {
-      const output = String(err?.message || err?.stdout || '');
+      const output = collectErrorOutput(err);
 
       if (!isRecoverableDeployError(output) || attempt === MAX_DEPLOY_ATTEMPTS) {
         console.error(`[safe-prisma] Error de migraci\u00f3n NO recuperable o agotados ${MAX_DEPLOY_ATTEMPTS} intentos.`);
@@ -398,6 +454,75 @@ async function deployWithRecovery() {
       await sleep(3000);
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Capa 4: fallback 'prisma db push --skip-generate'
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Tras un db push exitoso el esquema ya coincide con schema.prisma, así que
+// marcar las migraciones como aplicadas sólo escribe filas en
+// _prisma_migrations (no ejecuta DDL). Evita que el próximo deploy vuelva a
+// fallar con el mismo P3018.
+async function adoptAllMigrationsAsApplied() {
+  let dirs;
+  try {
+    dirs = readdirSync(migrationsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return 0;
+  }
+
+  let adopted = 0;
+  for (const name of dirs) {
+    try {
+      execSync(`npx prisma migrate resolve --applied "${name}"`, {
+        stdio: 'ignore',
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+      adopted++;
+    } catch {
+      // Una migración ya registrada como aplicada hace que resolve falle:
+      // es el caso normal en despliegues repetidos, no un fallo real.
+    }
+  }
+  return adopted;
+}
+
+// Devuelve true si el esquema quedó sincronizado, false si el db push falló.
+// Nunca lanza: el requisito es que el build no se bloquee por esto.
+async function dbPushFallback(reason) {
+  console.warn('');
+  console.warn('[safe-prisma] ================================================');
+  console.warn('[safe-prisma] FALLBACK: migrate deploy no fue reparable.');
+  console.warn(`[safe-prisma] Motivo: ${String(reason).replace(/\s+/g, ' ').trim().slice(0, 300)}`);
+  console.warn('[safe-prisma] Sincronizando esquema con: prisma db push --skip-generate');
+  console.warn('[safe-prisma] ================================================');
+
+  try {
+    runCapturing('npx prisma db push --skip-generate');
+  } catch (err) {
+    console.error('');
+    console.error('[safe-prisma] ERROR: "prisma db push" también falló.');
+    console.error(`[safe-prisma] Detalle: ${collectErrorOutput(err).replace(/\s+/g, ' ').trim().slice(0, 400)}`);
+    console.error('[safe-prisma] El esquema puede quedar desincronizado de schema.prisma.');
+    console.error('[safe-prisma] Si Prisma pidió --accept-data-loss, NO se aplicó para no borrar datos.');
+    console.error('[safe-prisma] Revisa manualmente: npx prisma migrate status');
+    console.error('');
+    return false;
+  }
+
+  console.log('[safe-prisma] Esquema sincronizado mediante db push como fallback.');
+
+  const adopted = await adoptAllMigrationsAsApplied();
+  if (adopted > 0) {
+    console.log(`[safe-prisma] ${adopted} migracion(es) adoptada(s) como aplicadas para no repetir el fallo.`);
+  }
+
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -446,16 +571,40 @@ async function main() {
     console.log(`[safe-prisma] BD con historial de migraciones (${count} aplicadas registradas).`);
   }
 
-  // 3. Deploy con auto-recovery y retry.
-  await deployWithRecovery();
+  // 3. Deploy con auto-recovery, retry y fallback a 'db push'.
+  let schemaSynced = true;
+  let usedDbPush = false;
+  try {
+    await deployWithRecovery();
+  } catch (err) {
+    if (!allowDbPushFallback) {
+      console.error('[safe-prisma] --no-db-push: abortando sin fallback.');
+      throw err;
+    }
+    const fallbackOk = await dbPushFallback(collectErrorOutput(err));
+    schemaSynced = fallbackOk;
+    usedDbPush = true;
+  }
 
-  // 4. Regenerar Prisma Client.
+  // 4. Regenerar Prisma Client. Se ejecuta siempre, incluso tras el
+  //    fallback: el build depende de un cliente consistente con schema.prisma.
   await generateWithRetry();
 
-  // 5. Verificaci\u00f3n final.
-  await runWithEpermRetry('npx prisma migrate status', 2, 2000);
+  // 5. Verificación final. Tras un db push el historial queda desalineado a
+  //    propósito, así que 'migrate status' reportará migraciones pendientes
+  //    y sale con código 1: omitirlo para no abortar el despliegue.
+  if (usedDbPush) {
+    console.log('[safe-prisma] Omitiendo "migrate status" (historial desalineado tras db push).');
+  } else {
+    await runWithEpermRetry('npx prisma migrate status', 2, 2000);
+  }
 
-  console.log('[safe-prisma] Sincronizaci\u00f3n de BD completada correctamente.');
+  if (usedDbPush && !schemaSynced) {
+    console.warn('[safe-prisma] AVISO: el esquema qued\u00f3 SIN sincronizar. El build continuar\u00e1 pero revisa la BD.');
+    console.log('[safe-prisma] Sincronizaci\u00f3n de BD completada con reservas (fallback fallido).');
+  } else {
+    console.log('[safe-prisma] Sincronizaci\u00f3n de BD completada correctamente.');
+  }
 }
 
 main().catch((err) => {

@@ -1,4 +1,4 @@
-'use server'
+﻿'use server'
 import { generateUUID } from '@/lib/uuid';
 
 import db from '../db';
@@ -702,7 +702,7 @@ export async function getInvoiceByNumber(invoiceNumber: number | string) {
                     orderBy: { id: 'asc' },
                     // El código (código de barras) alimenta la columna "Código" de la
                     // factura en Hoja Normal; no interviene en el ticket de 80 mm.
-                    include: { product: { select: { barcode: true } } }
+                    // SalesInvoiceItem no tiene relacion product en el schema; solo productVariant.
                 },
                 customer: true,
                 user: true
@@ -883,7 +883,7 @@ export async function getDeliveryInvoices() {
                 routeSettlement: true,
                 routeReturnItems: true,
                 salesInvoiceItem: {
-                    include: { product: { select: { barcode: true } } }
+                    // SalesInvoiceItem no tiene relacion product en el schema; solo productVariant.
                 }
             }
         });

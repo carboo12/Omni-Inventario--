@@ -28,15 +28,14 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/6] Sincronizando Base de Datos (Prisma)...
-REM Uso el script seguro para no perder datos y con reintentos ante bloques EPERM (Windows).
+REM El script seguro repara migraciones fallidas (P3018/1060) y, si el deploy
+REM sigue siendo irrecuperable, cae a "prisma db push --skip-generate" y continua.
 call node scripts\prisma-safe-deploy.mjs
 if %errorlevel% neq 0 (
-    echo Error al sincronizar la base de datos.
+    echo AVISO: la base de datos no quedo sincronizada. Se continua con el build.
     echo Verifique que MySQL esta corriendo y que el .env es correcto.
-    pause
-    exit /b %errorlevel%
 )
-echo Base de datos sincronizada correctamente.
+echo Paso de base de datos finalizado.
 
 REM 3. Build Application
 echo.

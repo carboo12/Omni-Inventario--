@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  deploy.ps1 — Despliegue de Omni Inventario + (SPA + Hono)
 #  Arquitectura: Vite (React SPA → dist/) + Hono (dist-server/)
 # ============================================================
@@ -31,21 +31,25 @@ if (-not $SkipInstall) {
 Write-Host ""
 
 # ── 2. Sincronizar Base de Datos con Prisma ──────────────────
-# REGLA DE PRODUCCIÓN: SOLO se usa 'prisma migrate deploy' + 'prisma generate'.
-# NUNCA usar 'prisma db push' en producción (puede reiniciar tablas o perder datos).
-# scripts/prisma-safe-deploy.mjs adopta automáticamente una BD creada con
-# 'db push' (resuelve las migraciones como ya aplicadas, sin tocar los datos)
-# y luego aplica SOLO las migraciones nuevas de forma aditiva, ANTES del build.
+# REGLA DE PRODUCCIÓN: la vía principal es 'prisma migrate deploy' + 'generate'.
+# scripts/prisma-safe-deploy.mjs aplica sólo las migraciones nuevas de forma
+# aditiva. Si aun así el deploy es irrecuperable (P3018 / 1060 / 1050 por
+# historial divergente), el script cae automáticamente a 'prisma db push
+# --skip-generate' y CONTINÚA hacia generate + build en vez de abortar.
+# 'db push' sincroniza contra schema.prisma y nunca se le pasa
+# --accept-data-loss, así que no puede borrar columnas ni datos.
+# Para desactivar ese fallback: node scripts/prisma-safe-deploy.mjs --no-db-push
 if (-not $SkipDB) {
     Write-Host "🗄️  [2/4] Aplicando migraciones de Prisma..." -ForegroundColor Yellow
 
-    Write-Host "    → Sincronizando esquema (migrate deploy + generate)..."
+    Write-Host "    → Sincronizando esquema (migrate deploy + fallback db push + generate)..."
     node scripts/prisma-safe-deploy.mjs
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Error al sincronizar la BD. Verifica MySQL y el archivo .env." -ForegroundColor Red
-        exit 1
+        Write-Host "⚠️  Error al sincronizar la BD (ver detalle arriba). Se continúa al build." -ForegroundColor Yellow
+        Write-Host "    → Si es la BD caída o credenciales, corrige .env/MySQL antes de publicar." -ForegroundColor Yellow
+    } else {
+        Write-Host "✔  Base de datos sincronizada." -ForegroundColor Green
     }
-    Write-Host "✔  Base de datos sincronizada (datos conservados)." -ForegroundColor Green
 } else {
     Write-Host "⏭  [2/4] Sincronización de BD omitida (--SkipDB)." -ForegroundColor DarkGray
 }

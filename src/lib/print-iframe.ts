@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -132,7 +132,7 @@ function buildPrintDocument(htmlContent: string): string {
 <style>
   @page {
     margin: 0 !important;
-    size: auto !important; /* Mantiene la bobina de papel como rollo continuo */
+    size: 80mm auto !important; /* Ancho fijo de ticket; largo continuo sin limite */
   }
   @media print {
     html, body {
@@ -156,8 +156,15 @@ function buildPrintDocument(htmlContent: string): string {
       overflow: visible !important;
     }
     .item-row {
-      page-break-inside: avoid !important; /* Evita que un producto individual se corte a la mitad */
-      break-inside: avoid !important;
+      page-break-inside: auto !important; /* Permite flujo continuo en rollo de mas de 100 items */
+      break-inside: auto !important;
+    }
+    table, tbody, tr, td {
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+    }
+    .ticket-container {
+      page-break-after: avoid !important;
     }
   }
   * {
@@ -181,13 +188,8 @@ function buildPrintDocument(htmlContent: string): string {
     color: #000;
   }
 
-  .ticket-container,
-  .ticket-item,
-  .item-row,
-  .ticket-container tr,
-  .ticket-container td,
+  /* Solo pie de ticket: el contenedor y la tabla fluyen libremente (rollo continuo). */
   .ticket-totals,
-  .total-row,
   .payment-info,
   .ticket-footer {
     page-break-inside: avoid !important;
@@ -248,8 +250,9 @@ function buildPrintDocument(htmlContent: string): string {
 
   .item-row {
     border-top: 1px dashed #000;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    /* page-break-inside: auto permite flujo continuo con 100+ items en rollo termico */
+    page-break-inside: auto !important;
+    break-inside: auto !important;
   }
 
   .flex-row {

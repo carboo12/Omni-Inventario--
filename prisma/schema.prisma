@@ -802,7 +802,12 @@ model SystemSettings {
   defaultCreditDays         Int          @default(30)
   enableRecipes             Boolean      @default(false)
   enableBatchAndExpiration  Boolean      @default(false)
-  enableKitchenPrinter      Boolean      @default(false)
+  /// Habilita el flujo de Comandas (pedidos en espera del despachador hacia
+  /// el cajero) y la impresión en cocina/barra. Debe coincidir con el valor
+  /// por defecto del cliente (use-settings.tsx, init-data.ts): si el default de
+  /// la BD es false, un INSERT nuevo deja las comandas desactivadas y el botón
+  /// de Comandas desaparece aunque la app lo dé por habilitado.
+  enableKitchenPrinter      Boolean      @default(true)
 
   enableMultiCurrency       Boolean      @default(true)
   enableWholesalePrices     Boolean      @default(false)

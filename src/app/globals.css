@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -145,7 +145,7 @@ input.no-spinner {
 @media print {
   @page {
     margin: 0 !important;
-    size: auto !important; /* Mantiene la bobina de papel como rollo continuo */
+    size: 80mm auto !important; /* Ancho fijo de ticket; largo continuo sin limite en rollo termico */
   }
   html,
   body {
@@ -154,8 +154,10 @@ input.no-spinner {
     min-height: 100% !important;
     overflow: visible !important;
   }
-  .item-row {
-    page-break-inside: avoid; /* Evita que un producto individual se corte a la mitad */
+  /* item-row: flujo continuo para rollo termico. El iframe de impresion maneja sus propias reglas CSS. */
+  table, tbody, tr, td {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
   }
 }
 
