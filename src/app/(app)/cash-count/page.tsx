@@ -14,6 +14,7 @@ import { useState, useMemo } from "react";
 import { useCashRegister } from "@/hooks/use-cash-register";
 import { useCashRegisterSessions } from "@/hooks/use-cash-register-sessions";
 import { createOutflowAction, getSessionOutflows } from "@/lib/actions/cash-register";
+import { getActiveEmployees } from "@/lib/actions/employees";
 import { getInvoiceByNumber, getLastSale } from "@/lib/actions/sales";
 import { buildReceiptDataFromInvoice } from "@/lib/ticket-data";
 import { printReceiptHtml, buildReceiptHtml, buildZReportHtml } from "@/lib/print-iframe";
@@ -37,6 +38,9 @@ export default function CashCountPage() {
     const [isReciboOpen, setIsReciboOpen] = useState(false);
     const [amount, setAmount] = useState("");
     const [reason, setReason] = useState("");
+    const [isEmployeeLoan, setIsEmployeeLoan] = useState(false);
+    const [employeeId, setEmployeeId] = useState("");
+    const [employees, setEmployees] = useState<{ id: string; fullName: string }[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [docNumber, setDocNumber] = useState("");
     const [docType, setDocType] = useState("factura");
@@ -84,7 +88,7 @@ export default function CashCountPage() {
             return;
         }
 
-        if (!amount || !reason) {
+        if (!amount || !reason || (isEmployeeLoan && !employeeId)) {
             toast({
                 title: "Error",
                 description: "Por favor ingrese el monto y el motivo.",
@@ -95,14 +99,16 @@ export default function CashCountPage() {
 
         try {
             setIsLoading(true);
-            const result = await createOutflowAction(activeSession.id, parseFloat(amount), reason);
+            const result = await createOutflowAction(activeSession.id, parseFloat(amount), reason, isEmployeeLoan ? employeeId : undefined);
             toast({
-                title: "Recibo Creado",
+                title: isEmployeeLoan ? "Préstamo Registrado" : "Recibo Creado",
                 description: `Recibo #${result.receiptNumber}. Salida de C$${amount}.`,
             });
             setIsReciboOpen(false);
             setAmount("");
             setReason("");
+            setIsEmployeeLoan(false);
+            setEmployeeId("");
         } catch (error) {
             console.error(error);
             toast({
@@ -430,10 +436,15 @@ export default function CashCountPage() {
                                 placeholder="Ej: Pago de luz"
                             />
                         </div>
+                        <div className="flex items-center gap-2">
+                            <input id="cashcount-employee-loan" type="checkbox" checked={isEmployeeLoan} onChange={async (event) => { setIsEmployeeLoan(event.target.checked); if (event.target.checked) { const result = await getActiveEmployees(); if (result.success) setEmployees(result.data || []); } else setEmployeeId(''); }} />
+                            <Label htmlFor="cashcount-employee-loan">¿Es un préstamo/adelanto a trabajador?</Label>
+                        </div>
+                        {isEmployeeLoan && <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="cashcount-employee" className="text-right">Trabajador</Label><select id="cashcount-employee" className="col-span-3 h-10 rounded-md border bg-background px-3" value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}><option value="">Seleccione un trabajador</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.fullName}</option>)}</select></div>}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsReciboOpen(false)}>Cancelar</Button>
-                        <Button onClick={handleCreateRecibo} disabled={isLoading}>
+                        <Button onClick={handleCreateRecibo} disabled={isLoading || (isEmployeeLoan && !employeeId)}>
                             {isLoading ? "Guardando..." : "Guardar Recibo"}
                         </Button>
                     </DialogFooter>

@@ -1,6 +1,7 @@
 'use server'
 
 import db from '../db';
+import { BusinessGuard } from '../business-guard';
 
 export async function getInventoryMovements(limit?: number) {
     try {
@@ -22,7 +23,9 @@ export async function getInventoryMovements(limit?: number) {
             previousQuantity: m.previousQuantity,
             newQuantity: m.newQuantity,
             user: m.user.name,
-            inventoryType: m.inventoryType as any
+            inventoryType: m.inventoryType as any,
+            batchNumber: (m as any).batchNumber ?? null,
+            expiryDate: (m as any).expiryDate ?? null,
         }));
 
         return { success: true, data: mappedMovements };
@@ -48,10 +51,13 @@ export interface KardexReportRow {
     exitsProfit: number;
     potentialProfit: number;
     inventoryValue: number;
+    batchNumber?: string | null;
+    expiryDate?: string | null;
 }
 
 export async function getKardexReport(startIso: string, endIso: string, inventoryType?: string) {
     try {
+        const pharmacyMode = await BusinessGuard.isPharmacyMode();
         const movements = await db.inventoryMovement.findMany({
             where: {
                 timestamp: { gte: startIso, lte: endIso },
@@ -73,6 +79,8 @@ export async function getKardexReport(startIso: string, endIso: string, inventor
         const grouped = new Map<string, {
             productName: string;
             inventoryType: string;
+            batchNumber: string | null;
+            expiryDate: string | null;
             initialStock: number;
             finalStock: number;
             entries: number;
@@ -80,12 +88,18 @@ export async function getKardexReport(startIso: string, endIso: string, inventor
         }>();
 
         for (const m of movements) {
-            const key = `${m.inventoryType}::${m.productName}`;
+            const batchNumber = pharmacyMode ? (m as any).batchNumber ?? null : null;
+            const expiryDate = pharmacyMode ? (m as any).expiryDate ?? null : null;
+            const key = pharmacyMode
+                ? `${m.inventoryType}::${m.productName}::${batchNumber ?? 'SIN_LOTE'}::${expiryDate ?? 'SIN_VENCIMIENTO'}`
+                : `${m.inventoryType}::${m.productName}`;
             let g = grouped.get(key);
             if (!g) {
                 g = {
                     productName: m.productName,
                     inventoryType: m.inventoryType,
+                    batchNumber,
+                    expiryDate,
                     initialStock: m.previousQuantity,
                     finalStock: m.newQuantity,
                     entries: 0,
@@ -113,6 +127,8 @@ export async function getKardexReport(startIso: string, endIso: string, inventor
                 barcode: p?.barcode ?? null,
                 category: p?.category ?? 'General',
                 inventoryType: g.inventoryType,
+                batchNumber: g.batchNumber,
+                expiryDate: g.expiryDate,
                 initialStock: g.initialStock,
                 entries: g.entries,
                 exits: g.exits,

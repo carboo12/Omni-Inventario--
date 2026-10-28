@@ -140,6 +140,7 @@ export type PendingSale = {
   createdAt: string;
   status: 'pending' | 'completed' | 'PENDING' | 'BILLED' | 'CANCELLED' | 'HELD';
   lockedBy?: string | null;
+  orderId?: string | null;
 };
 
 export type InventoryMovement = {
@@ -153,6 +154,8 @@ export type InventoryMovement = {
   newQuantity: number;
   user: string;
   inventoryType: InventoryType;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
 };
 
 export type Supplier = {

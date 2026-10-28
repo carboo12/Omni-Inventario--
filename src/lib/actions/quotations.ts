@@ -5,6 +5,7 @@ import db from '../db';
 import { revalidatePath } from 'next/cache';
 import { verifySession } from '../session';
 import { getPaymentBucket, isCreditPayment } from '../payment-method';
+import { BusinessGuard } from '../business-guard';
 
 export async function createQuote(data: {
   customerName?: string;
@@ -194,6 +195,7 @@ export async function convertQuoteToInvoice(quoteId: string, sessionId: string, 
     }
 
     const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const pharmacyMode = inventoryType === 'pharmacy' && await BusinessGuard.isPharmacyMode();
 
     let createdInvoiceNumber = 0;
 
@@ -250,10 +252,11 @@ export async function convertQuoteToInvoice(quoteId: string, sessionId: string, 
               movementType: 'Salida',
               movementId: transactionId,
               quantityChange: -quantityToTake,
-              previousQuantity: previousTotal,
-              newQuantity: currentTotal,
+              previousQuantity: pharmacyMode ? invItem.quantity : previousTotal,
+              newQuantity: pharmacyMode ? updatedInvItem.quantity : currentTotal,
               userId,
-              inventoryType
+              inventoryType,
+              ...(pharmacyMode ? { batchNumber: invItem.batch, expiryDate: invItem.expiryDate } : {}),
             } as any
           });
 

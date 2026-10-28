@@ -241,7 +241,7 @@ export const InvoiceA4Template: React.FC<InvoiceA4TemplateProps> = ({
                     <div className="border-t border-black pt-1.5 font-bold text-xs">
                         _______________________
                     </div>
-                    <p className="font-semibold text-xs mt-1">Entregado por (Ruta)</p>
+                    <p className="font-semibold text-xs mt-1">Entregado por</p>
                     <p className="text-[10px] text-gray-500">{deliveredByName || 'Nombre y firma del repartidor'}</p>
                 </div>
                 <div className="w-5/12 text-center">

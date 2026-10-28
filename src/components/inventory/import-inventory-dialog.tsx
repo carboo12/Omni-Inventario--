@@ -59,6 +59,7 @@ interface ParsedRow {
 export function ImportInventoryDialog({ isOpen, onClose, onImport }: ImportInventoryDialogProps) {
     const { toast } = useToast();
     const { mode } = useBusinessMode();
+    const isPharmacy = (mode as string) === 'PHARMACY';
     const isBoutique = (mode as string) === 'BOUTIQUE';
     const isDistribuidora = (mode as string) === 'DISTRIBUIDORA';
     const defaultsToGeneral = isBoutique || isDistribuidora;
@@ -278,6 +279,16 @@ export function ImportInventoryDialog({ isOpen, onClose, onImport }: ImportInven
             ];
         }
 
+        // En Farmacia, la plantilla identifica explícitamente el vencimiento
+        // como Expiración. La plantilla Boutique y las demás plantillas estándar
+        // conservan exactamente sus encabezados actuales.
+        if (isPharmacy && !isBoutique) {
+            template = template.map((row: any) => {
+                const { 'Fecha de Vencimiento': expiry, ...rest } = row;
+                return expiry === undefined ? row : { ...rest, 'Expiración': expiry };
+            });
+        }
+
         const ws = XLSX.utils.json_to_sheet(template);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
@@ -335,6 +346,22 @@ export function ImportInventoryDialog({ isOpen, onClose, onImport }: ImportInven
         return s;
     };
 
+    const normalizeExpiryCell = (val: any): string => {
+        if (val === undefined || val === null || normalizeCell(val) === '') return '';
+        if (val instanceof Date && !Number.isNaN(val.getTime())) {
+            return val.toISOString().slice(0, 10);
+        }
+        if (typeof val === 'number' && Number.isFinite(val)) {
+            const parsed = XLSX.SSF.parse_date_code(val);
+            if (parsed?.y && parsed?.m && parsed?.d) {
+                return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+            }
+        }
+        const value = normalizeCell(val);
+        const parsedDate = new Date(value);
+        return !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : value;
+    };
+
     const validateRow = (row: any, index: number): { valid: boolean; data?: ParsedRow; error?: string } => {
         const errors: string[] = [];
 
@@ -358,11 +385,6 @@ export function ImportInventoryDialog({ isOpen, onClose, onImport }: ImportInven
         if (isNaN(Number(priceRaw))) errors.push(`Fila ${index + 2}: Precio de venta inválido`);
         if (isNaN(cantidad)) errors.push(`Fila ${index + 2}: Cantidad inválida`);
 
-        if (!isBoutique && !isDistribuidora) {
-            if (!normalizeCell(row['Lote'])) errors.push(`Fila ${index + 2}: Falta lote`);
-            if (!row['Fecha de Vencimiento']) errors.push(`Fila ${index + 2}: Falta fecha de vencimiento`);
-        }
-
         // Validate unit of measure — default to 'unit' if missing
         const unitRaw = normalizeCell(row['Unidad de Medida']);
         const validUnits = ['unit', 'bulk', 'box', 'blister'];
@@ -383,6 +405,9 @@ export function ImportInventoryDialog({ isOpen, onClose, onImport }: ImportInven
         const sizeVal = normalizeCell(row['Talla']) || undefined;
         const colorVal = normalizeCell(row['Color']) || undefined;
         const barcodeVal = normalizeCell(row['Código de Barras']) || undefined;
+        const expiryCell = row['Fecha de Vencimiento'] ?? row['Fecha de Expiración'] ?? row['Expiración'];
+        const expiryDate = normalizeExpiryCell(expiryCell);
+        const batch = normalizeCell(row['Lote']);
 
         // Niveles de precio (escalas). 0 o vacío => no definido.
         const numOrUndef = (v: any): number | undefined => {
@@ -428,9 +453,9 @@ export function ImportInventoryDialog({ isOpen, onClose, onImport }: ImportInven
                 minStock: Number(normalizeCell(row['Stock Mínimo']) || 1),
                 unitOfMeasure: unit as any,
                 inventoryType: (validTypes.includes(invTypeRaw) ? invTypeRaw : (defaultsToGeneral ? 'general' : 'pharmacy')) as any,
-                batch: normalizeCell(row['Lote']) || (defaultsToGeneral ? 'STOCK-INICIAL' : 'LOTE-GENERAL'),
+                batch: batch || (defaultsToGeneral ? 'STOCK-INICIAL' : 'N/A'),
                 quantity: cantidad,
-                expiryDate: normalizeCell(row['Fecha de Vencimiento']) || '2099-12-31',
+                expiryDate: expiryDate || '2099-12-31',
                 brand: normalizeCell(row['Marca']) || undefined,
                 size: sizeVal,
                 color: colorVal,

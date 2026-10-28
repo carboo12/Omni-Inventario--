@@ -1,6 +1,7 @@
 'use server'
 
 import db from '../db';
+import { verifySession } from '../session';
 
 export async function getSalesData(startDate?: Date, endDate?: Date) {
     const currentYear = new Date().getFullYear();
@@ -46,6 +47,57 @@ export async function getSalesData(startDate?: Date, endDate?: Date) {
         month,
         sales: monthlyData[index] || 0
     }));
+}
+
+/** Listado de facturas por rango para reimpresión administrativa. */
+export async function getTicketHistory(startDate?: unknown, endDate?: unknown) {
+    try {
+        const session = await verifySession();
+        if (!session || !['admin', 'master-admin'].includes(session.role)) {
+            return { success: false as const, error: 'No autorizado', data: [] };
+        }
+
+        const dateOnly = (value: unknown): string => {
+            if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString().slice(0, 10);
+            if (typeof value === 'string' && value.trim()) return value.trim().split('T')[0];
+            return new Date().toISOString().slice(0, 10);
+        };
+        const startDay = dateOnly(startDate);
+        const endDay = dateOnly(endDate);
+        const start = new Date(`${startDay}T00:00:00.000Z`);
+        const end = new Date(`${endDay}T23:59:59.999Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(startDay) || !/^\d{4}-\d{2}-\d{2}$/.test(endDay)
+            || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) {
+            return { success: false as const, error: 'Rango de fechas inválido', data: [] };
+        }
+
+        const invoices = await db.salesInvoice.findMany({
+            where: { date: { gte: start, lte: end }, status: { not: 'REFUNDED' } },
+            orderBy: { date: 'desc' },
+            take: 200,
+            select: {
+                id: true,
+                invoiceNumber: true,
+                date: true,
+                totalAmount: true,
+                customer: { select: { fullName: true } },
+                user: { select: { name: true } },
+            },
+        });
+        const data = invoices.map((invoice) => ({
+            id: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            date: invoice.date,
+            totalAmount: Number(invoice.totalAmount ?? 0),
+            customerName: invoice.customer?.fullName || 'Cliente General',
+            customer: invoice.customer ? { fullName: invoice.customer.fullName || 'Cliente General' } : null,
+            user: invoice.user ? { name: invoice.user.name || 'Caja Central' } : null,
+        }));
+        return { success: true as const, data };
+    } catch (error) {
+        console.error('[reports.getTicketHistory Error]:', error);
+        return { success: false as const, error: String(error), data: [] };
+    }
 }
 
 export async function getTopProducts(startDate?: Date, endDate?: Date) {
@@ -473,6 +525,7 @@ async function getReportProductCatalog() {
                 name: true,
                 barcode: true,
                 costPriceNIO: true,
+                baseUnit: true,
                 categoryId: true,
                 category: true,
                 inventoryType: true,
@@ -495,6 +548,7 @@ async function getReportProductCatalog() {
             name: p.name,
             barcode: p.barcode || '',
             cost: p.costPriceNIO || 0,
+            baseUnit: p.baseUnit || 'Unidad',
             inventoryType: p.inventoryType,
             hasVariants: p.hasVariants,
             categoryId: cat?.id || null,
@@ -1182,6 +1236,87 @@ export async function getReportProfitMargin(from?: string, to?: string) {
         },
         bands,
         exchangeRate: rate,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// GANANCIA DETALLADA POR ÍTEM Y PRESENTACIÓN (independiente de los reportes existentes)
+// ---------------------------------------------------------------------------
+export async function getReportProfitByPresentation(from?: string, to?: string) {
+    const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+    const invoices = await fetchInvoicesInRange(start, end);
+    const { productById } = await getReportProductCatalog();
+
+    interface PresentationRow {
+        key: string;
+        productName: string;
+        presentationName: string;
+        baseUnit: string;
+        presentationFactor: number;
+        quantity: number;
+        revenue: number;
+        cost: number;
+    }
+
+    const grouped = new Map<string, PresentationRow>();
+    for (const invoice of invoices) {
+        for (const item of invoice.salesInvoiceItem || []) {
+            const product = productById.get(item.productId);
+            const quantity = Math.abs(Number(item.quantity) || 0);
+            if (quantity <= 0) continue;
+
+            const factorValue = Number(item.presentationFactor);
+            const factor = Number.isFinite(factorValue) && factorValue > 0 ? factorValue : 1;
+            const baseUnit = String(item.baseUnit || product?.baseUnit || 'Unidad');
+            const presentationName = String(item.presentationName || item.bulkUnit || baseUnit || 'Unidad');
+            const productName = String(product?.name || item.productName || 'Producto');
+            const key = [item.productId || productName, presentationName.toLocaleLowerCase(), factor].join('|');
+            let row = grouped.get(key);
+            if (!row) {
+                row = { key, productName, presentationName, baseUnit, presentationFactor: factor, quantity: 0, revenue: 0, cost: 0 };
+                grouped.set(key, row);
+            }
+
+            const revenue = Number(item.totalPrice) || quantity * (Number(item.unitPrice) || 0);
+            row.quantity += quantity;
+            row.revenue += revenue;
+            // El costo de catálogo está expresado por unidad base. El factor de
+            // la presentación convierte las unidades vendidas antes de costear.
+            row.cost += (Number(product?.cost) || 0) * quantity * factor;
+        }
+    }
+
+    const rows = Array.from(grouped.values())
+        .map((row) => {
+            const profit = row.revenue - row.cost;
+            return {
+                productName: row.productName,
+                presentationName: row.presentationName,
+                baseUnit: row.baseUnit,
+                presentationFactor: row.presentationFactor,
+                quantity: round2(row.quantity),
+                revenue: round2(row.revenue),
+                cost: round2(row.cost),
+                profit: round2(profit),
+                marginPct: safePercent(profit, row.revenue),
+            };
+        })
+        .sort((a, b) => b.profit - a.profit);
+
+    const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
+    const totalCost = rows.reduce((sum, row) => sum + row.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+    return {
+        rows,
+        summary: {
+            presentationCount: rows.length,
+            totalQuantity: round2(rows.reduce((sum, row) => sum + row.quantity, 0)),
+            totalRevenue: round2(totalRevenue),
+            totalCost: round2(totalCost),
+            totalProfit: round2(totalProfit),
+            marginPct: safePercent(totalProfit, totalRevenue),
+            invoiceCount: invoices.length,
+        },
     };
 }
 

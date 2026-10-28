@@ -28,6 +28,8 @@ const DATA_CONVENTIONS = {
   customers: [
     { prop: 'initialCustomers', actionModule: 'customers', actionFn: 'getAllCustomers' },
   ],
+  devoluciones: [],
+  employees: [],
   'customers/credit': [
     { prop: 'initialCustomers', actionModule: 'customers', actionFn: 'getAllCustomers' },
   ],
@@ -81,6 +83,7 @@ const DATA_CONVENTIONS = {
     { prop: 'products', actionModule: 'products', actionFn: 'getProducts' },
   ],
   reports: [],
+  'ticket-history': [],
   'reports/cash-closings': [
     { prop: 'initialData', actionModule: 'cash-register', actionFn: 'getSessions' },
     { prop: 'users', actionModule: 'users', actionFn: 'getUsers' },
@@ -111,7 +114,7 @@ function walk(dir, base = '') {
       } else {
         entries.push(...walk(full, rel));
       }
-    } else if (f.name === 'client.tsx' || f.name === 'page.tsx') {
+    } else if (f.name === 'client.tsx' || f.name === 'page.tsx' || f.name === 'returns-workspace.tsx') {
       entries.push({ full, rel });
     }
   }
@@ -132,15 +135,18 @@ function isClientSafe(filePath) {
 // Agrupar: clave de ruta = rel dirname
 const routeMap = new Map();
 for (const f of files) {
-  const isClientFile = f.rel === 'client.tsx' || f.rel.endsWith('/client.tsx');
+  const isClientFile = f.rel === 'client.tsx' || f.rel.endsWith('/client.tsx') || f.rel.endsWith('/returns-workspace.tsx');
   const isPageFile = f.rel === 'page.tsx' || f.rel.endsWith('/page.tsx');
   let dirKey = f.rel;
-  if (isClientFile) dirKey = f.rel === 'client.tsx' ? '' : f.rel.slice(0, f.rel.length - '/client.tsx'.length);
+  if (isClientFile) {
+    const suffix = f.rel.endsWith('/returns-workspace.tsx') ? '/returns-workspace.tsx' : '/client.tsx';
+    dirKey = f.rel === 'client.tsx' ? '' : f.rel.slice(0, f.rel.length - suffix.length);
+  }
   else if (isPageFile) dirKey = f.rel === 'page.tsx' ? '' : f.rel.slice(0, f.rel.length - '/page.tsx'.length);
   const route = dirKey === '' ? '/' : `/${dirKey}`;
   if (!routeMap.has(route)) routeMap.set(route, {});
   const cur = routeMap.get(route);
-  if (f.rel.endsWith('client.tsx')) cur.client = f.full;
+  if (f.rel.endsWith('client.tsx') || f.rel.endsWith('returns-workspace.tsx')) cur.client = f.full;
   else cur.page = f.full;
 }
 

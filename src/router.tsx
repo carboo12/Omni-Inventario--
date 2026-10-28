@@ -17,6 +17,7 @@ import { MasterKeyGuard } from '@/components/auth/master-key-guard';
 import { LicenseGuard } from '@/components/auth/license-guard';
 import { InvoiceAlerts } from '@/components/purchases/invoice-alerts';
 import { AppLayout } from '@/components/layout/app-layout';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { useRouterState, useNavigate } from '@tanstack/react-router';
 import { canAccessRoute, CASHIER_HOME, DISPATCHER_HOME } from '@/lib/rbac';
 import { useSettings } from '@/hooks/use-settings';
@@ -36,9 +37,11 @@ function PageRenderer() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { settings, loading: settingsLoading } = useSettings();
 
-  const isDeliveryRoute = ['/ruta', '/entregas', '/delivery-routes', '/orders', '/collections'].some((base) => pathname === base || pathname.startsWith(`${base}/`));
-  if (!settingsLoading && !settings.enableDeliveryRoute && isDeliveryRoute) {
-    return <RedirectTo to="/pos" />;
+  // El módulo deshabilitado oculta y bloquea todas sus rutas para cualquier rol.
+  const isDeliveryModuleRoute = ['/ruta', '/entregas', '/delivery-routes', '/orders', '/collections'].some((base) => pathname === base || pathname.startsWith(`${base}/`));
+  if (!settingsLoading && !settings.enableDeliveryRoute && isDeliveryModuleRoute) {
+    const home = user?.role === 'dispatcher' ? DISPATCHER_HOME : user?.role === 'cashier' ? CASHIER_HOME : '/dashboard';
+    return <RedirectTo to={home} />;
   }
 
   // RBAC: si el rol no puede acceder a la ruta, reorientar al home del rol.
@@ -62,7 +65,16 @@ function PageRenderer() {
     <Component />
   );
 
-  return content;
+  // Guard global: cualquier error de render no capturado (Runtime Error) se
+  // muestra en este contenedor en lugar de dejar la pantalla en blanco.
+  return (
+    <ErrorBoundary
+      fallbackTitle="Error al cargar la vista"
+      fallbackMessage="La vista solicitada encontró un error inesperado. Puedes reintentar o volver al inicio."
+    >
+      {content}
+    </ErrorBoundary>
+  );
 }
 
 function RedirectTo({ to }: { to: string }) {

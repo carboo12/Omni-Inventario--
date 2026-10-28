@@ -1,0 +1,169 @@
+﻿========================================================
+  EJECUTANDO ACTUALIZACION RAPIDA EN PRODUCCION
+  Vite SPA + Hono API + Prisma + PM2
+========================================================
+
+[1/6] Verificando dependencias (modo rapido prefer-offline)...
+
+up to date in 2s
+npm warn allow-scripts 8 packages have install scripts not yet covered by allowScripts:
+npm warn allow-scripts   @firebase/util@1.12.1 (postinstall: node ./postinstall.js)
+npm warn allow-scripts   @prisma/client@5.22.0 (postinstall: node scripts/postinstall.js)
+npm warn allow-scripts   @prisma/engines@5.22.0 (postinstall: node scripts/postinstall.js)
+npm warn allow-scripts   esbuild@0.27.7 (postinstall: node install.js)
+npm warn allow-scripts   prisma@5.22.0 (preinstall: node scripts/preinstall-entry.js)
+npm warn allow-scripts   protobufjs@7.5.4 (postinstall: node scripts/postinstall)
+npm warn allow-scripts   esbuild@0.21.5 (postinstall: node install.js)
+npm warn allow-scripts   esbuild@0.21.5 (postinstall: node install.js)
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+
+[2/6] Generando cliente y estructura Prisma...
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+
+✔ Generated Prisma Client (v5.22.0) to .\node_modules\@prisma\client in 712ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": MySQL database "farmacia" at "localhost:3306"
+
+Error: P1000: Authentication failed against database server at `localhost`, the provided database credentials for `root` are not valid.
+
+Please make sure to provide valid database credentials for the database server at `localhost`.
+[ERROR CRITICO] Fallo la sincronizacion de la base de datos con Prisma db push.
+
+========================================================
+  [ERROR CRITICO] Ocurrio un problema durante la ejecucion.
+========================================================
+[TAILING] Tailing last 60 lines for [omni-pos] process (change the value with --lines option)
+C:\Omni Inventario +\logs\out.log last 60 lines:
+0|omni-pos | 2026-08-30T11:14:30: prisma:error
+0|omni-pos | 2026-08-30T11:14:30: Invalid `prisma.product.findMany()` invocation:
+0|omni-pos | 2026-08-30T11:14:30:
+0|omni-pos | 2026-08-30T11:14:30:
+0|omni-pos | 2026-08-30T11:14:30: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+0|omni-pos | 2026-08-30T11:14:30: prisma:error
+0|omni-pos | 2026-08-30T11:14:30: Invalid `prisma.inventoryItem.findMany()` invocation:
+0|omni-pos | 2026-08-30T11:14:30:
+0|omni-pos | 2026-08-30T11:14:30:
+0|omni-pos | 2026-08-30T11:14:30: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+0|omni-pos | 2026-08-30T11:19:07: Checking activation status. Settings found: true
+0|omni-pos | 2026-08-30T11:19:07: Checking activation status. Settings found: true
+0|omni-pos | 2026-08-30T11:19:07: prisma:error
+0|omni-pos | 2026-08-30T11:19:07: Invalid `prisma.product.findMany()` invocation:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+0|omni-pos | 2026-08-30T11:19:07: prisma:error
+0|omni-pos | 2026-08-30T11:19:07: Invalid `prisma.inventoryItem.findMany()` invocation:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+0|omni-pos | 2026-08-30T11:19:07: prisma:error
+0|omni-pos | 2026-08-30T11:19:07: Invalid `prisma.product.findMany()` invocation:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+0|omni-pos | 2026-08-30T11:19:07: prisma:error
+0|omni-pos | 2026-08-30T11:19:07: Invalid `prisma.inventoryItem.findMany()` invocation:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07:
+0|omni-pos | 2026-08-30T11:19:07: The column `farmacia.product.unitsPerBulk` does not exist in the current database.
+0|omni-pos | 2026-09-05T17:29:53: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-08T13:14:23: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-09T10:27:51: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-09T11:17:29: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-09T12:59:55: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-09T14:57:36: Checking activation status. Settings found: true
+0|omni-pos | 2026-09-09T14:57:36: Checking activation status. Settings found: true
+0|omni-pos | 2026-09-12T12:08:27: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-12T16:42:30: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-12T20:45:45: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-13T00:51:12: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-14T12:54:58: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-16T07:02:39: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-16T14:20:00: Checking activation status. Settings found: true
+0|omni-pos | 2026-09-16T14:20:00: Checking activation status. Settings found: true
+0|omni-pos | 2026-09-21T08:06:39: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-21T12:49:09: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-21T13:26:22: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-21T13:33:06: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-21T13:59:09: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-22T18:29:00: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-09-22T20:36:33: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-10-01T12:19:19: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-10-01T22:28:58: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-10-03T00:26:53: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-10-08T00:21:26: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-10-08T11:33:07: [joyeriaplus-api] escuchando en http://localhost:9003
+0|omni-pos | 2026-10-10T16:28:06: [joyeriaplus-api] escuchando en http://localhost:9003
+
+C:\Omni Inventario +\logs\error.log last 60 lines:
+0|omni-pos | 2026-10-19T14:03:18: Error: @prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.
+0|omni-pos | 2026-10-19T14:03:18:     at new PrismaClient (C:\Omni Inventario +\node_modules\.prisma\client\default.js:43:11)
+0|omni-pos | 2026-10-19T14:03:18:     at prismaClientSingleton (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:19:14)
+0|omni-pos | 2026-10-19T14:03:18:     at src/lib/db.ts (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:23:31)
+0|omni-pos | 2026-10-19T14:03:18:     at __init (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:5:56)
+0|omni-pos | 2026-10-19T14:03:18:     at file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:237:1
+0|omni-pos | 2026-10-19T14:03:18:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+0|omni-pos | 2026-10-19T14:03:18:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+0|omni-pos | 2026-10-19T14:03:18:     at async node:internal/modules/esm/loader:643:26
+0|omni-pos | 2026-10-19T14:03:18:     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+0|omni-pos | 2026-10-19T14:03:18:
+0|omni-pos | 2026-10-19T14:03:18: Node.js v24.19.0
+0|omni-pos | 2026-10-19T14:03:23: C:\Omni Inventario +\node_modules\.prisma\client\default.js:43
+0|omni-pos | 2026-10-19T14:03:23:     throw new Error('@prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.');
+0|omni-pos | 2026-10-19T14:03:23:           ^
+0|omni-pos | 2026-10-19T14:03:23:
+0|omni-pos | 2026-10-19T14:03:23: Error: @prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.
+0|omni-pos | 2026-10-19T14:03:23:     at new PrismaClient (C:\Omni Inventario +\node_modules\.prisma\client\default.js:43:11)
+0|omni-pos | 2026-10-19T14:03:23:     at prismaClientSingleton (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:19:14)
+0|omni-pos | 2026-10-19T14:03:23:     at src/lib/db.ts (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:23:31)
+0|omni-pos | 2026-10-19T14:03:23:     at __init (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:5:56)
+0|omni-pos | 2026-10-19T14:03:23:     at file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:237:1
+0|omni-pos | 2026-10-19T14:03:23:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+0|omni-pos | 2026-10-19T14:03:23:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+0|omni-pos | 2026-10-19T14:03:23:     at async node:internal/modules/esm/loader:643:26
+0|omni-pos | 2026-10-19T14:03:23:     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+0|omni-pos | 2026-10-19T14:03:23:
+0|omni-pos | 2026-10-19T14:03:23: Node.js v24.19.0
+0|omni-pos | 2026-10-19T14:03:28: C:\Omni Inventario +\node_modules\.prisma\client\default.js:43
+0|omni-pos | 2026-10-19T14:03:28:     throw new Error('@prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.');
+0|omni-pos | 2026-10-19T14:03:28:           ^
+0|omni-pos | 2026-10-19T14:03:28:
+0|omni-pos | 2026-10-19T14:03:28: Error: @prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.
+0|omni-pos | 2026-10-19T14:03:28:     at new PrismaClient (C:\Omni Inventario +\node_modules\.prisma\client\default.js:43:11)
+0|omni-pos | 2026-10-19T14:03:28:     at prismaClientSingleton (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:19:14)
+0|omni-pos | 2026-10-19T14:03:28:     at src/lib/db.ts (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:23:31)
+0|omni-pos | 2026-10-19T14:03:28:     at __init (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:5:56)
+0|omni-pos | 2026-10-19T14:03:28:     at file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:237:1
+0|omni-pos | 2026-10-19T14:03:28:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+0|omni-pos | 2026-10-19T14:03:28:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+0|omni-pos | 2026-10-19T14:03:28:     at async node:internal/modules/esm/loader:643:26
+0|omni-pos | 2026-10-19T14:03:28:     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+0|omni-pos | 2026-10-19T14:03:28:
+0|omni-pos | 2026-10-19T14:03:28: Node.js v24.19.0
+0|omni-pos | 2026-10-19T14:03:34: C:\Omni Inventario +\node_modules\.prisma\client\default.js:43
+0|omni-pos | 2026-10-19T14:03:34:     throw new Error('@prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.');
+0|omni-pos | 2026-10-19T14:03:34:           ^
+0|omni-pos | 2026-10-19T14:03:34:
+0|omni-pos | 2026-10-19T14:03:34: Error: @prisma/client did not initialize yet. Please run "prisma generate" and try to import it again.
+0|omni-pos | 2026-10-19T14:03:34:     at new PrismaClient (C:\Omni Inventario +\node_modules\.prisma\client\default.js:43:11)
+0|omni-pos | 2026-10-19T14:03:34:     at prismaClientSingleton (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:19:14)
+0|omni-pos | 2026-10-19T14:03:34:     at src/lib/db.ts (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:23:31)
+0|omni-pos | 2026-10-19T14:03:34:     at __init (file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:5:56)
+0|omni-pos | 2026-10-19T14:03:34:     at file:///C:/Omni%20Inventario%20+/dist-server/index.mjs:237:1
+0|omni-pos | 2026-10-19T14:03:34:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+0|omni-pos | 2026-10-19T14:03:34:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+0|omni-pos | 2026-10-19T14:03:34:     at async node:internal/modules/esm/loader:643:26
+0|omni-pos | 2026-10-19T14:03:34:     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+0|omni-pos | 2026-10-19T14:03:34:
+0|omni-pos | 2026-10-19T14:03:34: Node.js v24.19.0
+
+
+Presione una tecla para continuar . . .

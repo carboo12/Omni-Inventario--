@@ -270,7 +270,7 @@ export function AddInventoryItemDialog({ isOpen, onClose, onSave, existingProduc
 
   // ── Módulo Opcional de Recetas (BOM) ─────────────────────────────────────
   const enableRecipes = !!settings.enableRecipes;
-  const batchExpiryEnabled = !!settings.enableBatchAndExpiration;
+  const batchExpiryEnabled = mode === 'PHARMACY' || !!settings.enableBatchAndExpiration;
 
   const [ingredientQuery, setIngredientQuery] = useState('');
   const [showIngredientResults, setShowIngredientResults] = useState(false);
@@ -411,19 +411,6 @@ bulkUnit: '',
   const handleSubmit = async (values: FormValues) => {
     if (isSaving) return;
 
-    if (mode === 'PHARMACY' && batchExpiryEnabled) {
-      let hasError = false;
-      if (!values.batch) {
-        form.setError('batch', { message: 'El lote es requerido en Farmacia.' });
-        hasError = true;
-      }
-      if (!values.expiryDate) {
-        form.setError('expiryDate', { message: 'La fecha de vencimiento es requerida en Farmacia.' });
-        hasError = true;
-      }
-      if (hasError) return;
-    }
-
     setIsSaving(true);
     try {
       const hasBoxOption = Boolean(values.bulkUnit && values.unitsPerBulk && values.unitsPerBulk > 1);
@@ -440,7 +427,7 @@ bulkUnit: '',
         })),
         barcode: values.barcode || null,
         inventoryType: values.inventoryType,
-        batch: values.batch || 'N/A',
+        batch: values.batch?.trim() || 'N/A',
         quantity: finalQuantity,
         expiryDate: values.expiryDate ? format(values.expiryDate, 'yyyy-MM-dd') : '2099-12-31',
         priceNIO: values.salePriceNIO, // This is the sale (menudeo) price
@@ -487,7 +474,7 @@ bulkUnit: '',
 
       toast({
         title: 'Artículo de Inventario Añadido',
-        description: `Se ha añadido ${finalQuantity} de ${values.productName} (Lote: ${values.batch}).`,
+        description: `Se ha añadido ${finalQuantity} de ${values.productName} (Lote: ${values.batch?.trim() || 'N/A'}).`,
       });
       form.reset();
       onClose();
@@ -1220,7 +1207,7 @@ bulkUnit: '',
                       name="batch"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Lote</FormLabel>
+                          <FormLabel>Lote (opcional)</FormLabel>
                           <FormControl>
                             <Input placeholder="Ej: B0123" {...field} disabled={isSaving} />
                           </FormControl>
@@ -1233,7 +1220,7 @@ bulkUnit: '',
                       name="expiryDate"
                       render={({ field }) => (
                         <FormItem className="flex flex-col">
-                          <FormLabel>Fecha de Vencimiento</FormLabel>
+                          <FormLabel>Fecha de Vencimiento (opcional)</FormLabel>
                           <Popover modal={false}>
                             <PopoverTrigger asChild>
                               <FormControl>

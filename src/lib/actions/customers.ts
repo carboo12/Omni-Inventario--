@@ -29,25 +29,8 @@ export async function createOrUpdateCustomer(data: {
     const trimmedName = data.fullName.trim();
     if (!trimmedName) throw new Error("Nombre requerido");
 
-    // SEGURIDAD DE CRÉDITO: solo el Administrador puede asignar/habilitar crédito.
-    // Para cualquier otro rol, se ignoran los valores de crédito enviados y se fuerzan a deshabilitado.
     const session = await verifySession();
     const isAdmin = isAdminRole(session?.role);
-    if (!isAdmin) {
-        data.hasCredit = false;
-        data.creditLimit = 0;
-        data.creditDays = null;
-    }
-
-    // El plazo de crédito se normaliza a entero positivo o null (null = ajuste global).
-    // `undefined` significa "no enviado": en una actualización se preserva el valor actual.
-    const hasCreditDaysKey = Object.prototype.hasOwnProperty.call(data, 'creditDays');
-    if (hasCreditDaysKey) {
-        const days = Number(data.creditDays);
-        data.creditDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
-    } else {
-        delete data.creditDays;
-    }
 
     // Check if customer exists by name or document
     let existing = await db.customer.findFirst({
@@ -58,6 +41,23 @@ export async function createOrUpdateCustomer(data: {
             ].filter(Boolean) as any
         }
     });
+
+    // Solo administración puede definir crédito. Caja puede crear clientes,
+    // pero no habilitar crédito ni alterar los términos financieros.
+    if (!isAdmin) {
+        delete data.hasCredit;
+        delete data.creditLimit;
+        delete data.interestRate;
+        delete data.creditDays;
+    }
+
+    // null usa el plazo global; undefined conserva el valor actual.
+    if (Object.prototype.hasOwnProperty.call(data, 'creditDays')) {
+        const days = Number(data.creditDays);
+        data.creditDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
+    } else {
+        delete data.creditDays;
+    }
 
     if (existing) {
         const updated = await db.customer.update({
@@ -132,9 +132,9 @@ export async function searchOrCreateCustomer(fullName: string, documentId?: stri
                 fullName: trimmedName,
                 documentId: documentId || null,
                 phone: phone || null,
-                // Habilitar crédito por defecto para no bloquear ventas a crédito
-                // de clientes creados rápidamente desde el POS.
-                hasCredit: true,
+                // Las fichas creadas automáticamente no reciben crédito;
+                // debe habilitarse explícitamente en el registro del cliente.
+                hasCredit: false,
                 creditLimit: 0,
             } as any
         });
@@ -233,7 +233,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * Aplica un abono de crédito FIFO: primero a las cuotas más antiguas (PENDING/
  * OVERDUE) de todas las facturas del cliente y luego a los saldos pendientes de
  * las facturas más antiguas. Reduce `SalesInvoice.pendingBalance` por factura y
- * marca las cuotas como PAID cuando quedan cubiertas.
+ * el remanente (`amount`) de cada cuota; marca cuotas y facturas como PAID al
+ * liquidarse (evita cuotas residuales PENDING que bloqueaban el crédito).
  *
  * Devuelve los trozos por factura para crear un CreditPayment por cada uno.
  */
@@ -258,23 +259,37 @@ async function applyPaymentToInvoices(tx: any, customerId: string, amount: numbe
     const takeFromInvoice = async (invoiceId: string, take: number): Promise<number> => {
         const bal = remainingByInvoice[invoiceId] ?? 0;
         if (bal <= 0.005 || take <= 0.005) return 0;
-        const applied = Math.min(bal, take);
+        const applied = round2(Math.min(bal, take));
+        const newBal = round2(bal - applied);
+        // Al liquidar la factura se marca formalmente PAID (pendingBalance 0).
         await tx.salesInvoice.update({
             where: { id: invoiceId },
-            data: { pendingBalance: { decrement: applied } },
+            data: newBal <= 0.005
+                ? { pendingBalance: 0, status: 'PAID' }
+                : { pendingBalance: newBal },
         });
-        remainingByInvoice[invoiceId] = round2(bal - applied);
-        return round2(applied);
+        remainingByInvoice[invoiceId] = newBal;
+        return applied;
     };
 
-    // Pasada 1: cuotas más antiguas (FIFO). Marca PAID solo si quedan cubiertas.
+    // Pasada 1: cuotas más antiguas (FIFO). Un abono parcial reduce el remanente
+    // adeudado de la cuota (amount); al llegar a 0 se marca PAID. Esto evita dejar
+    // cuotas residuales PENDING con el monto original tras cubrir la deuda.
     for (const inst of installments) {
         if (remaining <= 0.005) break;
-        const applied = await takeFromInvoice(inst.saleId, Math.min(Number(inst.amount) || 0, remaining));
+        const instAmount = round2(Number(inst.amount) || 0);
+        if (instAmount <= 0.005) continue;
+
+        const applied = await takeFromInvoice(inst.saleId, Math.min(instAmount, remaining));
         if (applied <= 0.005) continue;
-        if (applied >= (Number(inst.amount) || 0) - 0.005) {
-            await tx.creditInstallment.update({ where: { id: inst.id }, data: { status: 'PAID' } });
-        }
+
+        const newInstAmount = round2(instAmount - applied);
+        await tx.creditInstallment.update({
+            where: { id: inst.id },
+            data: newInstAmount <= 0.005
+                ? { amount: 0, status: 'PAID' }
+                : { amount: newInstAmount },
+        });
         chunks.push({ invoiceId: inst.saleId, amount: applied });
         remaining = round2(remaining - applied);
     }
@@ -285,11 +300,14 @@ async function applyPaymentToInvoices(tx: any, customerId: string, amount: numbe
         const bal = remainingByInvoice[inv.id] ?? 0;
         if (bal <= 0.005) continue;
         const applied = round2(Math.min(bal, remaining));
+        const newBal = round2(bal - applied);
         await tx.salesInvoice.update({
             where: { id: inv.id },
-            data: { pendingBalance: { decrement: applied } },
+            data: newBal <= 0.005
+                ? { pendingBalance: 0, status: 'PAID' }
+                : { pendingBalance: newBal },
         });
-        remainingByInvoice[inv.id] = round2(bal - applied);
+        remainingByInvoice[inv.id] = newBal;
         chunks.push({ invoiceId: inv.id, amount: applied });
         remaining = round2(remaining - applied);
     }
@@ -418,6 +436,39 @@ export async function getCustomerByFullName(fullName: string) {
     return await db.customer.findFirst({
         where: { fullName: fullName.trim() }
     });
+}
+
+/**
+ * Resuelve la ficha completa del cliente al cargar una comanda/pedido en el POS.
+ * Prioriza el vínculo exacto del pedido (`CustomerOrder.customerId`); si la
+ * comanda solo guardó el nombre, exige una coincidencia única para no asignar
+ * el crédito de un homónimo.
+ */
+export async function getCustomerForPOSCheckout(input: {
+    customerName?: string | null;
+    orderId?: string | null;
+}): Promise<Customer | null> {
+    try {
+        if (input.orderId) {
+            const order = await db.customerOrder.findUnique({
+                where: { id: input.orderId },
+                select: { customer: true },
+            });
+            if (order?.customer) return order.customer;
+        }
+
+        const name = input.customerName?.trim();
+        if (!name) return null;
+
+        const matches = await db.customer.findMany({
+            where: { fullName: name },
+            take: 2,
+        });
+        return matches.length === 1 ? matches[0] : null;
+    } catch (error) {
+        console.error('Error resolving customer for POS checkout:', error);
+        return null;
+    }
 }
 
 export async function getAllCustomers(): Promise<Customer[]> {

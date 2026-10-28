@@ -394,21 +394,28 @@ export async function addSaleToSessionDB(sessionId: string, amount: number) {
     revalidatePath('/');
 }
 
-export async function createOutflowAction(sessionId: string, amount: number, reason: string) {
-    const session = await db.cashRegisterSession.findUnique({
-        where: { id: sessionId }
-    });
-
-    if (!session) throw new Error("Session not found");
-    if (session.status !== 'open') throw new Error("Session is closed");
-
-    const outflow = await db.cashOutflow.create({
-        data: {
-            id: generateUUID(),
-            sessionId,
-            amount,
-            reason
-        } as any
+export async function createOutflowAction(sessionId: string, amount: number, reason: string, employeeId?: string) {
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto debe ser mayor que cero.');
+    const outflow = await db.$transaction(async (tx) => {
+        const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
+        if (!session) throw new Error("Session not found");
+        if (session.status !== 'open') throw new Error("Session is closed");
+        if (employeeId) {
+            const employee = await tx.employee.findUnique({ where: { id: employeeId } });
+            if (!employee?.isActive) throw new Error('El trabajador no existe o está inactivo.');
+        }
+        const movement = await tx.cashOutflow.create({
+            data: { id: generateUUID(), sessionId, amount, reason: reason.trim() } as any,
+        });
+        if (employeeId) {
+            await tx.employeeLoan.create({
+                data: {
+                    id: generateUUID(), employeeId, amount, description: reason.trim(),
+                    status: 'PENDING', cashMovementId: movement.id,
+                },
+            });
+        }
+        return movement;
     });
 
     revalidatePath('/');

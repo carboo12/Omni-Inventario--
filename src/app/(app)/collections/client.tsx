@@ -17,7 +17,7 @@ const methodLabels: Record<string, string> = {
 };
 
 export default function CollectionsClient({ initialCollections }: { initialCollections: any[] }) {
-  const [collections] = useState(initialCollections);
+  const [collections] = useState(() => Array.isArray(initialCollections) ? initialCollections : []);
   const [search, setSearch] = useState('');
 
   const totalAmount = useMemo(() => {
@@ -29,8 +29,8 @@ export default function CollectionsClient({ initialCollections }: { initialColle
     const q = search.toLowerCase();
     return collections.filter((c: any) =>
       c.order?.customer?.fullName?.toLowerCase().includes(q) ||
-      c.paymentMethod.toLowerCase().includes(q) ||
-      c.reference?.toLowerCase().includes(q)
+      String(c.paymentMethod ?? '').toLowerCase().includes(q) ||
+      String(c.reference ?? c.notes ?? '').toLowerCase().includes(q)
     );
   }, [collections, search]);
 
@@ -92,9 +92,9 @@ export default function CollectionsClient({ initialCollections }: { initialColle
                     <TableCell className="font-mono text-xs">#{String(c.order?.orderNumber || '').padStart(5, '0')}</TableCell>
                     <TableCell>{c.order?.customer?.fullName || '—'}</TableCell>
                     <TableCell className="font-medium">C${Number(c.amount).toFixed(2)}</TableCell>
-                    <TableCell><Badge variant="outline">{methodLabels[c.paymentMethod] || c.paymentMethod}</Badge></TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{c.reference || '—'}</TableCell>
-                    <TableCell className="text-sm">{new Date(c.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell><Badge variant="outline">{methodLabels[c.paymentMethod] || c.paymentMethod || '—'}</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{c.reference || c.notes || '—'}</TableCell>
+                    <TableCell className="text-sm">{c.createdAt || c.receivedAt ? new Date(c.createdAt || c.receivedAt).toLocaleDateString() : '—'}</TableCell>
                   </TableRow>
                 ))}
                 {filtered.length === 0 && (

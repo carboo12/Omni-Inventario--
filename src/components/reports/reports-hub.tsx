@@ -13,6 +13,7 @@ import {
   getReportSalesByHour,
   getReportDeadStock,
   getReportProfitMargin,
+  getReportProfitByPresentation,
   getAgingReport,
   getDispatcherProductivityReport,
 } from "@/lib/actions-client/reports";
@@ -50,6 +51,7 @@ import { DeadStockReport } from "./report-deadstock";
 import { ProfitMarginReport } from "./report-profit-margin";
 import { AgingReport } from "./report-aging";
 import { DispatcherReport } from "./report-dispatcher";
+import { ProfitByPresentationReport } from "./report-profit-by-presentation";
 
 type TabKey =
   | "resumen"
@@ -61,6 +63,7 @@ type TabKey =
   | "hora"
   | "stock"
   | "utilidad"
+  | "presentacion"
   | "saldos"
   | "despachadores";
 
@@ -74,6 +77,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   hora: "Por Hora",
   stock: "Stock Muerto",
   utilidad: "Utilidad",
+  presentacion: "Por Presentación / Ítem",
   saldos: "Antigüedad",
   despachadores: "Por Despachador",
 };
@@ -88,6 +92,7 @@ const TAB_EXPORT_TITLES: Record<TabKey, string> = {
   hora: "Ventas por Hora",
   stock: "Productos Sin Rotación (Stock Muerto)",
   utilidad: "Reporte de Utilidad / Margen",
+  presentacion: "Ganancia por Presentación / Ítem",
   saldos: "Antigüedad de Saldos (CxC / CxP)",
   despachadores: "Productividad de Despachadores",
 };
@@ -273,6 +278,22 @@ function buildTabExport(tab: TabKey, data: any): TabExport | null {
           n(r.marginPct),
         ]),
       };
+    case "presentacion":
+      return {
+        filename: "ganancia-por-presentacion-item",
+        sheet: "Ganancia por Presentación",
+        headers: ["Producto / Ítem", "Presentación", "Cantidad vendida", "Factor base", "Ingreso (C$)", "Costo (C$)", "Ganancia (C$)", "Margen (%)"],
+        rows: (data.rows || []).map((r: any) => [
+          r.productName,
+          r.presentationName,
+          n(r.quantity),
+          n(r.presentationFactor),
+          n(r.revenue),
+          n(r.cost),
+          n(r.profit),
+          n(r.marginPct),
+        ]),
+      };
     case "saldos": {
       const cxcRows = (data?.cxc?.rows || []).flatMap((r: any) =>
         ["current", "d31_60", "d61_90", "d90plus"].map((b) => [
@@ -393,6 +414,11 @@ export function ReportsHub() {
       queryKey: ["reports", "profit", effective.from, effective.to],
       queryFn: () => getReportProfitMargin(effective.from, effective.to),
       enabled: tab === "utilidad",
+    }),
+    presentacion: useQuery({
+      queryKey: ["reports", "profit-by-presentation", effective.from, effective.to],
+      queryFn: () => getReportProfitByPresentation(effective.from, effective.to),
+      enabled: tab === "presentacion",
     }),
     saldos: useQuery({
       queryKey: ["reports", "aging"],
@@ -621,6 +647,9 @@ export function ReportsHub() {
         </TabsContent>
         <TabsContent value="utilidad">
           <ProfitMarginReport data={queries.utilidad.data} isLoading={queries.utilidad.isLoading} isError={queries.utilidad.isError} onRetry={queries.utilidad.refetch} />
+        </TabsContent>
+        <TabsContent value="presentacion">
+          <ProfitByPresentationReport data={queries.presentacion.data} isLoading={queries.presentacion.isLoading} isError={queries.presentacion.isError} onRetry={queries.presentacion.refetch} />
         </TabsContent>
         <TabsContent value="saldos">
           <AgingReport data={queries.saldos.data} isLoading={queries.saldos.isLoading} isError={queries.saldos.isError} onRetry={queries.saldos.refetch} />

@@ -92,6 +92,7 @@ interface KardexClientProps {
 }
 
 export default function KardexClient({ initialMovements, businessMode }: KardexClientProps) {
+  const showLotDetails = businessMode === 'PHARMACY';
   const [movements] = useState<InventoryMovement[]>(initialMovements);
   const [searchTerm, setSearchTerm] = useState('');
   const [movementFilter, setMovementFilter] = useState('all');
@@ -183,10 +184,15 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
 
   const exportCSV = () => {
     if (!reportRows.length) return;
-    const header = ['Codigo/SKU', 'Producto', 'Categoria', 'Costo Unitario', 'Precio Venta', 'Ganancia Unit.', 'Margen %', 'Stock Inicial', 'Entradas', 'Salidas', 'Stock Final', 'Valor Total (Costo)', 'Ganancia Total Ventas'];
+    const header = [
+      'Codigo/SKU', 'Producto',
+      ...(showLotDetails ? ['Lote', 'Vencimiento'] : []),
+      'Categoria', 'Costo Unitario', 'Precio Venta', 'Ganancia Unit.', 'Margen %', 'Stock Inicial', 'Entradas', 'Salidas', 'Stock Final', 'Valor Total (Costo)', 'Ganancia Total Ventas',
+    ];
     const lines = reportRows.map(r => [
       r.barcode || '',
       r.productName,
+      ...(showLotDetails ? [r.batchNumber || 'Sin lote', r.expiryDate || '—'] : []),
       r.category,
       r.costPriceNIO.toFixed(2),
       r.priceNIO.toFixed(2),
@@ -316,6 +322,8 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                     <TableRow>
                       <TableHead>Hora</TableHead>
                       <TableHead>Producto</TableHead>
+                      {showLotDetails && <TableHead>Lote</TableHead>}
+                      {showLotDetails && <TableHead>Vencimiento</TableHead>}
                       <TableHead>Movimiento</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead className="text-right">Había</TableHead>
@@ -330,6 +338,8 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                         <TableRow key={mov.id}>
                           <TableCell className="font-medium text-muted-foreground text-xs">{format(parseISO(mov.timestamp), 'hh:mm a', { locale: es })}</TableCell>
                           <TableCell className="font-semibold">{mov.productName}</TableCell>
+                          {showLotDetails && <TableCell>{mov.batchNumber || '—'}</TableCell>}
+                          {showLotDetails && <TableCell>{mov.expiryDate || '—'}</TableCell>}
                           <TableCell>{normalizeMovementType(mov.movementType)} #{mov.movementId}</TableCell>
                           <TableCell>
                             <Badge variant={getMovementTypeVariant(mov.movementType)} className='gap-1'>
@@ -345,7 +355,7 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={8} className="h-24 text-center">
+                        <TableCell colSpan={showLotDetails ? 10 : 8} className="h-24 text-center">
                           No se encontraron movimientos para la fecha o filtros seleccionados.
                         </TableCell>
                       </TableRow>
@@ -482,6 +492,8 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                           <tr className="bg-muted">
                             <th className="border border-border px-2 py-1.5 text-left font-semibold">Código/SKU</th>
                             <th className="border border-border px-2 py-1.5 text-left font-semibold">Producto</th>
+                            {showLotDetails && <th className="border border-border px-2 py-1.5 text-left font-semibold">Lote</th>}
+                            {showLotDetails && <th className="border border-border px-2 py-1.5 text-left font-semibold">Vencimiento</th>}
                             <th className="border border-border px-2 py-1.5 text-left font-semibold">Categoría</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">Costo U.</th>
                             <th className="border border-border px-2 py-1.5 text-right font-semibold">P. Venta U.</th>
@@ -496,9 +508,11 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                         </thead>
                         <tbody>
                           {reportRows.map((r) => (
-                            <tr key={`${r.inventoryType}::${r.productName}`} className="align-top">
+                            <tr key={`${r.inventoryType}::${r.productName}::${r.batchNumber || ''}::${r.expiryDate || ''}`} className="align-top">
                               <td className="border border-border px-2 py-1">{r.barcode || '—'}</td>
                               <td className="border border-border px-2 py-1 font-medium">{r.productName}</td>
+                              {showLotDetails && <td className="border border-border px-2 py-1">{r.batchNumber || 'Sin lote'}</td>}
+                              {showLotDetails && <td className="border border-border px-2 py-1">{r.expiryDate || '—'}</td>}
                               <td className="border border-border px-2 py-1">{r.category}</td>
                               <td className="border border-border px-2 py-1 text-right">{formatMoney(r.costPriceNIO)}</td>
                               <td className="border border-border px-2 py-1 text-right">{formatMoney(r.priceNIO)}</td>
@@ -514,7 +528,7 @@ export default function KardexClient({ initialMovements, businessMode }: KardexC
                             </tr>
                           ))}
                           <tr className="bg-muted font-semibold">
-                            <td colSpan={3} className="border border-border px-2 py-1.5 text-right">TOTALES</td>
+                            <td colSpan={showLotDetails ? 5 : 3} className="border border-border px-2 py-1.5 text-right">TOTALES</td>
                             <td className="border border-border px-2 py-1.5 text-right">—</td>
                             <td className="border border-border px-2 py-1.5 text-right">—</td>
                             <td className="border border-border px-2 py-1.5 text-right">—</td>

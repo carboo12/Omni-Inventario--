@@ -53,6 +53,98 @@ export function buildDispatcherApp(): Hono {
   // Salud del servicio
   app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
 
+  // Ruta estable y explícita para el historial de tickets. Se conserva el
+  // contrato del cliente ({ args: [startDate, endDate] }) y el contexto de
+  // cookies usado por verifySession en las acciones.
+  app.post('/api/actions/reports/getTicketHistory', async (c) => {
+    const action = actionModules.reports.getTicketHistory;
+    let args: unknown[] = [];
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (Array.isArray(body.args)) args = body.args;
+      else if (body && typeof body === 'object' && 'startDate' in body && 'endDate' in body) {
+        args = [(body as any).startDate, (body as any).endDate];
+      }
+    } catch {
+      args = [];
+    }
+    const cookies = createCookieStore(c.req.header('cookie'));
+    const ctx: RequestContext = { cookies, cacheStore: new Map() };
+    try {
+      const result = await runWithContext(ctx, () => action(...args as [string, string]));
+      for (const cookie of cookies.getSetCookies()) c.header('Set-Cookie', cookie, { append: true });
+      return c.json(result);
+    } catch (err) {
+      console.error('[action] reports.getTicketHistory error:', err);
+      throw new HTTPException(500, {
+        message: `Error ejecutando reports.getTicketHistory: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  });
+
+  // Ruta explícita para el historial de devoluciones. Mantiene el contexto de
+  // sesión que necesitan las acciones y garantiza el contrato de args del cliente.
+  app.post('/api/actions/credit-notes/getCreditNotes', async (c) => {
+    const action = actionModules['credit-notes'].getCreditNotes;
+    let args: unknown[] = [];
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (Array.isArray(body.args)) args = body.args;
+    } catch {
+      args = [];
+    }
+
+    const cookies = createCookieStore(c.req.header('cookie'));
+    const ctx: RequestContext = { cookies, cacheStore: new Map() };
+    try {
+      const result = await runWithContext(ctx, () => action(...args as [number?]));
+      for (const cookie of cookies.getSetCookies()) c.header('Set-Cookie', cookie, { append: true });
+      return c.json(result);
+    } catch (err) {
+      console.error('[action] credit-notes.getCreditNotes error:', err);
+      throw new HTTPException(500, {
+        message: `Error ejecutando credit-notes.getCreditNotes: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  });
+
+  // Rutas explícitas de historiales de personal. Además de documentar el
+  // contrato público, aceptan tanto el formato estándar { args: [...] } como
+  // { employeeId } para clientes de versiones anteriores.
+  const registerEmployeeHistoryRoute = (
+    fnName: 'getEmployeeLoanHistory' | 'getEmployeePayrollHistory',
+  ) => app.post(`/api/actions/employees/${fnName}`, async (c) => {
+    const action = actionModules.employees[fnName];
+    let employeeId: unknown;
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (Array.isArray(body.args)) employeeId = body.args[0];
+      else if (body && typeof body === 'object') employeeId = body.employeeId;
+    } catch {
+      employeeId = undefined;
+    }
+
+    if (typeof employeeId !== 'string' || !employeeId.trim()) {
+      return c.json({ success: false, data: [], error: 'employeeId es obligatorio.' }, 400);
+    }
+
+    const cookies = createCookieStore(c.req.header('cookie'));
+    const ctx: RequestContext = { cookies, cacheStore: new Map() };
+    try {
+      const result = await runWithContext(ctx, () => action(employeeId));
+      for (const cookie of cookies.getSetCookies()) c.header('Set-Cookie', cookie, { append: true });
+      return c.json(result);
+    } catch (err) {
+      console.error(`[action] employees.${fnName} error:`, err);
+      throw new HTTPException(500, {
+        message: `Error ejecutando employees.${fnName}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  });
+
+  registerEmployeeHistoryRoute('getEmployeeLoanHistory');
+  registerEmployeeHistoryRoute('getEmployeePayrollHistory');
+
   // Punto único de ejecución de actions
   app.post('/api/actions/:module/:fn', async (c) => {
     const moduleName = c.req.param('module') as keyof typeof actionModules;

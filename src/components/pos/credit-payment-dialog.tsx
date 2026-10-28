@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -18,6 +18,7 @@ import { Separator } from '../ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { recordCreditPayment } from '@/lib/actions/customers';
 import { CreditReceiptTemplate } from './credit-receipt-template';
+import { printReceiptHtml, buildCreditReceiptHtml } from '@/lib/print-iframe';
 
 interface CreditPaymentDialogProps {
   isOpen: boolean;
@@ -175,10 +176,11 @@ export function CreditPaymentDialog({ isOpen, onClose, customer, sessionId, user
   };
 
   const handlePrint = () => {
-    setTimeout(() => {
-        window.print();
-        onClose();
-    }, 100);
+    if (receiptData) {
+        const html = buildCreditReceiptHtml(receiptData);
+        printReceiptHtml(html);
+    }
+    onClose();
   };
 
   if (showReceipt && receiptData) {

@@ -62,12 +62,12 @@ function AppLayoutInner({ children, className }: { children: React.ReactNode, cl
   const collapsibleMode = isPOS ? 'offcanvas' : 'icon';
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden">
+    <div className="flex min-h-screen h-[100dvh] w-full flex-col overflow-hidden md:flex-row">
       <AppSidebar collapsible={collapsibleMode} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
          {!isPOS && <AppHeader />}
         <main className={cn(
-          "flex-1",
+          "min-h-0 min-w-0 flex-1",
           isPOS
             ? "w-full overflow-hidden p-0"
             : "overflow-y-auto p-2 pb-20 md:p-4 md:pb-8 lg:p-8"

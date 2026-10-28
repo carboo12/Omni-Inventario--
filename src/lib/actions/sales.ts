@@ -50,7 +50,8 @@ async function consumeIngredientStock(
     requiredUnits: number,
     transactionId: string,
     userId: string,
-    inventoryType: string
+    inventoryType: string,
+    trackLots = false
 ) {
     if (requiredUnits <= 0) return;
 
@@ -75,6 +76,13 @@ async function consumeIngredientStock(
         const quantityToTake = Math.min(invItem.quantity, remaining);
         const invQtyToTake = ingredient.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
         if (invQtyToTake <= 0) continue;
+
+        const previousLotQuantity = trackLots
+            ? (await tx.inventoryItem.findMany({
+                where: { productId: ingredient.id, inventoryType, batch: invItem.batch, expiryDate: invItem.expiryDate },
+                select: { quantity: true },
+            })).reduce((sum, row) => sum + row.quantity, 0)
+            : 0;
 
         const updatedInvItem = await tx.inventoryItem.update({
             where: { id: invItem.id },
@@ -109,10 +117,11 @@ async function consumeIngredientStock(
                 movementType: 'Salida',
                 movementId: transactionId,
                 quantityChange: -(ingredient.isFractional ? quantityToTake : invQtyToTake),
-                previousQuantity: previousTotal,
-                newQuantity: currentTotal,
+                previousQuantity: trackLots ? previousLotQuantity : previousTotal,
+                newQuantity: trackLots ? previousLotQuantity - invQtyToTake : currentTotal,
                 userId: userId,
-                inventoryType: inventoryType
+                inventoryType: inventoryType,
+                ...(trackLots ? { batchNumber: invItem.batch, expiryDate: invItem.expiryDate } : {}),
             } as any
         });
 
@@ -128,7 +137,9 @@ async function consumeIngredientStock(
         });
         const totalBefore = currentRecords.reduce((sum: number, i: any) => sum + i.quantity, 0);
 
-        let target = inventoryItems[inventoryItems.length - 1];
+        let target = trackLots
+            ? inventoryItems.find((inventoryItem: any) => inventoryItem.batch === 'ENCARGO')
+            : inventoryItems[inventoryItems.length - 1];
         if (!target) {
             target = await tx.inventoryItem.create({
                 data: {
@@ -157,10 +168,11 @@ async function consumeIngredientStock(
                 movementType: 'Salida',
                 movementId: transactionId,
                 quantityChange: -remaining,
-                previousQuantity: totalBefore,
-                newQuantity: totalBefore - remaining,
+                previousQuantity: trackLots ? target.quantity : totalBefore,
+                newQuantity: trackLots ? target.quantity - encQty : totalBefore - remaining,
                 userId: userId,
-                inventoryType: inventoryType
+                inventoryType: inventoryType,
+                ...(trackLots ? { batchNumber: target.batch, expiryDate: target.expiryDate } : {}),
             } as any
         });
     }
@@ -195,7 +207,9 @@ export async function createSale(
     if (!session) return { success: false, error: 'Unauthorized' };
 
     try {
-        const isJewelry = await BusinessGuard.isJewelryMode();
+        const businessMode = await BusinessGuard.getCurrentMode();
+        const isJewelry = businessMode === 'JEWELRY';
+        const isPharmacy = businessMode === 'PHARMACY' && inventoryType === 'pharmacy';
         if (isJewelry && !customerId) {
             return { success: false, error: 'El cliente es obligatorio para realizar ventas en modo Joyería.' };
         }
@@ -280,7 +294,7 @@ export async function createSale(
                     if (recipeLines.length > 0) {
                         for (const line of recipeLines) {
                             const needed = physicalUnits * line.quantity;
-                            await consumeIngredientStock(tx, line.ingredient, needed, transactionId, userId, inventoryType);
+                            await consumeIngredientStock(tx, line.ingredient, needed, transactionId, userId, inventoryType, isPharmacy);
                         }
                         continue;
                     }
@@ -361,6 +375,18 @@ export async function createSale(
                     const invQtyToTake = item.product.isFractional ? Math.ceil(quantityToTake) : quantityToTake;
                     if (invQtyToTake <= 0) continue;
 
+                    const previousLotQuantity = isPharmacy
+                        ? (await tx.inventoryItem.findMany({
+                            where: {
+                                productId: parentProductId,
+                                inventoryType,
+                                batch: invItem.batch,
+                                expiryDate: invItem.expiryDate,
+                            },
+                            select: { quantity: true },
+                        })).reduce((sum, row) => sum + row.quantity, 0)
+                        : 0;
+
                     const updatedInvItem = await tx.inventoryItem.update({
                         where: { id: invItem.id },
                         data: {
@@ -396,10 +422,11 @@ export async function createSale(
                             movementType: 'Salida',
                             movementId: transactionId,
                             quantityChange: -(item.product.isFractional ? quantityToTake : invQtyToTake),
-                            previousQuantity: previousTotal,
-                            newQuantity: currentTotal,
+                            previousQuantity: isPharmacy ? previousLotQuantity : previousTotal,
+                            newQuantity: isPharmacy ? previousLotQuantity - invQtyToTake : currentTotal,
                             userId: userId,
-                            inventoryType: inventoryType
+                            inventoryType: inventoryType,
+                            ...(isPharmacy ? { batchNumber: invItem.batch, expiryDate: invItem.expiryDate } : {}),
                         } as any
                     });
 
@@ -413,7 +440,9 @@ export async function createSale(
                     });
                     const totalBefore = currentRecords.reduce((sum, i) => sum + i.quantity, 0);
 
-                    let target = inventoryItems[inventoryItems.length - 1];
+                    let target = isPharmacy
+                        ? inventoryItems.find((inventoryItem: any) => inventoryItem.batch === 'ENCARGO')
+                        : inventoryItems[inventoryItems.length - 1];
                     if (!target) {
                         target = await tx.inventoryItem.create({
                             data: {
@@ -442,10 +471,11 @@ export async function createSale(
                             movementType: 'Salida',
                             movementId: transactionId,
                             quantityChange: -remainingToSell,
-                            previousQuantity: totalBefore,
-                            newQuantity: totalBefore - remainingToSell,
+                            previousQuantity: isPharmacy ? target.quantity : totalBefore,
+                            newQuantity: isPharmacy ? target.quantity - encQty : totalBefore - remainingToSell,
                             userId: userId,
-                            inventoryType: inventoryType
+                            inventoryType: inventoryType,
+                            ...(isPharmacy ? { batchNumber: target.batch, expiryDate: target.expiryDate } : {}),
                         } as any
                     });
                 }
@@ -508,7 +538,15 @@ export async function createSale(
                     where: { id: customerId },
                     include: {
                         creditInstallment: {
-                            where: { status: { in: ['PENDING', 'OVERDUE'] }, dueDate: { lt: new Date() } },
+                            // Solo cuentan como mora las cuotas activas con saldo real
+                            // pendiente; las cuotas liquidadas (amount 0 / PAID) y las
+                            // que pertenecen a facturas ya saldadas se ignoran.
+                            where: {
+                                status: { in: ['PENDING', 'OVERDUE'] },
+                                amount: { gt: 0.005 },
+                                dueDate: { lt: new Date() },
+                                salesInvoice: { pendingBalance: { gt: 0.005 } },
+                            },
                             select: { id: true },
                         },
                     },
@@ -550,7 +588,9 @@ export async function createSale(
                     where: { id: salesInvoice.id },
                     data: {
                         pendingBalance: { increment: financedTotal },
-                        dueDate: computeCreditDueDate(new Date(), effectiveDays)
+                        dueDate: computeCreditDueDate(new Date(), effectiveDays),
+                        // Sin saldo financiado la factura queda liquidada formalmente.
+                        ...(financedTotal <= 0.005 ? { pendingBalance: 0, status: 'PAID' } : {}),
                     }
                 });
 

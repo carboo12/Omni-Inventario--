@@ -1441,19 +1441,32 @@ async function addSaleToSessionDB(sessionId, amount) {
   });
   revalidatePath("/");
 }
-async function createOutflowAction(sessionId, amount, reason) {
-  const session = await db_default.cashRegisterSession.findUnique({
-    where: { id: sessionId }
-  });
-  if (!session) throw new Error("Session not found");
-  if (session.status !== "open") throw new Error("Session is closed");
-  const outflow = await db_default.cashOutflow.create({
-    data: {
-      id: generateUUID(),
-      sessionId,
-      amount,
-      reason
+async function createOutflowAction(sessionId, amount, reason, employeeId) {
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("El monto debe ser mayor que cero.");
+  const outflow = await db_default.$transaction(async (tx) => {
+    const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
+    if (!session) throw new Error("Session not found");
+    if (session.status !== "open") throw new Error("Session is closed");
+    if (employeeId) {
+      const employee = await tx.employee.findUnique({ where: { id: employeeId } });
+      if (!employee?.isActive) throw new Error("El trabajador no existe o est\xE1 inactivo.");
     }
+    const movement = await tx.cashOutflow.create({
+      data: { id: generateUUID(), sessionId, amount, reason: reason.trim() }
+    });
+    if (employeeId) {
+      await tx.employeeLoan.create({
+        data: {
+          id: generateUUID(),
+          employeeId,
+          amount,
+          description: reason.trim(),
+          status: "PENDING",
+          cashMovementId: movement.id
+        }
+      });
+    }
+    return movement;
   });
   revalidatePath("/");
   return outflow;
@@ -1771,9 +1784,44 @@ async function registerPayment(data) {
 var credit_notes_exports = {};
 __export(credit_notes_exports, {
   createCreditNote: () => createCreditNote,
+  getCreditNotes: () => getCreditNotes,
   getInvoiceByNumber: () => getInvoiceByNumber
 });
 init_db();
+async function getCreditNotes(limit = 100) {
+  const session = await verifySession();
+  if (!session || !["master-admin", "admin", "cashier"].includes(session.role)) {
+    return { success: false, error: "No autorizado", data: [] };
+  }
+  try {
+    const notes = await db_default.creditNote.findMany({
+      take: Math.min(Math.max(Math.trunc(Number(limit) || 100), 1), 200),
+      orderBy: { date: "desc" },
+      include: {
+        salesInvoice: { select: { invoiceNumber: true, customer: { select: { fullName: true } } } },
+        user: { select: { name: true } },
+        items: { select: { productName: true, quantity: true, totalPrice: true, disposition: true } }
+      }
+    });
+    return {
+      success: true,
+      data: notes.map((note) => ({
+        id: note.id,
+        noteNumber: note.noteNumber,
+        invoiceNumber: note.salesInvoice.invoiceNumber,
+        customerName: note.salesInvoice.customer?.fullName || "Cliente General",
+        cashierName: note.user.name,
+        date: note.date,
+        reason: note.reason,
+        totalAmount: note.totalAmount,
+        items: note.items
+      }))
+    };
+  } catch (error) {
+    console.error("Error fetching credit notes:", error);
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo cargar el historial de devoluciones", data: [] };
+  }
+}
 async function getInvoiceByNumber(invoiceNumber) {
   const session = await verifySession();
   if (!session) return { success: false, error: "Unauthorized" };
@@ -1788,19 +1836,17 @@ async function getInvoiceByNumber(invoiceNumber) {
     } else {
       parsed = invoiceNumber;
     }
+    if (!Number.isInteger(parsed) || parsed <= 0) return { success: false, error: "N\xFAmero de factura inv\xE1lido" };
     const invoice = await db_default.salesInvoice.findUnique({
       where: { invoiceNumber: parsed },
       include: {
         salesInvoiceItem: true,
-        creditNote: true
-        // Check if already refunded
+        creditNote: { include: { items: true } },
+        customer: { select: { fullName: true } }
       }
     });
     if (!invoice) {
       return { success: false, error: "Factura no encontrada" };
-    }
-    if (invoice.creditNote) {
-      return { success: false, error: "Esta factura ya tiene una nota de cr\xE9dito asociada" };
     }
     return { success: true, invoice };
   } catch (error) {
@@ -1808,9 +1854,10 @@ async function getInvoiceByNumber(invoiceNumber) {
     return { success: false, error: "Error al buscar la factura" };
   }
 }
-async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId) {
+async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId, options = {}) {
   const session = await verifySession();
   if (!session) return { success: false, error: "Unauthorized" };
+  if (!reason?.trim()) return { success: false, error: "El motivo de devoluci\xF3n es obligatorio" };
   try {
     return await db_default.$transaction(async (tx) => {
       const invoice = await tx.salesInvoice.findUnique({
@@ -1818,43 +1865,81 @@ async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId) {
         include: { salesInvoiceItem: true }
       });
       if (!invoice) throw new Error("Factura no encontrada");
-      let refundAmount = 0;
-      for (const itemReturn of itemsToReturn) {
-        const originalItem = invoice.salesInvoiceItem.find((i) => i.productId === itemReturn.productId);
-        if (!originalItem) throw new Error(`Producto no encontrado en factura original: ${itemReturn.productId}`);
-        if (itemReturn.quantity > originalItem.quantity) throw new Error(`Cantidad a devolver excede la cantidad original para el producto: ${originalItem.productName}`);
-        refundAmount += originalItem.unitPrice * itemReturn.quantity;
+      if (options.resolution !== "CREDIT") {
+        if (!sessionId) throw new Error("Se requiere una caja activa para reembolsar");
+        const activeSession = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
+        if (!activeSession || activeSession.status !== "open") throw new Error("La caja seleccionada no est\xE1 abierta");
       }
+      const creditNoteSessionId = sessionId || invoice.sessionId;
+      let refundAmount = 0;
+      const priorReturns = await tx.returnItem.findMany({
+        where: { invoiceItemId: { in: invoice.salesInvoiceItem.map((item) => item.id) } },
+        select: { invoiceItemId: true, quantity: true }
+      });
+      const alreadyReturned = /* @__PURE__ */ new Map();
+      priorReturns.forEach((item) => alreadyReturned.set(item.invoiceItemId, (alreadyReturned.get(item.invoiceItemId) || 0) + item.quantity));
+      const validatedReturns = [];
+      for (const itemReturn of itemsToReturn) {
+        const originalItem = invoice.salesInvoiceItem.find((i) => i.id === itemReturn.productId);
+        if (!originalItem) throw new Error(`Rengl\xF3n de factura no encontrado: ${itemReturn.productId}`);
+        const remaining = originalItem.quantity - (alreadyReturned.get(originalItem.id) || 0);
+        if (!Number.isInteger(itemReturn.quantity) || itemReturn.quantity < 1 || itemReturn.quantity > remaining) throw new Error(`Cantidad a devolver excede la cantidad disponible para: ${originalItem.productName}`);
+        refundAmount += originalItem.unitPrice * itemReturn.quantity;
+        validatedReturns.push({ original: originalItem, quantity: itemReturn.quantity });
+      }
+      if (!validatedReturns.length) throw new Error("Seleccione al menos un producto para devolver");
       const creditNote = await tx.creditNote.create({
         data: {
           id: generateUUID(),
           invoiceId: invoice.id,
           reason,
           totalAmount: refundAmount,
-          sessionId,
+          sessionId: creditNoteSessionId,
           userId: session.userId
         }
       });
+      for (const { original, quantity } of validatedReturns) {
+        const restock = options.restockProductIds?.includes(original.id) || options.restockProductIds?.includes(original.productId);
+        await tx.returnItem.create({ data: {
+          id: generateUUID(),
+          returnId: creditNote.id,
+          invoiceItemId: original.id,
+          productId: original.productId,
+          productName: original.productName,
+          quantity,
+          unitPrice: original.unitPrice,
+          totalPrice: original.unitPrice * quantity,
+          disposition: restock ? "RESTOCK" : "DAMAGED"
+        } });
+      }
       await tx.salesInvoice.update({
         where: { id: invoice.id },
-        data: { status: "REFUNDED" }
-        // Or PARTIALLY_REFUNDED if we support that later
+        data: { status: "PARTIALLY_REFUNDED" }
       });
-      if (isCreditPayment(invoice.paymentMethod) && invoice.customerId && refundAmount > 0) {
+      const remainingItems = invoice.salesInvoiceItem.some((item) => item.quantity > (alreadyReturned.get(item.id) || 0) + (validatedReturns.find((v) => v.original.id === item.id)?.quantity || 0));
+      if (!remainingItems) await tx.salesInvoice.update({ where: { id: invoice.id }, data: { status: "REFUNDED" } });
+      if (options.resolution === "CREDIT" && invoice.customerId && refundAmount > 0) {
+        await tx.customer.update({ where: { id: invoice.customerId }, data: { currentBalance: { decrement: refundAmount } } });
+        if (isCreditPayment(invoice.paymentMethod)) {
+          const actualReduction = Math.min(refundAmount, Math.max(0, invoice.pendingBalance));
+          await tx.salesInvoice.update({ where: { id: invoice.id }, data: { pendingBalance: { decrement: actualReduction } } });
+        }
+      } else if (isCreditPayment(invoice.paymentMethod) && invoice.customerId && refundAmount > 0) {
+        const actualReduction = Math.min(refundAmount, Math.max(0, invoice.pendingBalance));
         await tx.salesInvoice.update({
           where: { id: invoice.id },
-          data: { pendingBalance: { decrement: refundAmount } }
+          data: { pendingBalance: { decrement: actualReduction } }
         });
         await tx.customer.update({
           where: { id: invoice.customerId },
-          data: { currentBalance: { decrement: refundAmount } }
+          data: { currentBalance: { decrement: actualReduction } }
         });
         const openInst = await tx.creditInstallment.findMany({
           where: { saleId: invoice.id, status: { in: ["PENDING", "OVERDUE"] } },
           orderBy: { dueDate: "asc" },
           select: { id: true, amount: true }
         });
-        let rem = refundAmount;
+        let rem = actualReduction;
         for (const i of openInst) {
           if (rem <= 5e-3) break;
           if (Number(i.amount) <= rem + 5e-3) {
@@ -1865,7 +1950,10 @@ async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId) {
           }
         }
       }
-      for (const itemReturn of itemsToReturn) {
+      for (const { original, quantity } of validatedReturns) {
+        const itemReturn = { productId: original.productId, quantity };
+        const restock = options.restockProductIds?.includes(original.id) || options.restockProductIds?.includes(original.productId);
+        if (!restock) continue;
         const inventoryItem = await tx.inventoryItem.findFirst({
           where: { productId: itemReturn.productId }
         });
@@ -1884,7 +1972,7 @@ async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId) {
               id: generateUUID(),
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               productName: invoice.salesInvoiceItem.find((i) => i.productId === itemReturn.productId)?.productName || "Unknown",
-              movementType: "Devoluci\xF3n",
+              movementType: "ENTRADA_DEVOLUCION",
               movementId: invoice.invoiceNumber.toString(),
               quantityChange: itemReturn.quantity,
               previousQuantity: previousTotal,
@@ -1895,17 +1983,23 @@ async function createCreditNote(invoiceId, reason, itemsToReturn, sessionId) {
           });
         }
       }
-      await tx.cashRegisterSession.update({
-        where: { id: sessionId },
-        data: {
-          totalReturns: { increment: refundAmount }
-        }
-      });
+      if (options.resolution !== "CREDIT") {
+        await tx.cashOutflow.create({ data: {
+          id: generateUUID(),
+          sessionId,
+          amount: refundAmount,
+          reason: `Devoluci\xF3n factura #${invoice.invoiceNumber} - ${reason}`
+        } });
+        await tx.cashRegisterSession.update({ where: { id: sessionId }, data: { totalReturns: { increment: refundAmount } } });
+      }
+      revalidatePath("/devoluciones");
+      revalidatePath("/customers/credit");
+      revalidatePath(`/facturas/${invoice.id}`);
       return { success: true, creditNote };
     });
   } catch (error) {
     console.error("Error creating credit note:", error);
-    return { success: false, error: "Error al procesar la nota de cr\xE9dito" };
+    return { success: false, error: error instanceof Error ? error.message : "Error al procesar la nota de cr\xE9dito" };
   }
 }
 
@@ -2214,6 +2308,7 @@ __export(customers_exports, {
   deleteCustomer: () => deleteCustomer,
   getAllCustomers: () => getAllCustomers,
   getCustomerByFullName: () => getCustomerByFullName,
+  getCustomerForPOSCheckout: () => getCustomerForPOSCheckout,
   getCustomerStatement: () => getCustomerStatement,
   recordCreditPayment: () => recordCreditPayment,
   searchOrCreateCustomer: () => searchOrCreateCustomer,
@@ -2226,18 +2321,6 @@ async function createOrUpdateCustomer(data) {
   if (!trimmedName) throw new Error("Nombre requerido");
   const session = await verifySession();
   const isAdmin = isAdminRole(session?.role);
-  if (!isAdmin) {
-    data.hasCredit = false;
-    data.creditLimit = 0;
-    data.creditDays = null;
-  }
-  const hasCreditDaysKey = Object.prototype.hasOwnProperty.call(data, "creditDays");
-  if (hasCreditDaysKey) {
-    const days = Number(data.creditDays);
-    data.creditDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
-  } else {
-    delete data.creditDays;
-  }
   let existing = await db_default.customer.findFirst({
     where: {
       OR: [
@@ -2246,6 +2329,18 @@ async function createOrUpdateCustomer(data) {
       ].filter(Boolean)
     }
   });
+  if (!isAdmin) {
+    delete data.hasCredit;
+    delete data.creditLimit;
+    delete data.interestRate;
+    delete data.creditDays;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "creditDays")) {
+    const days = Number(data.creditDays);
+    data.creditDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : null;
+  } else {
+    delete data.creditDays;
+  }
   if (existing) {
     const updated = await db_default.customer.update({
       where: { id: existing.id },
@@ -2308,9 +2403,9 @@ async function searchOrCreateCustomer(fullName, documentId, phone) {
         fullName: trimmedName,
         documentId: documentId || null,
         phone: phone || null,
-        // Habilitar crédito por defecto para no bloquear ventas a crédito
-        // de clientes creados rápidamente desde el POS.
-        hasCredit: true,
+        // Las fichas creadas automáticamente no reciben crédito;
+        // debe habilitarse explícitamente en el registro del cliente.
+        hasCredit: false,
         creditLimit: 0
       }
     });
@@ -2407,21 +2502,26 @@ async function applyPaymentToInvoices(tx, customerId, amount) {
   const takeFromInvoice = async (invoiceId, take) => {
     const bal = remainingByInvoice[invoiceId] ?? 0;
     if (bal <= 5e-3 || take <= 5e-3) return 0;
-    const applied = Math.min(bal, take);
+    const applied = round22(Math.min(bal, take));
+    const newBal = round22(bal - applied);
     await tx.salesInvoice.update({
       where: { id: invoiceId },
-      data: { pendingBalance: { decrement: applied } }
+      data: newBal <= 5e-3 ? { pendingBalance: 0, status: "PAID" } : { pendingBalance: newBal }
     });
-    remainingByInvoice[invoiceId] = round22(bal - applied);
-    return round22(applied);
+    remainingByInvoice[invoiceId] = newBal;
+    return applied;
   };
   for (const inst of installments) {
     if (remaining <= 5e-3) break;
-    const applied = await takeFromInvoice(inst.saleId, Math.min(Number(inst.amount) || 0, remaining));
+    const instAmount = round22(Number(inst.amount) || 0);
+    if (instAmount <= 5e-3) continue;
+    const applied = await takeFromInvoice(inst.saleId, Math.min(instAmount, remaining));
     if (applied <= 5e-3) continue;
-    if (applied >= (Number(inst.amount) || 0) - 5e-3) {
-      await tx.creditInstallment.update({ where: { id: inst.id }, data: { status: "PAID" } });
-    }
+    const newInstAmount = round22(instAmount - applied);
+    await tx.creditInstallment.update({
+      where: { id: inst.id },
+      data: newInstAmount <= 5e-3 ? { amount: 0, status: "PAID" } : { amount: newInstAmount }
+    });
     chunks.push({ invoiceId: inst.saleId, amount: applied });
     remaining = round22(remaining - applied);
   }
@@ -2430,11 +2530,12 @@ async function applyPaymentToInvoices(tx, customerId, amount) {
     const bal = remainingByInvoice[inv.id] ?? 0;
     if (bal <= 5e-3) continue;
     const applied = round22(Math.min(bal, remaining));
+    const newBal = round22(bal - applied);
     await tx.salesInvoice.update({
       where: { id: inv.id },
-      data: { pendingBalance: { decrement: applied } }
+      data: newBal <= 5e-3 ? { pendingBalance: 0, status: "PAID" } : { pendingBalance: newBal }
     });
-    remainingByInvoice[inv.id] = round22(bal - applied);
+    remainingByInvoice[inv.id] = newBal;
     chunks.push({ invoiceId: inv.id, amount: applied });
     remaining = round22(remaining - applied);
   }
@@ -2529,6 +2630,27 @@ async function getCustomerByFullName(fullName) {
   return await db_default.customer.findFirst({
     where: { fullName: fullName.trim() }
   });
+}
+async function getCustomerForPOSCheckout(input) {
+  try {
+    if (input.orderId) {
+      const order = await db_default.customerOrder.findUnique({
+        where: { id: input.orderId },
+        select: { customer: true }
+      });
+      if (order?.customer) return order.customer;
+    }
+    const name = input.customerName?.trim();
+    if (!name) return null;
+    const matches = await db_default.customer.findMany({
+      where: { fullName: name },
+      take: 2
+    });
+    return matches.length === 1 ? matches[0] : null;
+  } catch (error) {
+    console.error("Error resolving customer for POS checkout:", error);
+    return null;
+  }
 }
 async function getAllCustomers() {
   return db_default.customer.findMany({
@@ -2862,6 +2984,486 @@ async function getRuteros() {
   } catch (error) {
     console.error("Error fetching ruteros:", error);
     return { success: false, error: "Failed to fetch ruteros" };
+  }
+}
+
+// src/lib/actions/employees.ts
+var employees_exports = {};
+__export(employees_exports, {
+  createEmployee: () => createEmployee,
+  createEmployeeAbsence: () => createEmployeeAbsence,
+  createEmployeeLoan: () => createEmployeeLoan,
+  deleteEmployee: () => deleteEmployee,
+  getActiveEmployees: () => getActiveEmployees,
+  getEmployeeActiveLoans: () => getEmployeeActiveLoans,
+  getEmployeeLoanHistory: () => getEmployeeLoanHistory,
+  getEmployeePayrollHistory: () => getEmployeePayrollHistory,
+  getEmployees: () => getEmployees,
+  previewEmployeePayroll: () => previewEmployeePayroll,
+  processEmployeePayroll: () => processEmployeePayroll,
+  registerEmployeeLoanPayment: () => registerEmployeeLoanPayment,
+  setEmployeeActive: () => setEmployeeActive,
+  updateEmployee: () => updateEmployee
+});
+init_db();
+import { Prisma } from "@prisma/client";
+async function requireAdmin() {
+  const session = await verifySession();
+  if (!session || !["master-admin", "admin"].includes(session.role)) throw new Error("No autorizado.");
+  return session;
+}
+function parseDate(value, endOfDay2 = false) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Fecha inv\xE1lida.");
+  const date = /* @__PURE__ */ new Date(`${value}T${endOfDay2 ? "23:59:59.999" : "00:00:00.000"}`);
+  if (!Number.isFinite(date.getTime())) throw new Error("Fecha inv\xE1lida.");
+  return date;
+}
+function countWorkdays(start, end) {
+  let count = 0;
+  const day = new Date(start);
+  while (day <= end) {
+    if (day.getDay() !== 0) count++;
+    day.setDate(day.getDate() + 1);
+  }
+  return count;
+}
+function loanBalance(loan) {
+  return Number(loan.remainingBalance ?? loan.amount);
+}
+function roundMoney(value) {
+  return Math.round(value * 100) / 100;
+}
+async function getPendingDebtAmounts(employeeId) {
+  const loans = await db_default.employeeLoan.findMany({
+    where: { employeeId, status: "PENDING" },
+    select: { amount: true, remainingBalance: true }
+  });
+  const pendingLoansAmount = roundMoney(loans.reduce((sum, loan) => sum + loanBalance(loan), 0));
+  return {
+    pendingLoansAmount,
+    pendingDebtAmount: pendingLoansAmount
+  };
+}
+async function payrollPreview(employeeId, startDate, endDate, customWorkdays) {
+  const start = parseDate(startDate);
+  const end = parseDate(endDate, true);
+  if (start > end) throw new Error("La fecha inicial debe ser anterior a la fecha final.");
+  const employee = await db_default.employee.findUnique({ where: { id: employeeId } });
+  if (!employee) throw new Error("Trabajador no encontrado.");
+  const [absenceRows, pendingDebt] = await Promise.all([
+    db_default.employeeAbsence.findMany({ where: { employeeId, date: { gte: start, lte: end } }, select: { date: true } }),
+    getPendingDebtAmounts(employeeId)
+  ]);
+  const defaultWorkdays = countWorkdays(start, end);
+  const workdays = typeof customWorkdays === "number" && Number.isFinite(customWorkdays) && customWorkdays >= 0 ? customWorkdays : defaultWorkdays;
+  const absenceCount = new Set(absenceRows.map((absence) => absence.date.toISOString().slice(0, 10))).size;
+  const daily = Number(employee.dailySalary);
+  const grossSalary = Math.round(workdays * daily * 100) / 100;
+  const absenceDeductions = Math.round(Math.min(workdays, absenceCount) * daily * 100) / 100;
+  const availableForLoans = Math.max(0, Math.round((grossSalary - absenceDeductions) * 100) / 100);
+  const loanDeductions = 0;
+  return {
+    employee: { id: employee.id, fullName: employee.fullName, dailySalary: daily, payFrequency: employee.payFrequency },
+    start,
+    end,
+    workdays,
+    defaultWorkdays,
+    absenceCount: Math.min(workdays, absenceCount),
+    grossSalary,
+    absenceDeductions,
+    loanDeductions,
+    netSalary: availableForLoans,
+    pendingLoanBalance: pendingDebt.pendingDebtAmount,
+    pendingLoansAmount: pendingDebt.pendingLoansAmount,
+    pendingDebtAmount: pendingDebt.pendingDebtAmount
+  };
+}
+async function getEmployees() {
+  try {
+    await requireAdmin();
+    const employees = await db_default.employee.findMany({
+      orderBy: { fullName: "asc" },
+      include: {
+        loans: {
+          where: { status: "PENDING" },
+          select: { amount: true, remainingBalance: true }
+        }
+      }
+    });
+    return { success: true, data: employees.map((employee) => {
+      let pendingLoansTotal = 0;
+      for (const loan of employee.loans) pendingLoansTotal += loanBalance(loan);
+      pendingLoansTotal = roundMoney(pendingLoansTotal);
+      return {
+        id: employee.id,
+        fullName: employee.fullName,
+        phone: employee.phone,
+        dailySalary: Number(employee.dailySalary),
+        payFrequency: employee.payFrequency,
+        isActive: employee.isActive,
+        pendingLoansTotal,
+        pendingDebtTotal: pendingLoansTotal
+      };
+    }) };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudieron cargar los trabajadores." };
+  }
+}
+async function getActiveEmployees() {
+  try {
+    const session = await verifySession();
+    if (!session || !["master-admin", "admin", "cashier"].includes(session.role)) throw new Error("No autorizado.");
+    return { success: true, data: await db_default.employee.findMany({ where: { isActive: true }, select: { id: true, fullName: true }, orderBy: { fullName: "asc" } }) };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudieron cargar los trabajadores." };
+  }
+}
+async function getEmployeeLoanHistory(employeeId) {
+  try {
+    await requireAdmin();
+    const loans = await db_default.employeeLoan.findMany({
+      where: { employeeId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        payments: {
+          orderBy: { createdAt: "asc" },
+          include: { payrollRecord: { select: { startDate: true, endDate: true } } }
+        }
+      }
+    });
+    return {
+      success: true,
+      data: loans.map((loan) => {
+        const originalAmount = Number(loan.amount);
+        const remainingBalance = loanBalance(loan);
+        return {
+          id: loan.id,
+          date: loan.createdAt,
+          description: loan.description,
+          originalAmount,
+          totalPaid: Math.max(0, originalAmount - remainingBalance),
+          remainingBalance,
+          status: remainingBalance <= 5e-3 ? "PAID" : remainingBalance < originalAmount ? "PARTIALLY_PAID" : "PENDING",
+          payments: loan.payments.map((payment) => ({
+            id: payment.id,
+            amount: Number(payment.amount),
+            kind: payment.kind,
+            reference: payment.reference,
+            createdAt: payment.createdAt,
+            payrollStartDate: payment.payrollRecord?.startDate ?? null,
+            payrollEndDate: payment.payrollRecord?.endDate ?? null
+          }))
+        };
+      })
+    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo cargar el historial de pr\xE9stamos.", data: [] };
+  }
+}
+async function getEmployeeActiveLoans(employeeId) {
+  try {
+    await requireAdmin();
+    if (!employeeId?.trim()) throw new Error("Trabajador inv\xE1lido.");
+    const loans = await db_default.employeeLoan.findMany({
+      where: { employeeId, status: "PENDING" },
+      orderBy: { createdAt: "asc" }
+    });
+    return {
+      success: true,
+      data: loans.map((loan) => ({
+        id: loan.id,
+        date: loan.createdAt,
+        description: loan.description,
+        originalAmount: Number(loan.amount),
+        remainingBalance: loanBalance(loan)
+      }))
+    };
+  } catch (error) {
+    return { success: false, data: [], error: error instanceof Error ? error.message : "No se pudieron cargar los pr\xE9stamos activos." };
+  }
+}
+async function getEmployeePayrollHistory(employeeId) {
+  try {
+    await requireAdmin();
+    const employee = await db_default.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true } });
+    if (!employee) throw new Error("Trabajador no encontrado.");
+    const records = await db_default.payrollRecord.findMany({
+      where: { employeeId },
+      orderBy: { createdAt: "desc" },
+      take: 200
+    });
+    const data = await Promise.all(records.map(async (record) => {
+      const absences = await db_default.employeeAbsence.findMany({
+        where: { employeeId, date: { gte: record.startDate, lte: record.endDate } },
+        select: { date: true }
+      });
+      const absenceCount = new Set(absences.map((absence) => absence.date.toISOString().slice(0, 10))).size;
+      return {
+        id: record.id,
+        startDate: record.startDate,
+        endDate: record.endDate,
+        createdAt: record.createdAt,
+        workdays: record.workdays ?? countWorkdays(record.startDate, record.endDate),
+        absenceCount,
+        grossSalary: Number(record.grossSalary),
+        absenceDeductions: Number(record.absenceDeductions),
+        loanDeductions: Number(record.loanDeductions),
+        netSalary: Number(record.netSalary)
+      };
+    }));
+    return { success: true, employee, data };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo cargar el historial de n\xF3mina.", data: [] };
+  }
+}
+async function createEmployee(input) {
+  try {
+    await requireAdmin();
+    if (!input.fullName?.trim() || !Number.isFinite(input.dailySalary) || input.dailySalary <= 0) throw new Error("Nombre y salario diario v\xE1lido son obligatorios.");
+    const employee = await db_default.employee.create({ data: {
+      id: generateUUID(),
+      fullName: input.fullName.trim(),
+      phone: input.phone?.trim() || null,
+      dailySalary: new Prisma.Decimal(input.dailySalary),
+      payFrequency: input.payFrequency,
+      isActive: true
+    } });
+    revalidatePath("/employees");
+    return { success: true, data: { ...employee, dailySalary: Number(employee.dailySalary) } };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo crear el trabajador." };
+  }
+}
+async function updateEmployee(input) {
+  try {
+    await requireAdmin();
+    if (!input.id?.trim()) throw new Error("Trabajador inv\xE1lido.");
+    const fullName = input.fullName?.trim();
+    if (!fullName) throw new Error("El nombre completo es obligatorio.");
+    if (!Number.isFinite(input.dailySalary) || input.dailySalary <= 0) throw new Error("El salario diario debe ser mayor que cero.");
+    if (!["DAILY", "WEEKLY", "BIWEEKLY"].includes(input.payFrequency)) throw new Error("La frecuencia de pago no es v\xE1lida.");
+    if (typeof input.isActive !== "boolean") throw new Error("El estado del trabajador no es v\xE1lido.");
+    const employee = await db_default.employee.update({
+      where: { id: input.id },
+      data: {
+        fullName,
+        dailySalary: new Prisma.Decimal(input.dailySalary),
+        payFrequency: input.payFrequency,
+        isActive: input.isActive
+      }
+    });
+    revalidatePath("/employees");
+    return { success: true, data: { ...employee, dailySalary: Number(employee.dailySalary) } };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo actualizar el trabajador." };
+  }
+}
+async function setEmployeeActive(employeeId, isActive) {
+  try {
+    await requireAdmin();
+    await db_default.employee.update({ where: { id: employeeId }, data: { isActive } });
+    revalidatePath("/employees");
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo actualizar el trabajador." };
+  }
+}
+async function deleteEmployee(employeeId) {
+  try {
+    await requireAdmin();
+    if (!employeeId?.trim()) throw new Error("Trabajador inv\xE1lido.");
+    const result = await db_default.$transaction(async (tx) => {
+      const employee = await tx.employee.findUnique({ where: { id: employeeId }, select: { id: true } });
+      if (!employee) throw new Error("Trabajador no encontrado.");
+      const [loanCount, payrollCount, absenceCount] = await Promise.all([
+        tx.employeeLoan.count({ where: { employeeId } }),
+        tx.payrollRecord.count({ where: { employeeId } }),
+        tx.employeeAbsence.count({ where: { employeeId } })
+      ]);
+      if (loanCount > 0 || payrollCount > 0 || absenceCount > 0) {
+        await tx.employee.update({ where: { id: employeeId }, data: { isActive: false } });
+        return { mode: "deactivated", message: "Trabajador marcado como inactivo para proteger su historial." };
+      }
+      await tx.employee.delete({ where: { id: employeeId } });
+      return { mode: "deleted", message: "Trabajador eliminado correctamente." };
+    });
+    revalidatePath("/employees");
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo procesar la eliminaci\xF3n." };
+  }
+}
+async function createEmployeeLoan(employeeId, amount, description) {
+  try {
+    await requireAdmin();
+    if (!Number.isFinite(amount) || amount <= 0 || !description.trim()) throw new Error("Monto y descripci\xF3n del pr\xE9stamo son obligatorios.");
+    const employee = await db_default.employee.findUnique({ where: { id: employeeId } });
+    if (!employee?.isActive) throw new Error("El trabajador no existe o est\xE1 inactivo.");
+    const loan = await db_default.employeeLoan.create({ data: {
+      id: generateUUID(),
+      employeeId,
+      amount: new Prisma.Decimal(amount),
+      remainingBalance: new Prisma.Decimal(amount),
+      description: description.trim(),
+      status: "PENDING"
+    } });
+    revalidatePath("/employees");
+    return { success: true, data: { ...loan, amount: Number(loan.amount) } };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo registrar el pr\xE9stamo." };
+  }
+}
+async function createEmployeeAbsence(employeeId, date, reason) {
+  try {
+    await requireAdmin();
+    const employee = await db_default.employee.findUnique({ where: { id: employeeId } });
+    if (!employee) throw new Error("Trabajador no encontrado.");
+    const absence = await db_default.employeeAbsence.create({ data: {
+      id: generateUUID(),
+      employeeId,
+      date: parseDate(date),
+      reason: reason?.trim() || null
+    } });
+    revalidatePath("/employees");
+    return { success: true, data: absence };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo registrar la falta." };
+  }
+}
+async function previewEmployeePayroll(employeeId, startDate, endDate, customWorkdays) {
+  try {
+    await requireAdmin();
+    return { success: true, data: await payrollPreview(employeeId, startDate, endDate, customWorkdays) };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo calcular la n\xF3mina." };
+  }
+}
+async function processEmployeePayroll(employeeId, startDate, endDate, requestedLoanDeduction = 0, customWorkdays) {
+  try {
+    await requireAdmin();
+    if (!Number.isFinite(requestedLoanDeduction) || requestedLoanDeduction < 0) throw new Error("El descuento debe ser un monto v\xE1lido igual o mayor que cero.");
+    const deductionRequest = roundMoney(requestedLoanDeduction);
+    const start = parseDate(startDate);
+    const end = parseDate(endDate, true);
+    if (start > end) throw new Error("La fecha inicial debe ser anterior a la fecha final.");
+    const record = await db_default.$transaction(async (tx) => {
+      const employee = await tx.employee.findUnique({ where: { id: employeeId } });
+      if (!employee) throw new Error("Trabajador no encontrado.");
+      const [absenceRows, pendingLoans] = await Promise.all([
+        tx.employeeAbsence.findMany({ where: { employeeId, date: { gte: start, lte: end } }, select: { date: true } }),
+        tx.employeeLoan.findMany({ where: { employeeId, status: "PENDING" }, orderBy: { createdAt: "asc" } })
+      ]);
+      const pendingLoansBalance = roundMoney(pendingLoans.reduce((sum, loan) => sum + loanBalance(loan), 0));
+      const defaultWorkdays = countWorkdays(start, end);
+      const workdays = typeof customWorkdays === "number" && Number.isFinite(customWorkdays) && customWorkdays >= 0 ? customWorkdays : defaultWorkdays;
+      const absenceCount = Math.min(workdays, new Set(absenceRows.map((absence) => absence.date.toISOString().slice(0, 10))).size);
+      const grossSalary = roundMoney(workdays * Number(employee.dailySalary));
+      const absenceDeductions = roundMoney(absenceCount * Number(employee.dailySalary));
+      const availableForDeductions = roundMoney(Math.max(0, grossSalary - absenceDeductions));
+      if (deductionRequest > pendingLoansBalance + 1e-3) throw new Error("El descuento supera el saldo pendiente de pr\xE9stamos.");
+      if (deductionRequest > availableForDeductions + 1e-3) throw new Error("El descuento supera el salario disponible despu\xE9s de descontar las faltas.");
+      const loanDeductions = deductionRequest;
+      const netSalary = roundMoney(Math.max(0, availableForDeductions - deductionRequest));
+      const payrollRecord = await tx.payrollRecord.create({ data: {
+        id: generateUUID(),
+        employeeId,
+        startDate: start,
+        endDate: end,
+        workdays,
+        grossSalary: new Prisma.Decimal(grossSalary),
+        absenceDeductions: new Prisma.Decimal(absenceDeductions),
+        loanDeductions: new Prisma.Decimal(loanDeductions),
+        netSalary: new Prisma.Decimal(netSalary)
+      } });
+      let remainingDeduction = deductionRequest;
+      for (const loan of pendingLoans) {
+        if (remainingDeduction <= 1e-3) break;
+        const balance = loanBalance(loan);
+        const applied = roundMoney(Math.min(balance, remainingDeduction));
+        const nextBalance = roundMoney(balance - applied);
+        await tx.employeeLoan.update({
+          where: { id: loan.id },
+          data: {
+            remainingBalance: new Prisma.Decimal(nextBalance),
+            status: nextBalance <= 5e-3 ? "DEDUCTED" : "PENDING"
+          }
+        });
+        await tx.employeeLoanPayment.create({ data: {
+          id: generateUUID(),
+          loanId: loan.id,
+          payrollRecordId: payrollRecord.id,
+          amount: new Prisma.Decimal(applied),
+          kind: "PAYROLL"
+        } });
+        remainingDeduction = roundMoney(remainingDeduction - applied);
+      }
+      if (remainingDeduction > 1e-3) throw new Error("No se pudo distribuir el descuento completo entre pr\xE9stamos pendientes.");
+      return payrollRecord;
+    });
+    revalidatePath("/employees");
+    return {
+      success: true,
+      data: {
+        ...record,
+        grossSalary: Number(record.grossSalary),
+        absenceDeductions: Number(record.absenceDeductions),
+        loanDeductions: Number(record.loanDeductions),
+        netSalary: Number(record.netSalary)
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo procesar la n\xF3mina." };
+  }
+}
+async function registerEmployeeLoanPayment(employeeId, loanId, amount, concept, date) {
+  try {
+    await requireAdmin();
+    if (!employeeId?.trim() || !loanId?.trim()) throw new Error("Pr\xE9stamo inv\xE1lido.");
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error("El monto del abono debe ser mayor que cero.");
+    const normalizedAmount = roundMoney(amount);
+    const paymentDate = date ? parseDate(date) : /* @__PURE__ */ new Date();
+    const reference = (concept?.trim() || "Abono a pr\xE9stamo").slice(0, 170);
+    const loan = await db_default.$transaction(async (tx) => {
+      const current = await tx.employeeLoan.findUnique({ where: { id: loanId } });
+      if (!current) throw new Error("Pr\xE9stamo no encontrado.");
+      if (current.employeeId !== employeeId) throw new Error("El pr\xE9stamo no pertenece al trabajador.");
+      const balance = loanBalance(current);
+      if (balance <= 5e-3) throw new Error("El pr\xE9stamo ya est\xE1 saldado.");
+      if (normalizedAmount > balance + 1e-3) throw new Error("El abono supera el saldo pendiente del pr\xE9stamo.");
+      const nextBalance = roundMoney(balance - normalizedAmount);
+      const updated = await tx.employeeLoan.update({
+        where: { id: loanId },
+        data: {
+          remainingBalance: new Prisma.Decimal(nextBalance),
+          status: nextBalance <= 5e-3 ? "DEDUCTED" : "PENDING"
+        }
+      });
+      await tx.employeeLoanPayment.create({
+        data: {
+          id: generateUUID(),
+          loanId,
+          amount: new Prisma.Decimal(normalizedAmount),
+          kind: "CASH",
+          reference,
+          createdAt: paymentDate
+        }
+      });
+      return updated;
+    });
+    revalidatePath("/employees");
+    const remainingBalance = Number(loan.remainingBalance);
+    return {
+      success: true,
+      data: {
+        ...loan,
+        amount: Number(loan.amount),
+        remainingBalance,
+        totalPaid: roundMoney(Number(loan.amount) - remainingBalance),
+        paidAmount: normalizedAmount
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo registrar el abono al pr\xE9stamo." };
   }
 }
 
@@ -7050,6 +7652,7 @@ __export(reports_exports, {
   getReportDeadStock: () => getReportDeadStock,
   getReportFilters: () => getReportFilters,
   getReportPaymentMethods: () => getReportPaymentMethods,
+  getReportProfitByPresentation: () => getReportProfitByPresentation,
   getReportProfitMargin: () => getReportProfitMargin,
   getReportSalesByCategory: () => getReportSalesByCategory,
   getReportSalesByHour: () => getReportSalesByHour,
@@ -7057,6 +7660,7 @@ __export(reports_exports, {
   getReportSummary: () => getReportSummary,
   getReportTopSelling: () => getReportTopSelling,
   getSalesData: () => getSalesData,
+  getTicketHistory: () => getTicketHistory,
   getTopProducts: () => getTopProducts
 });
 init_db();
@@ -7093,6 +7697,52 @@ async function getSalesData(startDate, endDate) {
     month,
     sales: monthlyData[index] || 0
   }));
+}
+async function getTicketHistory(startDate, endDate) {
+  try {
+    const session = await verifySession();
+    if (!session || !["admin", "master-admin"].includes(session.role)) {
+      return { success: false, error: "No autorizado", data: [] };
+    }
+    const dateOnly = (value) => {
+      if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString().slice(0, 10);
+      if (typeof value === "string" && value.trim()) return value.trim().split("T")[0];
+      return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    };
+    const startDay = dateOnly(startDate);
+    const endDay = dateOnly(endDate);
+    const start = /* @__PURE__ */ new Date(`${startDay}T00:00:00.000Z`);
+    const end = /* @__PURE__ */ new Date(`${endDay}T23:59:59.999Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDay) || !/^\d{4}-\d{2}-\d{2}$/.test(endDay) || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) {
+      return { success: false, error: "Rango de fechas inv\xE1lido", data: [] };
+    }
+    const invoices = await db_default.salesInvoice.findMany({
+      where: { date: { gte: start, lte: end }, status: { not: "REFUNDED" } },
+      orderBy: { date: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        date: true,
+        totalAmount: true,
+        customer: { select: { fullName: true } },
+        user: { select: { name: true } }
+      }
+    });
+    const data = invoices.map((invoice) => ({
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      date: invoice.date,
+      totalAmount: Number(invoice.totalAmount ?? 0),
+      customerName: invoice.customer?.fullName || "Cliente General",
+      customer: invoice.customer ? { fullName: invoice.customer.fullName || "Cliente General" } : null,
+      user: invoice.user ? { name: invoice.user.name || "Caja Central" } : null
+    }));
+    return { success: true, data };
+  } catch (error) {
+    console.error("[reports.getTicketHistory Error]:", error);
+    return { success: false, error: String(error), data: [] };
+  }
 }
 async function getTopProducts(startDate, endDate) {
   const whereClause = {
@@ -7364,7 +8014,7 @@ async function getPriceLevelAnalysis(startDate, endDate) {
     }
   };
 }
-function parseDate(v) {
+function parseDate2(v) {
   if (!v) return void 0;
   if (v instanceof Date) return v;
   const d = new Date(v);
@@ -7432,6 +8082,7 @@ async function getReportProductCatalog() {
         name: true,
         barcode: true,
         costPriceNIO: true,
+        baseUnit: true,
         categoryId: true,
         category: true,
         inventoryType: true,
@@ -7452,6 +8103,7 @@ async function getReportProductCatalog() {
       name: p.name,
       barcode: p.barcode || "",
       cost: p.costPriceNIO || 0,
+      baseUnit: p.baseUnit || "Unidad",
       inventoryType: p.inventoryType,
       hasVariants: p.hasVariants,
       categoryId: cat?.id || null,
@@ -7477,7 +8129,7 @@ function round23(n) {
   return Math.round(n * 100) / 100;
 }
 async function getReportSummary(from, to) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end);
   const rate = await getExchangeRateValue();
   const { productById } = await getReportProductCatalog();
@@ -7508,7 +8160,7 @@ async function getReportSummary(from, to) {
   };
 }
 async function getReportSalesByCategory(from, to, categoryId) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end);
   const { productById } = await getReportProductCatalog();
   const agg = /* @__PURE__ */ new Map();
@@ -7565,7 +8217,7 @@ async function getReportSalesByCategory(from, to, categoryId) {
   };
 }
 async function getReportSalesByProduct(from, to, categoryId, location) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end);
   const rate = await getExchangeRateValue();
   const { productById, categories } = await getReportProductCatalog();
@@ -7646,7 +8298,7 @@ async function getReportSalesByProduct(from, to, categoryId, location) {
   };
 }
 async function getReportTopSelling(from, to) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end);
   const rate = await getExchangeRateValue();
   const { productById } = await getReportProductCatalog();
@@ -7732,7 +8384,7 @@ function paymentBucket(paymentMethod) {
   return { key: "otro", label: "Otro" };
 }
 async function getReportPaymentMethods(from, to) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end, false);
   const rate = await getExchangeRateValue();
   const buckets = {};
@@ -7760,7 +8412,7 @@ async function getReportPaymentMethods(from, to) {
   };
 }
 async function getReportCashiers(from, to) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end);
   const rate = await getExchangeRateValue();
   const perUser = /* @__PURE__ */ new Map();
@@ -7845,7 +8497,7 @@ async function getReportCashiers(from, to) {
   };
 }
 async function getReportSalesByHour(from, to) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end, false);
   const hours = Array.from({ length: 24 }, (_, h) => {
     const hourLabel = `${String(h).padStart(2, "0")}:00`;
@@ -7867,7 +8519,7 @@ async function getReportSalesByHour(from, to) {
 }
 async function getReportDeadStock(days, to) {
   const window2 = Math.max(1, Math.min(3650, Number(days) || 90));
-  const end = parseDate(to) || /* @__PURE__ */ new Date();
+  const end = parseDate2(to) || /* @__PURE__ */ new Date();
   const cutoff = new Date(end.getTime() - window2 * 864e5);
   const soldItems = await db_default.salesInvoiceItem.findMany({
     where: {
@@ -7925,7 +8577,7 @@ async function getReportDeadStock(days, to) {
   };
 }
 async function getReportProfitMargin(from, to) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const invoices = await fetchInvoicesInRange(start, end);
   const rate = await getExchangeRateValue();
   const { productById } = await getReportProductCatalog();
@@ -7991,6 +8643,63 @@ async function getReportProfitMargin(from, to) {
     },
     bands,
     exchangeRate: rate
+  };
+}
+async function getReportProfitByPresentation(from, to) {
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
+  const invoices = await fetchInvoicesInRange(start, end);
+  const { productById } = await getReportProductCatalog();
+  const grouped = /* @__PURE__ */ new Map();
+  for (const invoice of invoices) {
+    for (const item of invoice.salesInvoiceItem || []) {
+      const product = productById.get(item.productId);
+      const quantity = Math.abs(Number(item.quantity) || 0);
+      if (quantity <= 0) continue;
+      const factorValue = Number(item.presentationFactor);
+      const factor = Number.isFinite(factorValue) && factorValue > 0 ? factorValue : 1;
+      const baseUnit = String(item.baseUnit || product?.baseUnit || "Unidad");
+      const presentationName = String(item.presentationName || item.bulkUnit || baseUnit || "Unidad");
+      const productName = String(product?.name || item.productName || "Producto");
+      const key = [item.productId || productName, presentationName.toLocaleLowerCase(), factor].join("|");
+      let row = grouped.get(key);
+      if (!row) {
+        row = { key, productName, presentationName, baseUnit, presentationFactor: factor, quantity: 0, revenue: 0, cost: 0 };
+        grouped.set(key, row);
+      }
+      const revenue = Number(item.totalPrice) || quantity * (Number(item.unitPrice) || 0);
+      row.quantity += quantity;
+      row.revenue += revenue;
+      row.cost += (Number(product?.cost) || 0) * quantity * factor;
+    }
+  }
+  const rows = Array.from(grouped.values()).map((row) => {
+    const profit = row.revenue - row.cost;
+    return {
+      productName: row.productName,
+      presentationName: row.presentationName,
+      baseUnit: row.baseUnit,
+      presentationFactor: row.presentationFactor,
+      quantity: round23(row.quantity),
+      revenue: round23(row.revenue),
+      cost: round23(row.cost),
+      profit: round23(profit),
+      marginPct: safePercent(profit, row.revenue)
+    };
+  }).sort((a, b) => b.profit - a.profit);
+  const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
+  const totalCost = rows.reduce((sum, row) => sum + row.cost, 0);
+  const totalProfit = totalRevenue - totalCost;
+  return {
+    rows,
+    summary: {
+      presentationCount: rows.length,
+      totalQuantity: round23(rows.reduce((sum, row) => sum + row.quantity, 0)),
+      totalRevenue: round23(totalRevenue),
+      totalCost: round23(totalCost),
+      totalProfit: round23(totalProfit),
+      marginPct: safePercent(totalProfit, totalRevenue),
+      invoiceCount: invoices.length
+    }
   };
 }
 async function getReportFilters() {
@@ -8137,7 +8846,7 @@ async function getAgingReport() {
   }
 }
 async function getDispatcherProductivityReport(from, to, productIds, categoryId) {
-  const { start, end } = buildInvoiceRange(parseDate(from), parseDate(to));
+  const { start, end } = buildInvoiceRange(parseDate2(from), parseDate2(to));
   const rate = await getExchangeRateValue();
   const { productById, categories, productIdByVariantId } = await getReportProductCatalog();
   const normalizedCategoryId = categoryId && categoryId !== "all" ? categoryId.trim() : void 0;
@@ -8277,14 +8986,14 @@ init_db();
 
 // src/lib/stock-tx.ts
 init_db();
-import { Prisma } from "@prisma/client";
+import { Prisma as Prisma2 } from "@prisma/client";
 var STOCK_TX_MAX_ATTEMPTS = 3;
 async function runStockSafeTransaction(fn) {
   let lastError;
   for (let attempt = 1; attempt <= STOCK_TX_MAX_ATTEMPTS; attempt++) {
     try {
       return await db_default.$transaction(fn, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: Prisma2.TransactionIsolationLevel.Serializable,
         maxWait: 5e3,
         timeout: 15e3
       });
@@ -9129,7 +9838,15 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           where: { id: customerId },
           include: {
             creditInstallment: {
-              where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { lt: /* @__PURE__ */ new Date() } },
+              // Solo cuentan como mora las cuotas activas con saldo real
+              // pendiente; las cuotas liquidadas (amount 0 / PAID) y las
+              // que pertenecen a facturas ya saldadas se ignoran.
+              where: {
+                status: { in: ["PENDING", "OVERDUE"] },
+                amount: { gt: 5e-3 },
+                dueDate: { lt: /* @__PURE__ */ new Date() },
+                salesInvoice: { pendingBalance: { gt: 5e-3 } }
+              },
               select: { id: true }
             }
           }
@@ -9161,7 +9878,9 @@ async function createSale(items, sessionId, userId, inventoryType, totalAmount, 
           where: { id: salesInvoice.id },
           data: {
             pendingBalance: { increment: financedTotal },
-            dueDate: computeCreditDueDate(/* @__PURE__ */ new Date(), effectiveDays)
+            dueDate: computeCreditDueDate(/* @__PURE__ */ new Date(), effectiveDays),
+            // Sin saldo financiado la factura queda liquidada formalmente.
+            ...financedTotal <= 5e-3 ? { pendingBalance: 0, status: "PAID" } : {}
           }
         });
         if (financing && financing.installments > 0) {
@@ -9291,10 +10010,10 @@ async function getInvoiceByNumber2(invoiceNumber) {
       where: { invoiceNumber: parsed },
       include: {
         salesInvoiceItem: {
-          orderBy: { id: "asc" },
+          orderBy: { id: "asc" }
           // El código (código de barras) alimenta la columna "Código" de la
           // factura en Hoja Normal; no interviene en el ticket de 80 mm.
-          include: { product: { select: { barcode: true } } }
+          // SalesInvoiceItem no tiene relacion product en el schema; solo productVariant.
         },
         customer: true,
         user: true
@@ -9447,7 +10166,7 @@ async function getDeliveryInvoices() {
         routeSettlement: true,
         routeReturnItems: true,
         salesInvoiceItem: {
-          include: { product: { select: { barcode: true } } }
+          // SalesInvoiceItem no tiene relacion product en el schema; solo productVariant.
         }
       }
     });
@@ -10210,6 +10929,7 @@ var actionModules = {
   "customers": customers_exports,
   "dashboard": dashboard_exports,
   "delivery-routes": delivery_routes_exports,
+  "employees": employees_exports,
   "export": export_exports,
   "gold-purchase": gold_purchase_exports,
   "gold": gold_exports,
@@ -10278,6 +10998,81 @@ function readSessionCookie(header) {
 function buildDispatcherApp() {
   const app2 = new Hono();
   app2.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
+  app2.post("/api/actions/reports/getTicketHistory", async (c) => {
+    const action = actionModules.reports.getTicketHistory;
+    let args = [];
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (Array.isArray(body.args)) args = body.args;
+      else if (body && typeof body === "object" && "startDate" in body && "endDate" in body) {
+        args = [body.startDate, body.endDate];
+      }
+    } catch {
+      args = [];
+    }
+    const cookies2 = createCookieStore(c.req.header("cookie"));
+    const ctx = { cookies: cookies2, cacheStore: /* @__PURE__ */ new Map() };
+    try {
+      const result = await runWithContext(ctx, () => action(...args));
+      for (const cookie of cookies2.getSetCookies()) c.header("Set-Cookie", cookie, { append: true });
+      return c.json(result);
+    } catch (err) {
+      console.error("[action] reports.getTicketHistory error:", err);
+      throw new HTTPException(500, {
+        message: `Error ejecutando reports.getTicketHistory: ${err instanceof Error ? err.message : String(err)}`
+      });
+    }
+  });
+  app2.post("/api/actions/credit-notes/getCreditNotes", async (c) => {
+    const action = actionModules["credit-notes"].getCreditNotes;
+    let args = [];
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (Array.isArray(body.args)) args = body.args;
+    } catch {
+      args = [];
+    }
+    const cookies2 = createCookieStore(c.req.header("cookie"));
+    const ctx = { cookies: cookies2, cacheStore: /* @__PURE__ */ new Map() };
+    try {
+      const result = await runWithContext(ctx, () => action(...args));
+      for (const cookie of cookies2.getSetCookies()) c.header("Set-Cookie", cookie, { append: true });
+      return c.json(result);
+    } catch (err) {
+      console.error("[action] credit-notes.getCreditNotes error:", err);
+      throw new HTTPException(500, {
+        message: `Error ejecutando credit-notes.getCreditNotes: ${err instanceof Error ? err.message : String(err)}`
+      });
+    }
+  });
+  const registerEmployeeHistoryRoute = (fnName) => app2.post(`/api/actions/employees/${fnName}`, async (c) => {
+    const action = actionModules.employees[fnName];
+    let employeeId;
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      if (Array.isArray(body.args)) employeeId = body.args[0];
+      else if (body && typeof body === "object") employeeId = body.employeeId;
+    } catch {
+      employeeId = void 0;
+    }
+    if (typeof employeeId !== "string" || !employeeId.trim()) {
+      return c.json({ success: false, data: [], error: "employeeId es obligatorio." }, 400);
+    }
+    const cookies2 = createCookieStore(c.req.header("cookie"));
+    const ctx = { cookies: cookies2, cacheStore: /* @__PURE__ */ new Map() };
+    try {
+      const result = await runWithContext(ctx, () => action(employeeId));
+      for (const cookie of cookies2.getSetCookies()) c.header("Set-Cookie", cookie, { append: true });
+      return c.json(result);
+    } catch (err) {
+      console.error(`[action] employees.${fnName} error:`, err);
+      throw new HTTPException(500, {
+        message: `Error ejecutando employees.${fnName}: ${err instanceof Error ? err.message : String(err)}`
+      });
+    }
+  });
+  registerEmployeeHistoryRoute("getEmployeeLoanHistory");
+  registerEmployeeHistoryRoute("getEmployeePayrollHistory");
   app2.post("/api/actions/:module/:fn", async (c) => {
     const moduleName = c.req.param("module");
     const fnName = c.req.param("fn");

@@ -66,6 +66,6 @@ export async function getSettings(...args: any[]): Promise<any> {
   return callAction('settings', 'getSettings', args);
 }
 
-export async function updateSettings(data: SystemSettingsData): Promise<{ success: boolean; error?: string; data?: Pick<SystemSettingsData, 'enableDeliveryRoute'> }> {
-  return callAction('settings', 'updateSettings', [data]) as Promise<{ success: boolean; error?: string; data?: Pick<SystemSettingsData, 'enableDeliveryRoute'> }>;
+export async function updateSettings(...args: any[]): Promise<any> {
+  return callAction('settings', 'updateSettings', args);
 }

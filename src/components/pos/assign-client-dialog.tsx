@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useAuth } from '@/hooks/use-auth';
 
 export interface SelectedClient {
   id?: string;
@@ -26,6 +27,7 @@ export interface SelectedClient {
   address?: string;
   priceLevel?: number;
   interestRate?: number;
+  hasCredit?: boolean;
   }
 
 interface AssignClientDialogProps {
@@ -42,6 +44,7 @@ export function AssignClientDialog({
     currentName = '',
 }: AssignClientDialogProps) {
     const { toast } = useToast();
+    const { user } = useAuth();
     const [view, setView] = useState<'search' | 'form'>('search');
     const [searchTerm, setSearchTerm] = useState('');
     const [customers, setCustomers] = useState<any[]>([]);
@@ -102,6 +105,7 @@ export function AssignClientDialog({
             phone: customer.phone || undefined,
             priceLevel: customer.priceLevel || 1,
             interestRate: typeof customer.interestRate === 'number' ? customer.interestRate : 0,
+            hasCredit: customer.hasCredit === true,
         });
         onClose();
     };
@@ -120,6 +124,7 @@ export function AssignClientDialog({
                 phone: res.phone || undefined,
                 priceLevel: (res as any).priceLevel || 1,
                 interestRate: typeof (res as any).interestRate === 'number' ? (res as any).interestRate : 0,
+                hasCredit: (res as any).hasCredit === true,
             });
             toast({ title: "✅ Éxito", description: "Cliente guardado y asignado" });
             onClose();
@@ -247,7 +252,7 @@ export function AssignClientDialog({
                                     />
                                 </div>
 
-                                <div className="pt-2 border-t mt-2">
+                                {(user?.role === 'admin' || user?.role === 'master-admin') && <div className="pt-2 border-t mt-2">
                                     <div className="flex items-center space-x-2 mb-4">
                                         <Checkbox 
                                             id="hasCredit" 
@@ -303,7 +308,7 @@ export function AssignClientDialog({
                                             </div>
                                         </div>
                                     )}
-                                </div>
+                                </div>}
                             </div>
                         </div>
                     )}

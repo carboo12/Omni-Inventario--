@@ -20,6 +20,8 @@ const _dashboardComponent = lazy(() => import('./app/(app)/dashboard/page'));
 const _delivery_routesComponent = lazy(() => import('./app/(app)/delivery-routes/client'));
 const _delivery_routes_newComponent = lazy(() => import('./app/(app)/delivery-routes/new/client'));
 const _delivery_routes__id_Component = lazy(() => import('./app/(app)/delivery-routes/[id]/client'));
+const _devolucionesComponent = lazy(() => import('./app/(app)/devoluciones/returns-workspace'));
+const _employeesComponent = lazy(() => import('./app/(app)/employees/client'));
 const _facturas__id__printComponent = lazy(() => import('./app/(app)/facturas/[id]/print/client'));
 const _inventory_categoriesComponent = lazy(() => import('./app/(app)/inventory/categories/page'));
 const _inventoryComponent = lazy(() => import('./app/(app)/inventory/client'));
@@ -50,6 +52,7 @@ const _settingsComponent = lazy(() => import('./app/(app)/settings/page'));
 const _settings_ticketComponent = lazy(() => import('./app/(app)/settings/ticket/client'));
 const _suppliersComponent = lazy(() => import('./app/(app)/suppliers/client'));
 const _suppliers_newComponent = lazy(() => import('./app/(app)/suppliers/new/page'));
+const _ticket_historyComponent = lazy(() => import('./app/(app)/ticket-history/client'));
 const _usersComponent = lazy(() => import('./app/(app)/users/client'));
 const _lockedComponent = lazy(() => import('./app/(auth)/locked/page'));
 const _reset_passwordComponent = lazy(() => import('./app/(auth)/reset-password/page'));
@@ -85,6 +88,8 @@ const _dashboardFallback = LoadingFallback;
 const _delivery_routesFallback = LoadingFallback;
 const _delivery_routes_newFallback = LoadingFallback;
 const _delivery_routes__id_Fallback = LoadingFallback;
+const _devolucionesFallback = LoadingFallback;
+const _employeesFallback = LoadingFallback;
 const _facturas__id__printFallback = LoadingFallback;
 const _inventory_categoriesFallback = LoadingFallback;
 const _inventoryFallback = LoadingFallback;
@@ -115,6 +120,7 @@ const _settingsFallback = LoadingFallback;
 const _settings_ticketFallback = LoadingFallback;
 const _suppliersFallback = LoadingFallback;
 const _suppliers_newFallback = LoadingFallback;
+const _ticket_historyFallback = LoadingFallback;
 const _usersFallback = LoadingFallback;
 const _lockedFallback = LoadingFallback;
 const _reset_passwordFallback = LoadingFallback;
@@ -227,6 +233,10 @@ const _delivery_routes__id_Wrapper = () => {
   if ([q_delivery_routes__id__route].some((q) => q.isPending || q.data === undefined)) return createElement(LoadingFallback);
   return createElement(Suspense, { fallback: _delivery_routes__id_Fallback() }, createElement(_delivery_routes__id_Component, queries));
 };
+
+const _devolucionesWrapper = () => createElement(Suspense, { fallback: _devolucionesFallback() }, createElement(_devolucionesComponent, {}));
+
+const _employeesWrapper = () => createElement(Suspense, { fallback: _employeesFallback() }, createElement(_employeesComponent, {}));
 
 const _facturas__id__printWrapper = () => createElement(Suspense, { fallback: _facturas__id__printFallback() }, createElement(_facturas__id__printComponent, {}));
 
@@ -495,6 +505,8 @@ const _suppliersWrapper = () => {
 
 const _suppliers_newWrapper = () => createElement(Suspense, { fallback: _suppliers_newFallback() }, createElement(_suppliers_newComponent, {}));
 
+const _ticket_historyWrapper = () => createElement(Suspense, { fallback: _ticket_historyFallback() }, createElement(_ticket_historyComponent, {}));
+
 const _usersWrapper = () => {
   const params = useRouteParams();
   const queries: any = {};
@@ -542,6 +554,8 @@ export const authenticatedPages: Record<string, PageEntry> = {
   '/delivery-routes': { Component: _delivery_routesWrapper, requiresAuth: true },
   '/delivery-routes/new': { Component: _delivery_routes_newWrapper, requiresAuth: true },
   '/delivery-routes/[id]': { Component: _delivery_routes__id_Wrapper, requiresAuth: true },
+  '/devoluciones': { Component: _devolucionesWrapper, requiresAuth: true },
+  '/employees': { Component: _employeesWrapper, requiresAuth: true },
   '/facturas/[id]/print': { Component: _facturas__id__printWrapper, requiresAuth: true },
   '/inventory/categories': { Component: _inventory_categoriesWrapper, requiresAuth: true },
   '/inventory': { Component: _inventoryWrapper, requiresAuth: true },
@@ -572,6 +586,7 @@ export const authenticatedPages: Record<string, PageEntry> = {
   '/settings/ticket': { Component: _settings_ticketWrapper, requiresAuth: true },
   '/suppliers': { Component: _suppliersWrapper, requiresAuth: true },
   '/suppliers/new': { Component: _suppliers_newWrapper, requiresAuth: true },
+  '/ticket-history': { Component: _ticket_historyWrapper, requiresAuth: true },
   '/users': { Component: _usersWrapper, requiresAuth: true },
   '/locked': { Component: _lockedWrapper, requiresAuth: true },
   '/reset-password': { Component: _reset_passwordWrapper, requiresAuth: true },

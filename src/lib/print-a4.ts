@@ -434,7 +434,7 @@ export function buildA4ReceiptHtml(data: ReceiptHtmlData): string {
 
   <div class="signatures">
     <div class="signature-box">
-      <div class="signature-line">Entregado por (Ruta)</div>
+      <div class="signature-line">Entregado por</div>
       <div class="signature-hint">${deliveredByName ? escapeHtml(deliveredByName) : 'Nombre y firma del repartidor'}</div>
     </div>
     <div class="signature-box">

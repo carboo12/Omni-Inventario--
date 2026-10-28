@@ -5,11 +5,14 @@ import type { UserRole } from '@/lib/types';
 export const DISPATCHER_RESTRICTED_PREFIXES = [
   '/dashboard',
   '/users',
+  '/employees',
   '/settings',
   '/reports',
   '/kardex',
   '/cash-count',
   '/customers/credit',
+  '/devoluciones',
+  '/ticket-history',
   '/cash-management',
   '/purchases',
   '/suppliers',
@@ -24,6 +27,7 @@ export const DISPATCHER_HOME = '/pos';
 // flujo de venta/caja; el Dashboard expone métricas globales de la tienda.
 export const CASHIER_RESTRICTED_PREFIXES = [
   '/dashboard',
+  '/employees',
 ];
 
 export const CASHIER_HOME = '/pos';

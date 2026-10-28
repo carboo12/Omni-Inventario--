@@ -23,6 +23,9 @@ import {
   MapPin,
   ClipboardList,
   Printer,
+  RotateCcw,
+  ReceiptText,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,12 +57,15 @@ const navItems: NavItem[] = [
   { href: "/cash-management", label: "Gestión de Caja", icon: Wallet, roles: ["master-admin", "admin"] },
   { href: "/customers", label: "Clientes", icon: Users, roles: ["master-admin", "admin", "rutero"] },
   { href: "/customers/credit", label: "Cuentas por Cobrar", icon: Landmark, roles: ["master-admin", "admin", "cashier"] },
+  { href: "/devoluciones", label: "Devoluciones", icon: RotateCcw, roles: ["master-admin", "admin", "cashier"] },
+  { href: "/ticket-history", label: "Historial de Tickets", icon: ReceiptText, roles: ["master-admin", "admin"] },
   { href: "/quotations", label: "Cotizaciones", icon: ClipboardList, roles: ["master-admin", "admin", "cashier"] },
   { href: "/ruta", label: "Ruta & Entregas", icon: Truck, roles: ["master-admin", "admin", "cashier", "rutero", "dispatcher"] },
   { href: "/purchases", label: "Compras", icon: FileText, roles: ["master-admin", "admin"] },
   { href: "/suppliers", label: "Proveedores", icon: Truck, roles: ["master-admin", "admin"] },
   { href: "/reports", label: "Informes", icon: LineChart, roles: ["master-admin", "admin"] },
   { href: "/users", label: "Usuarios", icon: Users, roles: ["master-admin", "admin"] },
+  { href: "/employees", label: "Control de Personal", icon: BriefcaseBusiness, roles: ["master-admin", "admin"] },
   { href: "/settings", label: "Configuración", icon: Settings, roles: ["master-admin", "admin"] },
   { href: "/settings/ticket", label: "Diseño de Ticket", icon: Printer, roles: ["master-admin", "admin"] },
 ];
@@ -127,9 +133,11 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
       items = items.filter(item => !distribuidoraHrefs.includes(item.href));
 
       const distribucionItems: NavItem[] = [
-        { href: "/orders", label: "Pedidos", icon: FileText, roles: ["master-admin", "admin", "rutero"] },
-        { href: "/delivery-routes", label: "Rutas de Reparto", icon: MapPin, roles: ["master-admin", "admin", "rutero"] },
-        { href: "/collections", label: "Cobros", icon: Wallet, roles: ["master-admin", "admin"] },
+        ...(settings.enableDeliveryRoute ? [
+          { href: "/orders", label: "Pedidos", icon: FileText, roles: ["master-admin", "admin", "rutero"] },
+          { href: "/delivery-routes", label: "Rutas de Reparto", icon: MapPin, roles: ["master-admin", "admin", "rutero"] },
+          { href: "/collections", label: "Cobros", icon: Wallet, roles: ["master-admin", "admin"] },
+        ] : []),
       ];
 
       const accessibleDistribucion = distribucionItems.filter(item => item.roles.includes(user.role));
@@ -167,6 +175,24 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
   const handleNavigate = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     if (!user) return;
 
+    // En el menú principal, Pedidos siempre abre su vista de gestión. La acción
+    // de cargar un pedido en caja se mantiene dentro del detalle del pedido.
+    if (href === '/orders') {
+      e.preventDefault();
+      if (pathname !== '/orders') {
+        router.push('/orders');
+      }
+      return;
+    }
+
+    if (href === '/delivery-routes' || href.startsWith('/delivery-routes/')) {
+      e.preventDefault();
+      if (pathname !== href) {
+        router.push(href);
+      }
+      return;
+    }
+
     if (user.role === 'cashier' && href === '/pos' && !isCashRegisterOpen) {
       e.preventDefault();
       toast({
@@ -191,7 +217,7 @@ export function AppSidebar({ collapsible }: { collapsible?: React.ComponentProps
   const homeHref = user.role === 'dispatcher' || user.role === 'cashier' ? '/pos' : '/dashboard';
 
   return (
-    <Sidebar className="border-r bg-sidebar/95" collapsible={collapsible} variant="sidebar">
+    <Sidebar className="w-64 shrink-0 border-r bg-sidebar/95 md:flex-none" collapsible={collapsible} variant="sidebar">
       <SidebarHeader className="border-b p-4">
         <Link
           to={homeHref}

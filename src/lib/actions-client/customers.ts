@@ -32,6 +32,10 @@ export async function getCustomerByFullName(...args: any[]): Promise<any> {
   return callAction('customers', 'getCustomerByFullName', args);
 }
 
+export async function getCustomerForPOSCheckout(...args: any[]): Promise<any> {
+  return callAction('customers', 'getCustomerForPOSCheckout', args);
+}
+
 export async function getAllCustomers(...args: any[]): Promise<any> {
   return callAction('customers', 'getAllCustomers', args);
 }

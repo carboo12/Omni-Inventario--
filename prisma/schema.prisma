@@ -38,13 +38,113 @@ model CashOutflow {
   receiptNumber       Int                 @unique(map: "CashOutflow_receiptNumber_key") @default(autoincrement())
   createdAt           DateTime            @default(now())
   cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "CashOutflow_sessionId_fkey")
+  employeeLoan        EmployeeLoan?
 
   @@index([sessionId], map: "CashOutflow_sessionId_fkey")
   @@map("cashoutflow")
 }
 
+model Employee {
+  id           String               @id @default(uuid())
+  fullName     String
+  phone        String?
+  dailySalary  Decimal              @db.Decimal(12, 2)
+  payFrequency EmployeePayFrequency
+  isActive     Boolean              @default(true)
+  loans        EmployeeLoan[]
+  absences     EmployeeAbsence[]
+  payroll      PayrollRecord[]
+
+  @@index([fullName])
+  @@map("employee")
+}
+
+model EmployeeLoan {
+  id               String                @id @default(uuid())
+  employeeId       String
+  amount           Decimal               @db.Decimal(12, 2)
+  remainingBalance Decimal?              @db.Decimal(12, 2)
+  description      String
+  status           EmployeeLoanStatus    @default(PENDING)
+  createdAt        DateTime              @default(now())
+  cashMovementId   String?               @unique
+  employee         Employee              @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  cashMovement     CashOutflow?          @relation(fields: [cashMovementId], references: [id], onDelete: SetNull)
+  payments         EmployeeLoanPayment[]
+
+  @@index([employeeId, status])
+  @@map("employeeloan")
+}
+
+model EmployeeAbsence {
+  id         String   @id @default(uuid())
+  employeeId String
+  date       DateTime
+  reason     String?
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, date])
+  @@map("employeeabsence")
+}
+
+model PayrollRecord {
+  id                String                @id @default(uuid())
+  employeeId        String
+  startDate         DateTime
+  endDate           DateTime
+  workdays          Int                   @default(6)
+  grossSalary       Decimal               @db.Decimal(12, 2)
+  absenceDeductions Decimal               @db.Decimal(12, 2)
+  loanDeductions    Decimal               @db.Decimal(12, 2)
+  netSalary         Decimal               @db.Decimal(12, 2)
+  createdAt         DateTime              @default(now())
+  employee          Employee              @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  loanPayments      EmployeeLoanPayment[]
+
+  @@index([employeeId, startDate, endDate])
+  @@map("payrollrecord")
+}
+
+model EmployeeLoanPayment {
+  id              String                  @id
+  loanId          String
+  payrollRecordId String?
+  amount          Decimal                 @db.Decimal(12, 2)
+  kind            EmployeeLoanPaymentKind
+  reference       String?
+  createdAt       DateTime                @default(now())
+  loan            EmployeeLoan            @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  payrollRecord   PayrollRecord?          @relation(fields: [payrollRecordId], references: [id], onDelete: SetNull)
+
+  @@index([loanId, createdAt])
+  @@index([payrollRecordId])
+  @@map("employeeloanpayment")
+}
+
+enum EmployeePayFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+
+  @@map("employee_pay_frequency")
+}
+
+enum EmployeeLoanStatus {
+  PENDING
+  DEDUCTED
+
+  @@map("employee_loan_status")
+}
+
+enum EmployeeLoanPaymentKind {
+  PAYROLL
+  CASH
+
+  @@map("employee_loan_payment_kind")
+}
+
 model CashRegisterSession {
-  id               String           @id
+  id               String            @id
   cashierId        String
   cashierName      String
   openingTime      String
@@ -52,23 +152,23 @@ model CashRegisterSession {
   initialAmount    Float
   finalAmount      Float?
   totalSales       Float?
-  salesCash        Float            @default(0)
-  salesCard        Float            @default(0)
-  salesUSD         Float            @default(0)
+  salesCash        Float             @default(0)
+  salesCard        Float             @default(0)
+  salesUSD         Float             @default(0)
   actualCash       Float?
   actualUSD        Float?
   difference       Float?
   differenceUSD    Float?
   status           String
-  totalReturns     Float            @default(0)
-  salesServices    Float            @default(0)
-  salesAbonos      Float            @default(0)
+  totalReturns     Float             @default(0)
+  salesServices    Float             @default(0)
+  salesAbonos      Float             @default(0)
   /// Abonos de crédito recibidos por tarjeta/transferencia (NO entran al efectivo esperado).
-  salesAbonosCard  Float            @default(0)
-  salesCredit      Float            @default(0)
-  initialAmountUSD Float            @default(0)
+  salesAbonosCard  Float             @default(0)
+  salesCredit      Float             @default(0)
+  initialAmountUSD Float             @default(0)
   cashOutflow      CashOutflow[]
-  user             User             @relation(fields: [cashierId], references: [id], map: "CashRegisterSession_cashierId_fkey")
+  user             User              @relation(fields: [cashierId], references: [id], map: "CashRegisterSession_cashierId_fkey")
   creditNote       CreditNote[]
   jewelryService   JewelryService[]
   salesInvoice     SalesInvoice[]
@@ -98,7 +198,7 @@ model Category {
 model CreditNote {
   id                  String              @id
   noteNumber          Int                 @unique(map: "CreditNote_noteNumber_key") @default(autoincrement())
-  invoiceId           String              @unique(map: "CreditNote_invoiceId_key")
+  invoiceId           String
   date                DateTime            @default(now())
   reason              String
   totalAmount         Float
@@ -107,10 +207,29 @@ model CreditNote {
   salesInvoice        SalesInvoice        @relation(fields: [invoiceId], references: [id], map: "CreditNote_invoiceId_fkey")
   cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "CreditNote_sessionId_fkey")
   user                User                @relation(fields: [userId], references: [id], map: "CreditNote_userId_fkey")
+  items               ReturnItem[]
 
   @@index([sessionId], map: "CreditNote_sessionId_fkey")
   @@index([userId], map: "CreditNote_userId_fkey")
+  @@index([invoiceId], map: "CreditNote_invoiceId_idx")
   @@map("creditnote")
+}
+
+model ReturnItem {
+  id            String     @id
+  returnId      String
+  invoiceItemId String
+  productId     String
+  productName   String
+  quantity      Int
+  unitPrice     Float
+  totalPrice    Float
+  disposition   String     @default("RESTOCK")
+  creditNote    CreditNote @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+  @@index([invoiceItemId])
+  @@map("returnitem")
 }
 
 model CreditPayment {
@@ -134,16 +253,16 @@ model CreditPayment {
 }
 
 model CreditInstallment {
-  id                String                @id
+  id                String                  @id
   saleId            String
   customerId        String
   installmentNumber Int
   dueDate           DateTime
   amount            Float
   status            CreditInstallmentStatus @default(PENDING)
-  createdAt         DateTime              @default(now())
-  salesInvoice      SalesInvoice          @relation(fields: [saleId], references: [id], map: "CreditInstallment_saleId_fkey")
-  customer          Customer              @relation(fields: [customerId], references: [id], map: "CreditInstallment_customerId_fkey")
+  createdAt         DateTime                @default(now())
+  salesInvoice      SalesInvoice            @relation(fields: [saleId], references: [id], map: "CreditInstallment_saleId_fkey")
+  customer          Customer                @relation(fields: [customerId], references: [id], map: "CreditInstallment_customerId_fkey")
 
   @@index([saleId], map: "CreditInstallment_saleId_fkey")
   @@index([customerId], map: "CreditInstallment_customerId_fkey")
@@ -160,29 +279,29 @@ enum CreditInstallmentStatus {
 }
 
 model Customer {
-  id             String              @id
-  fullName       String
-  documentId     String?
-  phone          String?
-  address        String?
-  createdAt      DateTime            @default(now())
-  creditLimit    Float               @default(0)
-  currentBalance Float               @default(0)
-  hasCredit      Boolean             @default(false)
-  interestRate   Float               @default(0)
+  id                String              @id
+  fullName          String
+  documentId        String?
+  phone             String?
+  address           String?
+  createdAt         DateTime            @default(now())
+  creditLimit       Float               @default(0)
+  currentBalance    Float               @default(0)
+  hasCredit         Boolean             @default(false)
+  interestRate      Float               @default(0)
   /// Plazo de crédito propio del cliente (días). Si es null se aplica el valor
   /// global de SystemSettings.defaultCreditDays.
-  creditDays     Int?
-  priceLevel     Int                 @default(1)
-  creditPayment  CreditPayment[]
-  goldPurchase   GoldPurchase[]
-  layaway        Layaway[]
-  repairOrder    RepairOrder[]
-  salesInvoice   SalesInvoice[]
-  customerOrder  CustomerOrder[]
-  routeStops     DeliveryRouteStop[]
+  creditDays        Int?
+  priceLevel        Int                 @default(1)
+  creditPayment     CreditPayment[]
+  goldPurchase      GoldPurchase[]
+  layaway           Layaway[]
+  repairOrder       RepairOrder[]
+  salesInvoice      SalesInvoice[]
+  customerOrder     CustomerOrder[]
+  routeStops        DeliveryRouteStop[]
   creditInstallment CreditInstallment[]
-  quote          Quote[]
+  quote             Quote[]
 
   @@map("customer")
 }
@@ -315,6 +434,10 @@ model InventoryMovement {
   newQuantity      Float
   userId           String
   inventoryType    String
+  /// Lote consumido o recibido (se registra para movimientos de Farmacia).
+  batchNumber      String?
+  /// Fecha ISO yyyy-MM-dd del lote asociado (se registra para Farmacia).
+  expiryDate       String?
   user             User   @relation(fields: [userId], references: [id], map: "InventoryMovement_userId_fkey")
 
   @@index([userId], map: "InventoryMovement_userId_fkey")
@@ -398,58 +521,58 @@ model Notification {
 }
 
 model Product {
-  id                String              @id
-  name              String
-  type              ProductType         @default(STANDARD)
-  priceNIO          Float
-  price2            Float?
-  price3            Float?
-  price4            Float?
-  costPriceNIO      Float?
-  category          String
-  inventoryType     String
-  unitOfMeasure     String
-  minStock          Int?
-  allowNegativeStock Boolean            @default(false)
-  barcode           String?
-  imageUrl          String?
-  imageHint         String?
-  brand             String?
-  size              String?
-  color             String?
-  gender            String?
-  categoryId        String?
-  originalPrice     Float               @default(0)
-  purchaseCurrency  String              @default("NIO")
-  hasVariants       Boolean             @default(false)
-  hasBoxOption      Boolean             @default(false)
-  unitsPerBox       Int?                @default(1)
-  boxPrice          Float?
-isFractional      Boolean             @default(false)
-    trackInventory    Boolean             @default(true)
-    bulkUnit          String?
-    baseUnit          String?
-    /// Presentación 1 (Venta Fraccionada / Al Mayor): nombre y factor de equivalencia.
-    unitsPerBulk      Float?
-    /// Presentación 2 (opcional).
-    bulkUnit2         String?
-    unitsPerBulk2     Float?
-    /// Presentación 3 (opcional).
-    bulkUnit3         String?
-    unitsPerBulk3     Float?
-    /// Descripciones adicionales del producto (opcionales).
-    hasExtraDetails   Boolean             @default(false)
-    description2      String?
-    description3      String?
-  inventoryItem     InventoryItem[]
-  categoryRelation  Category?           @relation(fields: [categoryId], references: [id], map: "Product_categoryId_fkey")
-  purchaseOrderItem PurchaseOrderItem[]
-  productVariant    ProductVariant[]
-  customerOrderItem CustomerOrderItem[]
+  id                  String                @id
+  name                String
+  type                ProductType           @default(STANDARD)
+  priceNIO            Float
+  price2              Float?
+  price3              Float?
+  price4              Float?
+  costPriceNIO        Float?
+  category            String
+  inventoryType       String
+  unitOfMeasure       String
+  minStock            Int?
+  allowNegativeStock  Boolean               @default(false)
+  barcode             String?
+  imageUrl            String?
+  imageHint           String?
+  brand               String?
+  size                String?
+  color               String?
+  gender              String?
+  categoryId          String?
+  originalPrice       Float                 @default(0)
+  purchaseCurrency    String                @default("NIO")
+  hasVariants         Boolean               @default(false)
+  hasBoxOption        Boolean               @default(false)
+  unitsPerBox         Int?                  @default(1)
+  boxPrice            Float?
+  isFractional        Boolean               @default(false)
+  trackInventory      Boolean               @default(true)
+  bulkUnit            String?
+  baseUnit            String?
+  /// Presentación 1 (Venta Fraccionada / Al Mayor): nombre y factor de equivalencia.
+  unitsPerBulk        Float?
+  /// Presentación 2 (opcional).
+  bulkUnit2           String?
+  unitsPerBulk2       Float?
+  /// Presentación 3 (opcional).
+  bulkUnit3           String?
+  unitsPerBulk3       Float?
+  /// Descripciones adicionales del producto (opcionales).
+  hasExtraDetails     Boolean               @default(false)
+  description2        String?
+  description3        String?
+  inventoryItem       InventoryItem[]
+  categoryRelation    Category?             @relation(fields: [categoryId], references: [id], map: "Product_categoryId_fkey")
+  purchaseOrderItem   PurchaseOrderItem[]
+  productVariant      ProductVariant[]
+  customerOrderItem   CustomerOrderItem[]
   purchaseInvoiceItem PurchaseInvoiceItem[]
   quoteItem           QuoteItem[]
-  recipeItem          RecipeItem[]        @relation("RecipeProduct")
-  recipeIngredients   RecipeItem[]        @relation("RecipeIngredient")
+  recipeItem          RecipeItem[]          @relation("RecipeProduct")
+  recipeIngredients   RecipeItem[]          @relation("RecipeIngredient")
 
   @@index([categoryId], map: "Product_categoryId_fkey")
   @@map("product")
@@ -479,23 +602,23 @@ enum ProductType {
 }
 
 model PurchaseInvoice {
-  id            String   @id
-  invoiceNumber String
-  supplierId    String
-  supplierName  String
-  date          String
-  dueDate       String
-  totalAmount   Float
-  paidAmount    Float
-  status        String
-  details       String?
-  paymentType   String   @default("CASH")
-  issueDate     String?
-  subtotal      Float?
-  tax           Float?
-  discount      Float?
-  supplier      Supplier              @relation(fields: [supplierId], references: [id], map: "PurchaseInvoice_supplierId_fkey")
-  items         PurchaseInvoiceItem[]
+  id              String                @id
+  invoiceNumber   String
+  supplierId      String
+  supplierName    String
+  date            String
+  dueDate         String
+  totalAmount     Float
+  paidAmount      Float
+  status          String
+  details         String?
+  paymentType     String                @default("CASH")
+  issueDate       String?
+  subtotal        Float?
+  tax             Float?
+  discount        Float?
+  supplier        Supplier              @relation(fields: [supplierId], references: [id], map: "PurchaseInvoice_supplierId_fkey")
+  items           PurchaseInvoiceItem[]
   accountsPayable AccountsPayable[]
   supplierPayment SupplierPayment[]
 
@@ -522,15 +645,15 @@ model PurchaseInvoiceItem {
 }
 
 model AccountsPayable {
-  id         String   @id
-  invoiceId  String
-  supplierId String
-  amount     Float
-  paidAmount Float    @default(0)
-  status     String   @default("PENDING")
-  dueDate    String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String          @id
+  invoiceId       String
+  supplierId      String
+  amount          Float
+  paidAmount      Float           @default(0)
+  status          String          @default("PENDING")
+  dueDate         String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   purchaseInvoice PurchaseInvoice @relation(fields: [invoiceId], references: [id], map: "AccountsPayable_invoiceId_fkey")
   supplier        Supplier        @relation(fields: [supplierId], references: [id], map: "AccountsPayable_supplierId_fkey")
 
@@ -623,7 +746,7 @@ model SalesInvoice {
   /// Fecha de vencimiento de la factura. Solo se calcula en ventas al crédito,
   /// sumando el plazo efectivo del cliente (creditDays propio o el global).
   dueDate             DateTime?
-  creditNote          CreditNote?
+  creditNote          CreditNote[]
   customer            Customer?           @relation(fields: [customerId], references: [id], map: "SalesInvoice_customerId_fkey")
   cashRegisterSession CashRegisterSession @relation(fields: [sessionId], references: [id], map: "SalesInvoice_sessionId_fkey")
   user                User                @relation(fields: [userId], references: [id], map: "SalesInvoice_userId_fkey")
@@ -643,27 +766,27 @@ model SalesInvoice {
 }
 
 model SalesInvoiceItem {
-  id             String          @id
-  invoiceId      String
-  productId      String
-  productName    String
-  quantity       Int
-  unitPrice      Float
-  totalPrice     Float
-  variantId      String?
-  priceLevel     Int             @default(1)
+  id                 String          @id
+  invoiceId          String
+  productId          String
+  productName        String
+  quantity           Int
+  unitPrice          Float
+  totalPrice         Float
+  variantId          String?
+  priceLevel         Int             @default(1)
   /// Nombre de la presentación vendida (ej: Ristra, Caja) si aplica.
-  presentationName String?
+  presentationName   String?
   /// Factor de conversión a la unidad base (presentación dinámica o legado caja).
-  presentationFactor Float        @default(1)
+  presentationFactor Float           @default(1)
   /// Unidad base del producto (para equivalencia en el ticket).
-  baseUnit        String?
+  baseUnit           String?
   /// Unidad de venta en bulto / caja (legado).
-  bulkUnit        String?
+  bulkUnit           String?
   /// Venta bajo encargo (entrega pendiente) marcada al momento del cobro.
-  isEncargo       Boolean         @default(false)
-  salesInvoice   SalesInvoice    @relation(fields: [invoiceId], references: [id], map: "SalesInvoiceItem_invoiceId_fkey")
-  productVariant ProductVariant? @relation(fields: [variantId], references: [id], map: "SalesInvoiceItem_variantId_fkey")
+  isEncargo          Boolean         @default(false)
+  salesInvoice       SalesInvoice    @relation(fields: [invoiceId], references: [id], map: "SalesInvoiceItem_invoiceId_fkey")
+  productVariant     ProductVariant? @relation(fields: [variantId], references: [id], map: "SalesInvoiceItem_variantId_fkey")
 
   @@index([invoiceId], map: "SalesInvoiceItem_invoiceId_fkey")
   @@index([variantId], map: "SalesInvoiceItem_variantId_fkey")
@@ -671,24 +794,24 @@ model SalesInvoiceItem {
 }
 
 model Quote {
-  id             String      @id
-  quoteNumber    Int         @unique @default(autoincrement())
-  customerName   String      @default("Cliente General")
-  customerPhone  String?
-  expirationDays Int         @default(30)
-  subtotal       Float
-  tax            Float       @default(0)
-  total          Float
-  status         String      @default("PENDING")
-  notes          String?     @db.Text
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  userId         String?
+  id                 String      @id
+  quoteNumber        Int         @unique @default(autoincrement())
+  customerName       String      @default("Cliente General")
+  customerPhone      String?
+  expirationDays     Int         @default(30)
+  subtotal           Float
+  tax                Float       @default(0)
+  total              Float
+  status             String      @default("PENDING")
+  notes              String?     @db.Text
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  userId             String?
   convertedInvoiceId String?
-  clientId       String?
-  user           User?       @relation(fields: [userId], references: [id])
-  customer       Customer?   @relation(fields: [clientId], references: [id])
-  items          QuoteItem[]
+  clientId           String?
+  user               User?       @relation(fields: [userId], references: [id])
+  customer           Customer?   @relation(fields: [clientId], references: [id])
+  items              QuoteItem[]
 
   @@index([userId])
   @@index([clientId])
@@ -697,17 +820,17 @@ model Quote {
 }
 
 model QuoteItem {
-  id             String   @id
-  quoteId        String
-  productId      String?
-  productName    String
-  quantity       Int
-  unitPrice      Float
-  totalPrice     Float
-  variantId      String?
-  priceLevel     Int      @default(1)
-  quote          Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product        Product? @relation(fields: [productId], references: [id])
+  id          String   @id
+  quoteId     String
+  productId   String?
+  productName String
+  quantity    Int
+  unitPrice   Float
+  totalPrice  Float
+  variantId   String?
+  priceLevel  Int      @default(1)
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id])
 
   @@index([quoteId])
   @@map("quote_item")
@@ -733,19 +856,19 @@ model Supplier {
 /// Historial de pagos/abonos a facturas de proveedor (Cuentas por Pagar) para
 /// trazabilidad. Los pagos en efectivo además generan un CashOutflow en caja.
 model SupplierPayment {
-  id            String              @id
-  invoiceId     String
-  supplierId    String
-  amount        Float
-  paymentMethod String
-  userId        String
-  sessionId     String?
-  notes         String?
-  createdAt     DateTime            @default(now())
-  purchaseInvoice PurchaseInvoice   @relation(fields: [invoiceId], references: [id], map: "SupplierPayment_invoiceId_fkey")
-  supplier      Supplier            @relation(fields: [supplierId], references: [id], map: "SupplierPayment_supplierId_fkey")
+  id                  String               @id
+  invoiceId           String
+  supplierId          String
+  amount              Float
+  paymentMethod       String
+  userId              String
+  sessionId           String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  purchaseInvoice     PurchaseInvoice      @relation(fields: [invoiceId], references: [id], map: "SupplierPayment_invoiceId_fkey")
+  supplier            Supplier             @relation(fields: [supplierId], references: [id], map: "SupplierPayment_supplierId_fkey")
   cashRegisterSession CashRegisterSession? @relation(fields: [sessionId], references: [id], map: "SupplierPayment_sessionId_fkey", onDelete: SetNull)
-  user          User                @relation(fields: [userId], references: [id], map: "SupplierPayment_userId_fkey")
+  user                User                 @relation(fields: [userId], references: [id], map: "SupplierPayment_userId_fkey")
 
   @@index([invoiceId], map: "SupplierPayment_invoiceId_fkey")
   @@index([supplierId], map: "SupplierPayment_supplierId_fkey")
@@ -795,26 +918,26 @@ model SystemSettings {
   invoiceAlertDays          Int          @default(5)
   importProductsInDollars   Boolean      @default(false)
   creditFinancingEnabled    Boolean      @default(false)
-  
-  allowCreditSales          Boolean      @default(true)
+
+  allowCreditSales         Boolean @default(true)
   /// Días límite de crédito por defecto para las ventas al crédito (CxC).
   /// Un cliente con Customer.creditDays propio prevalece sobre este valor.
-  defaultCreditDays         Int          @default(30)
-  enableRecipes             Boolean      @default(false)
-  enableBatchAndExpiration  Boolean      @default(false)
+  defaultCreditDays        Int     @default(30)
+  enableRecipes            Boolean @default(false)
+  enableBatchAndExpiration Boolean @default(false)
   /// Habilita el flujo de Comandas (pedidos en espera del despachador hacia
   /// el cajero) y la impresión en cocina/barra. Debe coincidir con el valor
   /// por defecto del cliente (use-settings.tsx, init-data.ts): si el default de
   /// la BD es false, un INSERT nuevo deja las comandas desactivadas y el botón
   /// de Comandas desaparece aunque la app lo dé por habilitado.
-  enableKitchenPrinter      Boolean      @default(true)
+  enableKitchenPrinter     Boolean @default(true)
 
-  enableMultiCurrency       Boolean      @default(true)
-  enableWholesalePrices     Boolean      @default(false)
-  enableAccountsPayable     Boolean      @default(true)
-  enablePettyCashExpenses   Boolean      @default(true)
-  enableSerialNumbers       Boolean      @default(false)
-  enableDeliveryRoute       Boolean      @default(true)
+  enableMultiCurrency     Boolean @default(true)
+  enableWholesalePrices   Boolean @default(false)
+  enableAccountsPayable   Boolean @default(true)
+  enablePettyCashExpenses Boolean @default(true)
+  enableSerialNumbers     Boolean @default(false)
+  enableDeliveryRoute     Boolean @default(true)
 
   @@map("systemsettings")
 }
@@ -1119,28 +1242,28 @@ enum QuoteStatus {
 /// El pedido se emite PENDIENTE_LIQUIDACION (el dinero viaja con el rutero, no
 /// entra a caja) y se cierra en la estación de liquidación del cajero.
 model RouteSettlement {
-  id                String   @id
+  id              String       @id
   /// Factura del pedido liquidado. Una sola liquidación por pedido.
-  invoiceId         String   @unique
+  invoiceId       String       @unique
   /// Caja que recibió el dinero: el día en que el cajero liquida la entrega.
-  sessionId         String
+  sessionId       String
   /// Cajero que procesó el dinero y marca de tiempo exacta del cierre.
-  userId            String
-  userName          String
+  userId          String
+  userName        String
   /// ENTREGA_COMPLETA | DEVOLUCION_PARCIAL | DEVOLUCION_TOTAL
-  outcome           String
+  outcome         String
   /// Forma de pago que usó el cliente final al momento de la entrega.
-  paymentMethod     String
+  paymentMethod   String
   /// Neto realmente cobrado por el rutero (0 en devolución total).
-  collectedAmount   Float    @default(0)
+  collectedAmount Float        @default(0)
   /// Valor de la mercancía devuelta (nota de crédito / ajuste).
-  returnedAmount    Float    @default(0)
+  returnedAmount  Float        @default(0)
   /// Unidades físicas devueltas a bodega.
-  returnedUnits     Int      @default(0)
-  reason            String?
-  notes             String?
-  settledAt         DateTime @default(now())
-  salesInvoice      SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, map: "RouteSettlement_invoiceId_fkey")
+  returnedUnits   Int          @default(0)
+  reason          String?
+  notes           String?
+  settledAt       DateTime     @default(now())
+  salesInvoice    SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, map: "RouteSettlement_invoiceId_fkey")
 
   @@index([invoiceId], map: "RouteSettlement_invoiceId_fkey")
   @@index([sessionId], map: "RouteSettlement_sessionId_fkey")
@@ -1151,7 +1274,7 @@ model RouteSettlement {
 /// Detalle de las unidades devueltas en una liquidación de ruta. Permite
 /// reconstruir qué productos volvió a bodega y por qué monto.
 model RouteReturnItem {
-  id            String   @id
+  id            String       @id
   invoiceId     String
   invoiceItemId String
   productId     String
@@ -1159,7 +1282,7 @@ model RouteReturnItem {
   quantity      Int
   unitPrice     Float
   totalPrice    Float
-  createdAt     DateTime @default(now())
+  createdAt     DateTime     @default(now())
   salesInvoice  SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade, map: "RouteReturnItem_invoiceId_fkey")
 
   @@index([invoiceId], map: "RouteReturnItem_invoiceId_fkey")
@@ -1167,32 +1290,32 @@ model RouteReturnItem {
 }
 
 model ReceiptSettings {
-  id                    String   @id @default(uuid())
-  companyId             String?  @unique
-  
+  id        String  @id @default(uuid())
+  companyId String? @unique
+
   // Tipografía y márgenes
-  fontFamily            String   @default("monospace")
-  ticketWidth           String   @default("80mm")
-  lineHeight            Float    @default(1.2)
-  paddingX              Int      @default(0)
-  
+  fontFamily  String @default("monospace")
+  ticketWidth String @default("80mm")
+  lineHeight  Float  @default(1.2)
+  paddingX    Int    @default(0)
+
   // Tamaños de Fuente (px)
-  fontSizeTitle         Int      @default(16)
-  fontSizeHeader        Int      @default(11)
-  fontSizeBody          Int      @default(11)
-  fontSizePresentation  Int      @default(9)
-  fontSizeTotals        Int      @default(12)
-  fontSizeFooter        Int      @default(10)
-  
+  fontSizeTitle        Int @default(16)
+  fontSizeHeader       Int @default(11)
+  fontSizeBody         Int @default(11)
+  fontSizePresentation Int @default(9)
+  fontSizeTotals       Int @default(12)
+  fontSizeFooter       Int @default(10)
+
   // Disposición / Layout
-  presentationLayout    String   @default("BELOW_NAME")
-  presentationCustomFormat String @default("{cantidad} {presentacion} de: {nombre}")
-  showLogo              Boolean  @default(true)
-  showClientInfo        Boolean  @default(true)
-  showEquivalenceUsd    Boolean  @default(true)
-  footerMessage         String?  @default("¡Gracias por su compra!")
-  
-  updatedAt             DateTime @updatedAt
+  presentationLayout       String  @default("BELOW_NAME")
+  presentationCustomFormat String  @default("{cantidad} {presentacion} de: {nombre}")
+  showLogo                 Boolean @default(true)
+  showClientInfo           Boolean @default(true)
+  showEquivalenceUsd       Boolean @default(true)
+  footerMessage            String? @default("¡Gracias por su compra!")
+
+  updatedAt DateTime @updatedAt
 
   @@map("receipt_settings")
 }

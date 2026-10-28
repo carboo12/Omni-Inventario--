@@ -1,130 +1,231 @@
 @echo off
-setlocal
 cd /d "%~dp0"
-title Omni Inventario + - Despliegue a Produccion
+setlocal EnableExtensions
+
+title OMNI INVENTARIO + :: Despliegue de Produccion
 
 echo ========================================================
-echo   OMNI INVENTARIO +  -  DESPLIEGUE AUTOMATICO
-echo   Arquitectura: Vite SPA + Hono API Server
+echo   DESPLIEGUE DE PRODUCCION - OMNI INVENTARIO +
+echo   Vite SPA + Hono API + Prisma + PM2
 echo ========================================================
 echo.
 
-REM 1. Install Dependencies
-echo [1/6] Instalando dependencias completas...
-call npm install
-if %errorlevel% neq 0 (
-    echo Error al instalar dependencias.
-    pause
-    exit /b %errorlevel%
-)
+set "OMNI_WAS_RUNNING="
 
-REM 2. Generate Prisma Client + Sync DB schema
-echo.
-echo [2/6] Deteniendo app para liberar el query_engine DLL (evita EPERM)...
-call node scripts\prisma-unlock.mjs
-if %errorlevel% neq 0 (
-    echo AVISO: no se pudo liberar el lock del DLL. Se continua de todos modos.
-)
-
-echo.
-echo [2/6] Sincronizando Base de Datos (Prisma)...
-REM El script seguro repara migraciones fallidas (P3018/1060) y, si el deploy
-REM sigue siendo irrecuperable, cae a "prisma db push --skip-generate" y continua.
-call node scripts\prisma-safe-deploy.mjs
-if %errorlevel% neq 0 (
-    echo AVISO: la base de datos no quedo sincronizada. Se continua con el build.
-    echo Verifique que MySQL esta corriendo y que el .env es correcto.
-)
-echo Paso de base de datos finalizado.
-
-REM 3. Build Application
-echo.
-echo [3/6] Compilando aplicacion (Build)...
-echo Esto puede tardar unos minutos...
-call npm run build
-if %errorlevel% neq 0 (
-    echo Error durante el build. Limpiando dist/ y dist-server/ y reintentando...
-    if exist dist        rmdir /s /q dist
-    if exist dist-server rmdir /s /q dist-server
-    call npm run build
-    if %errorlevel% neq 0 (
-        echo Error fatal en el build. Revise los logs.
-        pause
-        exit /b %errorlevel%
+:: Detectar PM2 (comando global o npx)
+set "PM2_CMD=pm2"
+where pm2 >nul 2>&1
+if errorlevel 1 (
+    where npx >nul 2>&1
+    if not errorlevel 1 (
+        set "PM2_CMD=npx pm2"
     )
 )
 
-REM 4. Check/Install PM2
-echo.
-echo [4/6] Verificando Gestor de Procesos (PM2)...
-call pm2 -v >nul 2>&1
-if %errorlevel% neq 0 (
-    echo PM2 no encontrado. Instalando PM2 globalmente...
-    call npm install -g pm2
-) else (
-    echo PM2 ya esta instalado.
+:: 1. Verificaciones de herramientas base
+where node >nul 2>&1
+if errorlevel 1 goto :missing_node
+
+where npm >nul 2>&1
+if errorlevel 1 goto :missing_npm
+
+where pm2 >nul 2>&1
+if errorlevel 1 (
+    where npx >nul 2>&1
+    if errorlevel 1 goto :missing_pm2
 )
 
-REM 5. Start/Reload Application
-echo.
-echo [5/6] Iniciando/Recargando aplicacion...
-
-call pm2 describe omni-pos >nul 2>&1
+:: 2. Paso de Git Opcional y Seguro (resiliente a despliegues manuales / sin Git)
+echo [1/8] Verificando actualizacion de codigo fuente...
+where git >nul 2>&1
 if %errorlevel% equ 0 (
-    echo La aplicacion ya esta corriendo. Recargando con config de produccion...
-    call pm2 restart ecosystem.config.cjs --env production
+    git rev-parse --is-inside-work-tree >nul 2>&1
+    if not errorlevel 1 (
+        echo [LOG] Actualizando codigo fuente desde Git...
+        call git pull origin main
+        if errorlevel 1 (
+            echo [ADVERTENCIA] 'git pull origin main' reporto advertencias o cambios locales.
+            echo Continuando despliegue con los archivos locales existentes...
+        )
+    ) else (
+        echo [ADVERTENCIA] La carpeta no es un repositorio Git activo.
+        echo Continuando despliegue con los archivos locales copiados...
+    )
 ) else (
-    echo Iniciando aplicacion por primera vez...
-    call pm2 start ecosystem.config.cjs --env production
-)
-
-call pm2 save --force
-
-REM 6. Configure Windows Autostart for current installation path
-echo.
-echo [6/6] Configurando arranque automatico de Windows...
-set "APP_DIR=%CD%"
-set "STARTUP_PS=%APP_DIR%\iniciar-app.ps1"
-set "TASK_NAME=omni-pos-Autostart"
-
-(
-echo $AppName = "omni-pos"
-echo $AppDir = "%APP_DIR%"
-echo $LogFile = Join-Path $AppDir "autostart.log"
-echo function Write-Log { param([string]$Msg^) $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; Add-Content -Path $LogFile -Value "[$timestamp] $Msg" }
-echo Write-Log "=== AUTOSTART INICIADO ==="
-echo Start-Sleep -Seconds 30
-echo $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine"^) + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User"^)
-echo Set-Location $AppDir
-echo $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
-echo if (-not $pm2^) { Write-Log "PM2 no encontrado. Instalando..."; npm install -g pm2 }
-echo $list = pm2 jlist 2^>$null ^| ConvertFrom-Json -ErrorAction SilentlyContinue
-echo $app = $list ^| Where-Object { $_.name -eq $AppName }
-echo if (-not $app^) { Write-Log "App no encontrada. Iniciando..."; pm2 start ecosystem.config.cjs } elseif ($app.pm2_env.status -ne "online"^) { Write-Log "App encontrada apagada. Reiniciando..."; pm2 restart $AppName } else { Write-Log "App online." }
-echo pm2 save --force
-echo Write-Log "=== AUTOSTART FINALIZADO ==="
-) > "%STARTUP_PS%"
-
-schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""%STARTUP_PS%""" /F >nul 2>&1
-if %errorlevel% neq 0 (
-    echo No se pudo crear la tarea con schtasks. Intentando carpeta de Inicio...
-    set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-    (
-    echo @echo off
-    echo powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%STARTUP_PS%"
-    ) > "%STARTUP_DIR%\omni-pos-Autostart.bat"
-    echo Acceso directo de arranque creado en carpeta de Inicio.
-) else (
-    echo Tarea programada '%TASK_NAME%' creada/actualizada.
+    echo [ADVERTENCIA] Git no esta disponible en el PATH. Omitiendo git pull y usando archivos locales.
 )
 
 echo.
-echo ========================================================
-echo   DESPLIEGUE COMPLETADO EXITOSAMENTE
-echo ========================================================
+echo [2/8] Deteniendo omni-pos en PM2 para liberar bloqueos de archivos en Windows...
+call %PM2_CMD% describe omni-pos >nul 2>&1
+if not errorlevel 1 (
+    set "OMNI_WAS_RUNNING=1"
+    call %PM2_CMD% stop omni-pos
+    if errorlevel 1 (
+        echo [ADVERTENCIA] No se pudo detener omni-pos limpiamente, continuando...
+    )
+)
+
 echo.
-echo La aplicacion esta disponible en:
-echo   - Local:  http://localhost:9003
-echo   - Red:    http://%COMPUTERNAME%:9003
+echo [3/8] Verificando dependencias de Node.js (modo optimizado)...
+call npm install --prefer-offline --no-audit --no-fund
+if errorlevel 1 (
+    echo [ADVERTENCIA] Reintentando instalacion con npm ci...
+    call npm ci --prefer-offline --no-audit --no-fund
+    if errorlevel 1 goto :deploy_failed
+)
+
+echo.
+echo [4/8] Generando cliente Prisma y sincronizando esquema de base de datos...
+:: Siempre generar el cliente Prisma primero para asegurar @prisma/client en node_modules
+if exist "node_modules\.bin\prisma.cmd" (
+    call "node_modules\.bin\prisma.cmd" generate
+) else (
+    call npx prisma generate
+)
+if errorlevel 1 (
+    echo [ERROR CRITICO] Fallo la generacion local del cliente Prisma.
+    goto :deploy_failed
+)
+
+:: Sincronizar estructura de base de datos
+if exist "node_modules\.bin\prisma.cmd" (
+    call "node_modules\.bin\prisma.cmd" db push --accept-data-loss
+) else (
+    call npx prisma db push --accept-data-loss
+)
+if errorlevel 1 goto :db_failed
+
+echo.
+echo [5/8] Saneando base de datos (reconciliacion de credito)...
+call npm run db:sanitize-credit
+if errorlevel 1 (
+    echo [ADVERTENCIA] El saneamiento de credito reporto advertencias. Continuando...
+)
+
+echo.
+echo [6/8] Compilando frontend Vite y servidor Hono...
+set "NODE_ENV=production"
+call npm run build
+if errorlevel 1 goto :deploy_failed
+if not exist "dist\index.html" goto :missing_frontend_build
+if not exist "dist-server\index.mjs" goto :missing_backend_build
+
+echo.
+echo [7/8] Iniciando o reiniciando servicios en PM2...
+call %PM2_CMD% restart omni-pos --update-env || call %PM2_CMD% startOrRestart ecosystem.config.cjs --env production --update-env
+if errorlevel 1 goto :deploy_failed
+call %PM2_CMD% describe omni-pos >nul 2>&1
+if errorlevel 1 goto :deploy_failed
+call %PM2_CMD% save --force
+if errorlevel 1 (
+    echo [ADVERTENCIA] No se pudo guardar el estado de PM2.
+)
+
+echo.
+echo [8/8] Verificando tarea de autoarranque de PM2...
+schtasks /Query /TN "omni-pos-Autostart" >nul 2>&1
+if errorlevel 1 (
+    if exist "setup-autostart.ps1" (
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-autostart.ps1"
+        if errorlevel 1 echo [AVISO] No se pudo crear la tarea de autoarranque.
+    )
+)
+
+echo.
+echo Comprobando salud HTTP de Hono en el puerto 9003...
+for /L %%I in (1,1,15) do (
+    node -e "fetch('http://127.0.0.1:9003/health').then(r=>{if(!r.ok)process.exit(1);return r.json()}).then(d=>{if(!d.ok)process.exit(1)}).catch(()=>process.exit(1))" >nul 2>&1
+    if not errorlevel 1 goto :health_ok
+    timeout /t 2 /nobreak >nul
+)
+goto :health_failed
+
+:health_ok
+echo Salud HTTP confirmada: http://localhost:9003/health
+echo.
+echo ========================================================
+echo   ¡DESPLIEGUE COMPLETADO Y VERIFICADO CON EXITO!
+echo ========================================================
+echo Ver estado: %PM2_CMD% list
+echo Ver logs:   %PM2_CMD% logs omni-pos --lines 100
+echo Salud:      http://localhost:9003/health
 echo.
 pause
+exit /b 0
+
+:db_failed
+echo.
+echo ====================================================================
+echo   [ERROR CRITICO EN BASE DE DATOS / ERROR P1000]
+echo ====================================================================
+echo   Fallo la conexion o sincronizacion con MySQL Server.
+echo.
+echo   Causa mas frecuente: Error P1000 (Credenciales invalidas de MySQL).
+echo   La contrasena o usuario en el archivo .env no coinciden con MySQL.
+echo   Esto impide crear columnas requeridas (ej: unitsPerBulk).
+echo.
+echo   PASOS PARA RESOLVER:
+echo   1. Abra el archivo .env con el Bloc de Notas.
+echo   2. Verifique la variable DATABASE_URL con el formato:
+echo      DATABASE_URL="mysql://root:CONTRASEÑA_CORRECTA@localhost:3306/farmacia"
+echo   3. Si la contrasena contiene caracteres especiales, codifiquelos:
+echo      '+' se escribe '%%2B'  -  '@' se escribe '%%40'  -  '#' se escribe '%%23'
+echo   4. Ejecute 'verify-db.bat' para probar la conexion inmediatamente.
+echo ====================================================================
+echo.
+goto :deploy_failed
+
+:deploy_failed
+echo.
+echo ========================================================
+echo   [ERROR CRITICO] Ocurrio un problema durante el despliegue.
+echo ========================================================
+if defined OMNI_WAS_RUNNING (
+    echo Intentando reanimar omni-pos con los artefactos previos...
+    call %PM2_CMD% startOrRestart ecosystem.config.cjs --env production --update-env 2>nul
+    call %PM2_CMD% logs omni-pos --lines 80 --nostream 2>nul
+)
+echo.
+pause
+exit /b 1
+
+:health_failed
+echo.
+echo [ERROR CRITICO] Hono no respondio correctamente en /health despues de 30 segundos.
+call %PM2_CMD% logs omni-pos --lines 100 --nostream 2>nul
+goto :deploy_failed
+
+:missing_frontend_build
+echo.
+echo [ERROR CRITICO] No se genero dist\index.html tras la compilacion.
+goto :deploy_failed
+
+:missing_backend_build
+echo.
+echo [ERROR CRITICO] No se genero dist-server\index.mjs tras la compilacion.
+goto :deploy_failed
+
+:missing_node
+echo.
+echo [ERROR CRITICO] Node.js no esta instalado o no esta disponible en PATH.
+echo Instale Node.js (LTS recomendado) para continuar.
+echo.
+pause
+exit /b 1
+
+:missing_npm
+echo.
+echo [ERROR CRITICO] npm no esta disponible en PATH.
+echo Verifique la instalacion de Node.js y npm.
+echo.
+pause
+exit /b 1
+
+:missing_pm2
+echo.
+echo [ERROR CRITICO] PM2 no esta instalado ni como comando global ni accesible via npx.
+echo Para instalarlo globalmente ejecute: npm install -g pm2
+echo.
+pause
+exit /b 1

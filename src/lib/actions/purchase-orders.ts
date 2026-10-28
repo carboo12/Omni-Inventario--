@@ -136,6 +136,7 @@ export async function receivePurchaseOrder(id: string, items: {
 
     try {
         return await db.$transaction(async (tx) => {
+            const pharmacyMode = (await tx.systemSettings.findFirst({ select: { businessMode: true } }))?.businessMode === 'PHARMACY';
             // 1. Update Order Status
             const order = await tx.purchaseOrder.update({
                 where: { id },
@@ -149,19 +150,32 @@ export async function receivePurchaseOrder(id: string, items: {
                 const product = await tx.product.findUnique({ where: { id: item.productId } });
                 if (!product) throw new Error(`Product not found: ${item.productId}`);
 
-                // Create Inventory Item
-                await tx.inventoryItem.create({
-                    data: {
-                        id: generateUUID(),
-                        productId: item.productId,
-                        productName: product.name,
-                        inventoryType: product.inventoryType,
-                        batch: item.batch,
-                        quantity: item.quantity,
-                        expiryDate: item.expiryDate,
-                        status: 'En Stock'
-                    } as any
-                });
+                // En Farmacia se consolida el mismo lote para que Kardex muestre
+                // el saldo real del lote; los demás modos conservan su flujo actual.
+                const pharmacyItem = pharmacyMode && product.inventoryType === 'pharmacy';
+                const existingLot = pharmacyItem
+                    ? await tx.inventoryItem.findFirst({
+                        where: { productId: item.productId, inventoryType: product.inventoryType, batch: item.batch, expiryDate: item.expiryDate },
+                    })
+                    : null;
+                const previousLotQuantity = Number(existingLot?.quantity || 0);
+                const receivedLot = existingLot
+                    ? await tx.inventoryItem.update({
+                        where: { id: existingLot.id },
+                        data: { quantity: { increment: item.quantity }, status: 'En Stock' },
+                    })
+                    : await tx.inventoryItem.create({
+                        data: {
+                            id: generateUUID(),
+                            productId: item.productId,
+                            productName: product.name,
+                            inventoryType: product.inventoryType,
+                            batch: item.batch,
+                            quantity: item.quantity,
+                            expiryDate: item.expiryDate,
+                            status: 'En Stock'
+                        } as any
+                    });
 
                 // Calculate current global stock for this product to set correct previousQuantity
                 const currentStock = await tx.inventoryItem.aggregate({
@@ -183,10 +197,11 @@ export async function receivePurchaseOrder(id: string, items: {
                         movementType: 'Ingreso',
                         movementId: order.orderNumber,
                         quantityChange: item.quantity,
-                        previousQuantity: previousQty,
-                        newQuantity: previousQty + item.quantity,
+                        previousQuantity: pharmacyItem ? previousLotQuantity : previousQty,
+                        newQuantity: pharmacyMode && product.inventoryType === 'pharmacy' ? receivedLot.quantity : previousQty + item.quantity,
                         userId: session.userId, // Use session user ID
-                        inventoryType: product.inventoryType
+                        inventoryType: product.inventoryType,
+                        ...(pharmacyMode && product.inventoryType === 'pharmacy' ? { batchNumber: receivedLot.batch, expiryDate: receivedLot.expiryDate } : {}),
                     } as any
                 });
             }

@@ -91,6 +91,7 @@ async function restoreReturnedStock(
         movementId: string;
         userId: string;
         enableRecipes: boolean;
+        trackLots: boolean;
     }
 ): Promise<void> {
     const { productId, productName, variantId, units, inventoryType, movementId, userId } = params;
@@ -115,18 +116,22 @@ async function restoreReturnedStock(
                     where: { productId: line.ingredientId, inventoryType },
                     orderBy: { expiryDate: 'asc' },
                 });
+                const previousLotQuantity = Number(target?.quantity || 0);
+                let restoredLot = target;
                 if (target) {
                     await tx.inventoryItem.update({
                         where: { id: target.id },
                         data: { quantity: { increment: amount } },
                     });
                 } else {
-                    await tx.inventoryItem.create({
+                    restoredLot = await tx.inventoryItem.create({
                         data: {
                             id: generateUUID(),
                             productId: line.ingredientId,
+                            productName: `${productName} (insumo)`,
                             quantity: amount,
                             inventoryType,
+                            ...(params.trackLots ? { batch: `DEVOLUCION-${movementId}`, expiryDate: '2099-12-31' } : {}),
                         } as any,
                     });
                 }
@@ -142,6 +147,12 @@ async function restoreReturnedStock(
                         newQuantity: amount,
                         userId,
                         inventoryType,
+                        ...(params.trackLots ? {
+                            batchNumber: restoredLot?.batch || null,
+                            expiryDate: restoredLot?.expiryDate || null,
+                            previousQuantity: previousLotQuantity,
+                            newQuantity: previousLotQuantity + amount,
+                        } : {}),
                     } as any,
                 });
             }
@@ -182,6 +193,7 @@ async function restoreReturnedStock(
             select: { quantity: true },
         });
         const previousTotal = siblings.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+        const previousLotQuantity = Number(target.quantity || 0);
         await tx.inventoryItem.update({
             where: { id: target.id },
             data: { quantity: { increment: physicalUnits } },
@@ -198,18 +210,25 @@ async function restoreReturnedStock(
                 newQuantity: previousTotal + physicalUnits,
                 userId,
                 inventoryType,
+                ...(params.trackLots ? {
+                    batchNumber: target.batch || null,
+                    expiryDate: target.expiryDate || null,
+                    previousQuantity: previousLotQuantity,
+                    newQuantity: previousLotQuantity + physicalUnits,
+                } : {}),
             } as any,
         });
         return;
     }
 
     // El producto no tenía registro en esta bodega: se crea con lo devuelto.
-    await tx.inventoryItem.create({
+    const restoredLot = await tx.inventoryItem.create({
         data: {
             id: generateUUID(),
             productId,
             quantity: physicalUnits,
             inventoryType,
+            ...(params.trackLots ? { batch: 'DEVOLUCION', expiryDate: '2099-12-31' } : {}),
         } as any,
     });
     await tx.inventoryMovement.create({
@@ -224,6 +243,10 @@ async function restoreReturnedStock(
             newQuantity: physicalUnits,
             userId,
             inventoryType,
+            ...(params.trackLots ? {
+                batchNumber: restoredLot.batch || null,
+                expiryDate: restoredLot.expiryDate || null,
+            } : {}),
         } as any,
     });
 }
@@ -318,8 +341,9 @@ export async function settleRouteOrder(
         const notes = (request.notes || '').trim() || null;
         const movementId = `RT-${invoice.invoiceNumber}-${Date.now()}`;
 
-        const settings = await db.systemSettings.findFirst({ select: { enableRecipes: true } });
+        const settings = await db.systemSettings.findFirst({ select: { enableRecipes: true, businessMode: true } });
         const enableRecipes = !!settings?.enableRecipes;
+        const pharmacyMode = settings?.businessMode === 'PHARMACY';
 
         const result = await runStockSafeTransaction(async (tx) => {
             // Doble comprobación dentro de la transacción: dos cajeros no pueden
@@ -366,6 +390,7 @@ export async function settleRouteOrder(
                     movementId,
                     userId: session.userId,
                     enableRecipes,
+                    trackLots: pharmacyMode && inventoryType === 'pharmacy',
                 });
 
                 await tx.routeReturnItem.create({

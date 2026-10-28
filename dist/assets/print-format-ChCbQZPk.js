@@ -1,0 +1,1 @@
+const e="print-format-preference";function r(){if(typeof window>"u")return"ticket";try{const t=window.localStorage.getItem(e);if(t==="ticket"||t==="invoice")return t}catch{}return"ticket"}function n(t){if(!(typeof window>"u"))try{window.localStorage.setItem(e,t)}catch{}}export{r as g,n as s};

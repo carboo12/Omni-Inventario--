@@ -19,6 +19,8 @@ export interface KardexReportRow {
     exitsProfit: number;
     potentialProfit: number;
     inventoryValue: number;
+    batchNumber?: string | null;
+    expiryDate?: string | null;
 }
 
 export async function getInventoryMovements(...args: any[]): Promise<any> {

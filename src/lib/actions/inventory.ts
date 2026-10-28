@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { notifyLowStock } from './notifications';
 import { verifySession } from '../session';
 import { recordAudit } from './audit';
+import { BusinessGuard } from '../business-guard';
 
 export async function getInventory(inventoryType?: string) {
     const session = await verifySession();
@@ -49,9 +50,31 @@ export async function createInventoryItem(data: Omit<InventoryItem, 'id'>) {
     if (!session) return { success: false, error: 'Unauthorized' };
 
     try {
-        const item = await db.inventoryItem.create({
-            data: { id: generateUUID(), ...data } as any
-        });
+        const pharmacyItem = data.inventoryType === 'pharmacy' && await BusinessGuard.isPharmacyMode();
+        const existingLot = pharmacyItem
+            ? await db.inventoryItem.findFirst({
+                where: {
+                    productId: data.productId,
+                    inventoryType: data.inventoryType,
+                    batch: data.batch,
+                    expiryDate: data.expiryDate,
+                },
+            })
+            : null;
+        const previousLotQuantity = Number(existingLot?.quantity || 0);
+        const item = existingLot
+            ? await db.inventoryItem.update({
+                where: { id: existingLot.id },
+                data: {
+                    quantity: { increment: data.quantity },
+                    status: previousLotQuantity + data.quantity <= 0
+                        ? 'Agotado'
+                        : previousLotQuantity + data.quantity < 10 ? 'Stock Bajo' : 'En Stock',
+                },
+            })
+            : await db.inventoryItem.create({
+                data: { id: generateUUID(), ...data } as any
+            });
 
         // Registrar la entrada en el Kardex para que el nuevo artículo siempre
         // tenga un movimiento visible (solo cuando representa stock entrante).
@@ -64,6 +87,7 @@ export async function createInventoryItem(data: Omit<InventoryItem, 'id'>) {
             });
             const currentTotal = currentStockRecords.reduce((sum, i) => sum + (i.quantity || 0), 0);
             const previousTotal = currentTotal - item.quantity;
+            const pharmacyMode = pharmacyItem;
 
             await db.inventoryMovement.create({
                 data: {
@@ -73,10 +97,11 @@ export async function createInventoryItem(data: Omit<InventoryItem, 'id'>) {
                     movementType: 'Entrada',
                     movementId: `AJUSTE-${item.id.slice(0, 8)}`,
                     quantityChange: item.quantity,
-                    previousQuantity: previousTotal,
-                    newQuantity: currentTotal,
+                    previousQuantity: pharmacyMode ? previousLotQuantity : previousTotal,
+                    newQuantity: pharmacyMode ? item.quantity : currentTotal,
                     userId: session.userId,
                     inventoryType: item.inventoryType || 'general',
+                    ...(pharmacyMode ? { batchNumber: item.batch, expiryDate: item.expiryDate } : {}),
                 } as any
             });
         }
@@ -237,11 +262,14 @@ export async function createInventoryMovement(data: {
     user: string;
     inventoryType: string;
     movementId?: string;
+    batchNumber?: string;
+    expiryDate?: string;
 }) {
     const session = await verifySession();
     if (!session) return { success: false, error: 'Unauthorized' };
 
     try {
+        const pharmacyMovement = data.inventoryType === 'pharmacy' && await BusinessGuard.isPharmacyMode();
         const movement = await db.inventoryMovement.create({
             data: {
                 id: generateUUID(),
@@ -253,7 +281,8 @@ export async function createInventoryMovement(data: {
                 previousQuantity: data.previousQuantity,
                 newQuantity: data.newQuantity,
                 userId: data.user,
-                inventoryType: data.inventoryType
+                inventoryType: data.inventoryType,
+                ...(pharmacyMovement ? { batchNumber: data.batchNumber || null, expiryDate: data.expiryDate || null } : {}),
             } as any
         });
         return { success: true, data: movement };
@@ -299,9 +328,9 @@ export async function bulkImportInventory(
         minStock: number;
         unitOfMeasure: 'unit' | 'bulk' | 'box' | 'blister';
         inventoryType: 'pharmacy' | 'general' | 'jewelry';
-        batch: string;
+        batch?: string | null;
         quantity: number;
-        expiryDate: string;
+        expiryDate?: string | null;
         brand?: string;
         size?: string;
         color?: string;
@@ -332,6 +361,7 @@ export async function bulkImportInventory(
         };
 
         const settings = await db.systemSettings.findFirst();
+        const pharmacyMode = settings?.businessMode === 'PHARMACY';
         const exchangeRate = settings?.exchangeRate ? parseFloat(settings.exchangeRate) : 36.5;
         const importInDollars = settings?.importProductsInDollars === true;
         const priceMultiplier = importInDollars ? exchangeRate : 1;
@@ -339,6 +369,8 @@ export async function bulkImportInventory(
         // Process each item
         for (const item of data) {
             try {
+                const itemBatch = item.batch?.trim() || (pharmacyMode ? 'N/A' : 'STOCK-INICIAL');
+                const itemExpiryDate = item.expiryDate?.trim() || '2099-12-31';
                 // 1. Handle Category Hierarchy
                 let categoryId: string | null = null;
                 if (item.category) {
@@ -628,20 +660,38 @@ if (!product) {
                     status = 'Stock Bajo';
                 }
 
-                // Create inventory item
-                const invItem = await db.inventoryItem.create({
-                    data: {
-                        id: generateUUID(),
-                        productId: product.id,
-                        productName: item.productName,
-                        barcode: item.barcode || null,
-                        inventoryType: item.inventoryType,
-                        batch: item.batch,
-                        quantity: item.quantity,
-                        expiryDate: item.expiryDate,
-                        status: status
-                    } as any
-                });
+                // Farmacia mantiene una fila por producto/lote/vencimiento para
+                // que el saldo de Kardex corresponda al lote completo. Los otros
+                // modos conservan la creación de inventario que ya utilizaban.
+                const pharmacyItem = pharmacyMode && item.inventoryType === 'pharmacy';
+                const existingLot = pharmacyItem
+                    ? await db.inventoryItem.findFirst({
+                        where: { productId: product.id, inventoryType: item.inventoryType, batch: itemBatch, expiryDate: itemExpiryDate },
+                    })
+                    : null;
+                const previousLotQuantity = Number(existingLot?.quantity || 0);
+                if (pharmacyItem) {
+                    const lotQuantity = previousLotQuantity + item.quantity;
+                    status = lotQuantity <= 0 ? 'Agotado' : (lotQuantity < item.minStock ? 'Stock Bajo' : 'En Stock');
+                }
+                const invItem = existingLot
+                    ? await db.inventoryItem.update({
+                        where: { id: existingLot.id },
+                        data: { quantity: { increment: item.quantity }, status },
+                    })
+                    : await db.inventoryItem.create({
+                        data: {
+                            id: generateUUID(),
+                            productId: product.id,
+                            productName: item.productName,
+                            barcode: item.barcode || null,
+                            inventoryType: item.inventoryType,
+                            batch: itemBatch,
+                            quantity: item.quantity,
+                            expiryDate: itemExpiryDate,
+                            status: status
+                        } as any
+                    });
                 results.inventoryItemsCreated++;
 
                 // Record the movement (Kardex)
@@ -662,10 +712,13 @@ if (!product) {
                             movementType: 'Entrada',
                             movementId: `IMPORT-${Date.now()}-${results.inventoryItemsCreated}`,
                             quantityChange: item.quantity,
-                            previousQuantity: previousTotal,
-                            newQuantity: currentTotal,
+                            previousQuantity: pharmacyItem ? previousLotQuantity : previousTotal,
+                            newQuantity: pharmacyMode && item.inventoryType === 'pharmacy' ? invItem.quantity : currentTotal,
                             userId: userId || session.userId,
-                            inventoryType: item.inventoryType
+                            inventoryType: item.inventoryType,
+                            ...(pharmacyMode && item.inventoryType === 'pharmacy'
+                                ? { batchNumber: invItem.batch, expiryDate: invItem.expiryDate }
+                                : {}),
                         } as any
                     });
                 }

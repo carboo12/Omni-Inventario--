@@ -185,7 +185,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
 
   // ── Módulo Opcional de Recetas (BOM) ─────────────────────────────────────
   const enableRecipes = !!settings.enableRecipes;
-  const batchExpiryEnabled = !!settings.enableBatchAndExpiration;
+  const batchExpiryEnabled = mode === 'PHARMACY' || !!settings.enableBatchAndExpiration;
 
   const [ingredientQuery, setIngredientQuery] = useState('');
   const [showIngredientResults, setShowIngredientResults] = useState(false);
@@ -299,19 +299,6 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
   const handleSubmit = async (values: FormValues) => {
     if (isSaving) return;
 
-    if (mode === 'PHARMACY' && batchExpiryEnabled) {
-      let hasError = false;
-      if (!values.batch) {
-        form.setError('batch', { message: 'El lote es requerido en Farmacia.' });
-        hasError = true;
-      }
-      if (!values.expiryDate) {
-        form.setError('expiryDate', { message: 'La fecha de vencimiento es requerida en Farmacia.' });
-        hasError = true;
-      }
-      if (hasError) return;
-    }
-
     setIsSaving(true);
     try {
       const selectedCategory = categories.find(c => c.id === values.categoryId);
@@ -339,7 +326,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
         unitsPerBulk3: values.isFractional ? (values.unitsPerBulk3 ?? undefined) : undefined,
         unitsPerBox: values.isFractional && values.unitsPerBulk ? Math.round(values.unitsPerBulk) : undefined,
         hasBoxOption: values.isFractional ? hasBoxOption : false,
-        batch: values.batch || 'N/A',
+        batch: values.batch?.trim() || 'N/A',
         category: selectedCategory ? selectedCategory.name : 'General',
         expiryDate: values.expiryDate ? format(values.expiryDate, 'yyyy-MM-dd') : '2099-12-31',
         price2: values.price2 ?? null,
@@ -1059,7 +1046,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                       name="batch"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Lote</FormLabel>
+                          <FormLabel>Lote (opcional)</FormLabel>
                           <FormControl>
                             <Input placeholder="Ej: B0123" {...field} disabled={isSaving} />
                           </FormControl>
@@ -1072,7 +1059,7 @@ export function EditProductDialog({ isOpen, onClose, onSave, product, inventoryI
                       name="expiryDate"
                       render={({ field }) => (
                         <FormItem className="flex flex-col">
-                          <FormLabel>Fecha de Vencimiento</FormLabel>
+                          <FormLabel>Fecha de Vencimiento (opcional)</FormLabel>
                           <Popover modal={false}>
                             <PopoverTrigger asChild>
                               <FormControl>

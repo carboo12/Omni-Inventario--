@@ -416,7 +416,9 @@ export default function InventoryClient({ initialInventory, initialProducts, ini
                         previousQuantity: originalItem.quantity,
                         newQuantity: updatedItem.quantity,
                         user: user.id,
-                        inventoryType: updatedItem.inventoryType
+                        inventoryType: updatedItem.inventoryType,
+                        batchNumber: updatedItem.batch,
+                        expiryDate: updatedItem.expiryDate,
                     });
                 }
             }

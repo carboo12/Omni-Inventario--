@@ -1,0 +1,10 @@
+========================================================
+  DESPLIEGUE DE PRODUCCION - OMNI INVENTARIO +
+  Vite SPA + Hono API + Prisma + PM2
+========================================================
+
+
+[ERROR CRITICO] Git no esta instalado o no esta disponible en el PATH del sistema.
+Instale Git para Windows o agreguelo a las variables de entorno.
+
+Presione una tecla para continuar . . .

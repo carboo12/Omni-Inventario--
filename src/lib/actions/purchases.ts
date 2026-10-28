@@ -161,6 +161,8 @@ export async function createPurchaseInvoiceWithItems(
                 } as any
             });
 
+            const pharmacyMode = (await tx.systemSettings.findFirst({ select: { businessMode: true } }))?.businessMode === 'PHARMACY';
+
 // 2. Process each item
             for (const item of items) {
                 // Conversión de presentación (Caja/Quintal -> Unidades físicas base).
@@ -308,7 +310,10 @@ export async function createPurchaseInvoiceWithItems(
                         where: {
                             productId: productId!,
                             inventoryType: normalizedItem.inventoryType,
-                            batch: { in: ['STOCK-INICIAL', 'N/A', 'NA', 'SIN LOTE', 'GENERICO', ''] }
+                            batch: { in: ['STOCK-INICIAL', 'N/A', 'NA', 'SIN LOTE', 'GENERICO', ''] },
+                            ...(pharmacyMode && normalizedItem.inventoryType === 'pharmacy'
+                                ? { expiryDate: normalizedItem.expiryDate || '' }
+                                : {}),
                         }
                     });
                     // Si no hay ninguno, caer en el registro base (busca uno cualquiera de este producto)
@@ -324,16 +329,22 @@ export async function createPurchaseInvoiceWithItems(
                         where: {
                             productId: productId!,
                             inventoryType: normalizedItem.inventoryType,
-                            batch: rawBatch
+                            batch: rawBatch,
+                            ...(pharmacyMode && normalizedItem.inventoryType === 'pharmacy'
+                                ? { expiryDate: normalizedItem.expiryDate || '' }
+                                : {}),
                         }
                     });
                 }
 
+                let updatedLot: any;
+                let previousLotQuantity = 0;
                 if (targetItem) {
                     // Consolidar: sumar stock sobre el registro existente (nunca reemplazar).
                     const newQuantity = targetItem.quantity + normalizedItem.quantity;
                     const status = newQuantity <= 0 ? 'Agotado' : (newQuantity < (normalizedItem.minStock || 10) ? 'Stock Bajo' : 'En Stock');
-                    await tx.inventoryItem.update({
+                    previousLotQuantity = targetItem.quantity;
+                    updatedLot = await tx.inventoryItem.update({
                         where: { id: targetItem.id },
                         data: {
                             quantity: newQuantity,
@@ -344,7 +355,7 @@ export async function createPurchaseInvoiceWithItems(
                     });
                 } else {
                     const status = normalizedItem.quantity <= 0 ? 'Agotado' : (normalizedItem.quantity < (normalizedItem.minStock || 10) ? 'Stock Bajo' : 'En Stock');
-                    await tx.inventoryItem.create({
+                    updatedLot = await tx.inventoryItem.create({
                         data: {
                             id: generateUUID(),
                             productId: productId!,
@@ -376,10 +387,11 @@ await tx.inventoryMovement.create({
                         movementType: 'Entrada',
                         movementId: `FACTURA-${invoice.invoiceNumber}`,
                         quantityChange: normalizedItem.quantity,
-                        previousQuantity: previousTotal,
-                        newQuantity: currentTotal,
+                        previousQuantity: pharmacyMode && normalizedItem.inventoryType === 'pharmacy' ? previousLotQuantity : previousTotal,
+                        newQuantity: pharmacyMode && normalizedItem.inventoryType === 'pharmacy' ? updatedLot.quantity : currentTotal,
                         userId: userId,
-                        inventoryType: normalizedItem.inventoryType
+                        inventoryType: normalizedItem.inventoryType,
+                        ...(pharmacyMode && normalizedItem.inventoryType === 'pharmacy' ? { batchNumber: updatedLot.batch, expiryDate: updatedLot.expiryDate } : {}),
                     } as any
                 });
 

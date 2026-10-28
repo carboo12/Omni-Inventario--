@@ -965,3 +965,95 @@ export function buildQuoteReceiptHtml(data: QuoteReceiptHtmlData, receiptSetting
         documentKind: 'quotation',
     }, receiptSettings);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Build credit receipt HTML (CreditReceiptTemplate equivalent)       */
+/* ------------------------------------------------------------------ */
+
+export interface CreditReceiptHtmlData {
+    businessName: string;
+    address: string;
+    phone: string;
+    rfc?: string;
+    receiptId: string;
+    date: Date;
+    cashierName: string;
+    customerName: string;
+    previousBalance: number;
+    amountPaid: number;
+    newBalance: number;
+    paymentMethod: string;
+    footerMessage?: string;
+    website?: string;
+    logoSvg?: string | null;
+}
+
+export function buildCreditReceiptHtml(data: CreditReceiptHtmlData): string {
+    const {
+        businessName, address, phone, rfc, receiptId, date,
+        cashierName, customerName, previousBalance, amountPaid,
+        newBalance, paymentMethod, footerMessage, website, logoSvg
+    } = data;
+
+    const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const logoHtml = logoSvg
+        ? `<div class="logo-img" style="display:flex;align-items:center;justify-content:center;margin-bottom:8px;">${logoSvg}</div>`
+        : '';
+
+    return `<div class="ticket-container">
+  <div class="ticket-header text-center" style="margin-bottom:16px;">
+    ${logoHtml}
+    <p style="font-size:16px;font-weight:bold;text-transform:uppercase;margin:0;">${escapeHtml(businessName)}</p>
+    <p style="white-space:pre-line;margin:0;">${escapeHtml(address)}</p>
+    ${phone ? `<p style="margin:0;">Tel: ${escapeHtml(phone)}</p>` : ''}
+    ${rfc ? `<p style="margin:0;">RFC: ${escapeHtml(rfc)}</p>` : ''}
+    <div style="text-align: center; font-weight: bold; text-transform: uppercase; margin: 8px 0; background: #eee; padding: 4px;">Comprobante de Abono</div>
+  </div>
+
+  <div style="margin-bottom:8px;">
+    <div class="flex-row"><span>Folio:</span><span>${escapeHtml(receiptId)}</span></div>
+    <div class="flex-row"><span>Fecha:</span><span>${dateStr}</span></div>
+    <div class="flex-row"><span>Atendido por:</span><span>${escapeHtml(cashierName)}</span></div>
+  </div>
+
+  <div class="dashed-line"></div>
+
+  <div class="flex-row">
+    <span>Cliente:</span>
+    <span style="text-align:right;">${escapeHtml(customerName)}</span>
+  </div>
+
+  <div class="dashed-line"></div>
+
+  <div class="ticket-totals" style="margin-top: 16px;">
+    <div class="flex-row">
+      <span>Saldo Anterior:</span>
+      <span>C$ ${fmtNum(previousBalance)}</span>
+    </div>
+    <div class="flex-row" style="font-size: 14px; font-weight: bold; margin-top: 4px;">
+      <span>MONTO ABONADO:</span>
+      <span>C$ ${fmtNum(amountPaid)}</span>
+    </div>
+    <div class="flex-row" style="margin-top: 4px;">
+      <span>Método de Pago:</span>
+      <span>${escapeHtml(paymentMethod)}</span>
+    </div>
+
+    <div style="border: 1px solid #000; padding: 8px; margin-top: 12px;">
+      <div class="flex-row" style="font-size: 16px; font-weight: bold;">
+        <span>SALDO ACTUAL:</span>
+        <span>C$ ${fmtNum(newBalance)}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ticket-footer text-center" style="margin-top: 30px; font-size: 10px;">
+    ${footerMessage ? `<p class="footer-msg">${escapeHtml(footerMessage)}</p>` : ''}
+    ${website ? `<p style="margin:0;">${escapeHtml(website)}</p>` : ''}
+    <div class="dashed-line"></div>
+    <p>¡Gracias por su pago!</p>
+    <p style="margin-top: 40px;">__________________________</p>
+    <p>Firma del Cliente</p>
+  </div>
+</div>`;
+}

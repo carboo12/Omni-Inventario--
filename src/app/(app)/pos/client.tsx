@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Plus, Minus, Search, X, ShoppingCart, ScanLine, User, User as UserIcon, Send, ListOrdered, Clock, Coins, Users, Trash2, CreditCard, FileText, UserPlus, Monitor, ClipboardList, Lock } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { useRouter, usePathname } from '@/lib/router-nav';
 import { useCashRegister } from '@/hooks/use-cash-register';
 import { useCashRegisterSessions } from '@/hooks/use-cash-register-sessions';
@@ -48,7 +49,7 @@ import { useReceiptSettings } from '@/hooks/use-receipt-settings';
 import { printA4Html, buildA4ReceiptHtml } from '@/lib/print-a4';
 import { createQuote, getQuoteByNumber } from '@/lib/actions/quotations';
 import { QUOTATIONS_LIST_QUERY_KEY, clearStagedQuoteForPOS, readStagedQuoteForPOS } from '@/lib/quotations-nav';
-import { searchOrCreateCustomer, getAllCustomers } from '@/lib/actions/customers';
+import { searchOrCreateCustomer, getAllCustomers, getCustomerForPOSCheckout } from '@/lib/actions/customers';
 import { useBusinessMode } from '@/hooks/use-business-mode';
 import { getAvailableJewelry } from '@/lib/actions/jewelry-production';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -163,6 +164,16 @@ const prepareReceiptData = (items: CartItem[], total: number, subtotal: number, 
     };
 };
 
+// Garantiza que ambas rutas de impresión reciban una fecha válida aunque el
+// objeto del comprobante haya pasado por una serialización intermedia.
+const normalizeReceiptForPrint = <T extends { date?: unknown }>(receipt: T): T & { date: Date } => {
+    const parsedDate = receipt.date instanceof Date ? receipt.date : new Date(receipt.date as string | number | undefined ?? Date.now());
+    return {
+        ...receipt,
+        date: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+    };
+};
+
 interface POSComponentProps {
     products: Product[];
     inventory: InventoryItem[];
@@ -264,7 +275,7 @@ const notifyStockGuard = (toast: any, product: Product, outcome: StockGuardOutco
 };
 
 /** Líneas del carrito evaluadas contra el stock, para la política compartida. */
-const buildCartStockLines = (cart: CartItem[]): StockCheckLine[] => cart
+const buildCartStockLines = (cart: CartItem[], liveStockMap?: Map<string, number>): StockCheckLine[] => cart
     // Los platillos preparados se excluyen: no tienen stock propio, el backend
     // valida el stock de sus insumos al cobrar.
     .filter((item) => !isRecipeItem(item.product))
@@ -277,7 +288,9 @@ const buildCartStockLines = (cart: CartItem[]): StockCheckLine[] => cart
         item.presentationName,
         item.presentationFactor
     ),
-    available: getProductStock(item.product),
+        available: liveStockMap?.has(item.product.id)
+        ? (liveStockMap.get(item.product.id) ?? 0)
+        : getProductStock(item.product),
     allowNegative: allowsNegativeStock(item.product),
 }));
 
@@ -328,6 +341,33 @@ const applyOrderPreloadToPOS = (staged: any, products: Product[]) => {
   }
 };
 
+// Convierte una ficha de la BD al shape que consume el POS (incluye hasCredit,
+// que habilita el botón "Venta a Crédito" en el resumen de pago).
+const toSelectedClient = (customer: any): SelectedClient => ({
+  id: customer.id,
+  name: customer.fullName,
+  phone: customer.phone || undefined,
+  address: customer.address || undefined,
+  priceLevel: typeof customer.priceLevel === 'number' ? customer.priceLevel : 1,
+  interestRate: typeof customer.interestRate === 'number' ? customer.interestRate : 0,
+  hasCredit: customer.hasCredit === true,
+});
+
+// Reconstruye el cliente seleccionado al cargar una comanda o un pedido.
+// Para pedidos usa el customerId exacto (orderId); para comandas del
+// despachador solo hay nombre, así que se acepta únicamente si es inequívoco.
+const resolveSelectedClientForSale = async (
+  sale: Pick<PendingSale, 'customerName'> & { orderId?: string | null },
+): Promise<SelectedClient | null> => {
+  const name = (sale.customerName || '').trim();
+  if (!sale.orderId && (!name || isGenericCustomerName(name))) return null;
+  const customer = await getCustomerForPOSCheckout({
+    customerName: name,
+    orderId: sale.orderId || null,
+  });
+  return customer ? toSelectedClient(customer) : null;
+};
+
 const CashierPOS = ({ products, inventory }: POSComponentProps) => {
     const { user } = useAuth();
     const { mode } = useBusinessMode();
@@ -369,6 +409,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     const [isFinancingOpen, setIsFinancingOpen] = useState(false);
     const [pendingCredit, setPendingCredit] = useState<{ paid: number, change: number } | null>(null);
     const [lastSale, setLastSale] = useState<any>(null);
+    const [lastSaleIsFresh, setLastSaleIsFresh] = useState(false);
     const [saleForPrint, setSaleForPrint] = useState<any>(null);
     const [printFormat, setPrintFormat] = useState<PrintFormat>('ticket');
     useEffect(() => { setPrintFormat(getPreferredPrintFormat()); }, []);
@@ -376,6 +417,26 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     // venta (carrito, modal de resumen, cliente y panel = productos) SOLO después
     // de que la vista previa de impresión termine/cierre.
     const saleResetAfterPrintRef = useRef(false);
+    const closePrintFormatDialog = () => {
+        if (lastSaleIsFresh) {
+            // La venta ya quedó registrada aunque el usuario cierre el selector.
+            // Limpiar el estado para evitar que el cajero vuelva a cobrarla.
+            saleResetAfterPrintRef.current = false;
+            setIsPaymentSummaryOpen(false);
+            setViewMode('products');
+            setCart([]);
+            setPaymentData(null);
+            if (activeSale) {
+                removePendingSale(activeSale.id);
+                setActiveSale(null);
+            }
+            setCustomerName('');
+            setSelectedClient(null);
+            focusSearchInput();
+        }
+        setLastSale(null);
+        setLastSaleIsFresh(false);
+    };
     // Tubería de impresión segura:
     // 1) NO imprime hasta que el portal del <ReceiptTemplate/> esté montado en
     //    document.body (#ticket-print-area). Evita la vista previa en blanco por
@@ -385,6 +446,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     const printAreaId = printFormat === 'invoice' ? 'invoice-print' : 'ticket-print-area';
     useEffect(() => {
         if (!saleForPrint) return;
+        const printableSale = normalizeReceiptForPrint(saleForPrint);
 
         let cancelled = false;
         let pollTimer: number | undefined;
@@ -422,7 +484,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         // que el reinicio ocurre ANTES de abrirse el diálogo. El timer re-afirma cierre
         // + foco al cerrar la ventana para que el modal de resumen no quede visible.
         if (printFormat === 'ticket') {
-            printReceiptHtml(buildReceiptHtml(saleForPrint, receiptSettings));
+            printReceiptHtml(buildReceiptHtml(printableSale, receiptSettings));
             resetAfterPrint();
             setSaleForPrint(null);
             safetyTimer = window.setTimeout(() => {
@@ -436,7 +498,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
         // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
         const finishPrint = () => {
             if (cancelled) return;
-            printA4Html(buildA4ReceiptHtml(saleForPrint));
+            printA4Html(buildA4ReceiptHtml(printableSale));
             resetAfterPrint();
             setSaleForPrint(null);
             // window.print() bloquea en Chromium y puede dejar la capa del modal
@@ -454,7 +516,9 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
                 fallbackTimer = undefined;
                 // Margen extra: garantiza que React terminó de pintar el contenido del portal.
-                window.setTimeout(finishPrint, 30);
+                // Dar tiempo a Radix para desmontar el selector de formato antes
+                // de abrir el diálogo nativo de impresión (que bloquea el hilo UI).
+                window.setTimeout(finishPrint, printFormat === 'invoice' ? 350 : 30);
                 return;
             }
             attempts += 1;
@@ -476,6 +540,7 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
     const [isAssignClientOpen, setIsAssignClientOpen] = useState(false);
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
     const [isRetiroOpen, setIsRetiroOpen] = useState(false);
+    const [activeEmployees, setActiveEmployees] = useState<{ id: string; fullName: string }[]>([]);
     const [isRetiroSaving, setIsRetiroSaving] = useState(false);
     const [lastRetiro, setLastRetiro] = useState<any>(null);
     const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
@@ -514,26 +579,30 @@ const { pendingSales, removePendingSale, updatePendingSale, lockPendingSale, unl
                 }
                 setActiveSale({ ...held, lockedBy: user?.id || (held.lockedBy as any) });
                 if (held.customerName) setCustomerName(held.customerName);
+                setSelectedClient(null);
+                resolveSelectedClientForSale(held).then((client) => {
+                    if (client) setSelectedClient((prev) => prev ?? client);
+                });
             });
         } catch { /* ignore */ }
     }, [activeSale]);
 
     // Registra un "Retiro / Salida de Efectivo" en la caja activa e imprime el comprobante ESC/POS.
-    const handleRetiroConfirm = async (amount: number, reason: string) => {
+    const handleRetiroConfirm = async (amount: number, reason: string, employeeId?: string) => {
         if (!activeSession) {
             toast({ title: 'Error', description: 'No hay una caja activa para registrar el retiro.', variant: 'destructive' });
             return;
         }
         setIsRetiroSaving(true);
         try {
-            const result = await createOutflowAction(activeSession.id, amount, reason);
+            const result = await createOutflowAction(activeSession.id, amount, reason, employeeId);
             if (!result || !result.id) {
                 throw new Error('Sin respuesta del servidor');
             }
             const retiroData = prepareRetiroReceiptData(settings, user, activeSession, result, amount, reason);
             setLastRetiro(retiroData);
             setIsRetiroOpen(false);
-            toast({ title: 'Retiro Registrado', description: `Recibo #${result.receiptNumber}. Salida de C$${amount.toFixed(2)}.` });
+            toast({ title: employeeId ? 'Préstamo Registrado' : 'Retiro Registrado', description: `Recibo #${result.receiptNumber}. Salida de C$${amount.toFixed(2)}.` });
             setTimeout(() => {
                 printReceiptHtml(buildRetiroReceiptHtml(retiroData));
                 setLastRetiro(null);
@@ -969,6 +1038,10 @@ return [...prevCart, { id: product.id, product, quantity: qty, presentation, pre
         setActiveSale(sale);
         setCart(sale.items);
         if (sale.customerName) setCustomerName(sale.customerName);
+        setSelectedClient(null);
+        resolveSelectedClientForSale(sale).then((client) => {
+            if (client) setSelectedClient((prev) => prev ?? client);
+        });
         setViewMode('products');
         toast({ title: 'Comanda cargada', description: 'La comanda se cargÃ³ al carrito. Puede editarla antes de cobrar.' });
         focusSearchInput();
@@ -982,7 +1055,10 @@ const handlePayment = () => {
    // Validación contra el stock más reciente antes de abrir el cobro: si algún
    // ítem no tiene existencias suficientes, se detiene el proceso y se resalta
    // en rojo la fila problemática.
-   const stockIssues = findStockIssues(buildCartStockLines(cart));
+      const liveStockMap = new Map<string, number>(
+       availableProducts.map((p) => [p.id, typeof p.stock === 'number' ? p.stock : 0])
+   );
+   const stockIssues = findStockIssues(buildCartStockLines(cart, liveStockMap));
    if (stockIssues.length > 0) {
        setStockIssueIds(stockIssues.map((issue) => issue.productId));
        toast({
@@ -1010,12 +1086,18 @@ const handlePayment = () => {
             return;
         }
         if (hasRealName) {
-            try {
-                const customer = await searchOrCreateCustomer(effectiveCustomerName.trim());
-                customerId = customer.id;
-            } catch (e) {
-                toast({ title: 'Error', description: 'No se pudo crear/validar el cliente en la BD', variant: 'destructive' });
-                return;
+            // Preferir el ID único del cliente ya seleccionado en el POS; solo se
+            // busca/crea por nombre cuando no hay ficha seleccionada.
+            if (selectedClient?.id) {
+                customerId = selectedClient.id;
+            } else {
+                try {
+                    const customer = await searchOrCreateCustomer(effectiveCustomerName.trim());
+                    customerId = customer.id;
+                } catch (e) {
+                    toast({ title: 'Error', description: 'No se pudo crear/validar el cliente en la BD', variant: 'destructive' });
+                    return;
+                }
             }
         }
 
@@ -1088,10 +1170,11 @@ const handlePayment = () => {
             }
         );
         saleResetAfterPrintRef.current = true;
-        setSaleForPrint(receiptData);
+        setLastSaleIsFresh(true);
+        setLastSale(receiptData);
 
         refreshSessions();
-        toast({ title: 'Venta Registrada', description: deliveryDetails?.deliveryType === 'ROUTE' ? 'Pedido para ruta registrado exitosamente.' : 'La venta ha sido registrada exitosamente.' });
+        toast({ title: 'Venta Registrada', description: deliveryDetails?.deliveryType === 'ROUTE' ? 'Pedido para ruta registrado exitosamente.' : 'La venta ha sido registrada exitosamente.', duration: 1000 });
     };
 
     const handlePrePaymentComplete = (amountPaid: number, change: number, method: string, deliveryDetails?: any) => {
@@ -1376,7 +1459,7 @@ return (
                         {settings.enablePettyCashExpenses !== false && (
                         <Button
                             className="h-14 flex flex-col gap-1 bg-[#FF9800] hover:bg-[#F57C00] text-white font-black text-[10px] p-2 active:scale-95"
-                            onClick={() => setIsRetiroOpen(true)}
+                            onClick={async () => { const result = await getActiveEmployees(); if (result.success) setActiveEmployees(result.data || []); setIsRetiroOpen(true); }}
                             title="Retiro / Salida de Efectivo"
                         >
                             <Coins className="w-5 h-5" />
@@ -1430,6 +1513,7 @@ return (
                             onCancel={() => { setViewMode('products'); focusSearchInput(); }}
                             onComplete={handlePrePaymentComplete}
                             customerName={customerName || activeSale?.customerName || 'Cliente General'}
+                            customerHasCredit={selectedClient?.hasCredit === true}
                             customerPhone={selectedClient?.phone}
                             customerAddress={selectedClient?.address}
                         />
@@ -1559,13 +1643,57 @@ return (
                 isOpen={isRetiroOpen}
                 onClose={() => setIsRetiroOpen(false)}
                 onConfirm={handleRetiroConfirm}
+                employees={activeEmployees}
                 isLoading={isRetiroSaving}
             />
             {lastRetiro && <RetiroReceiptTemplate {...lastRetiro} />}
 
             {printFormat === 'invoice'
-                ? (saleForPrint && <FullPageInvoiceTemplate {...saleForPrint} />)
-                : (saleForPrint && <ReceiptTemplate {...saleForPrint} />)}
+                ? (saleForPrint && <FullPageInvoiceTemplate {...normalizeReceiptForPrint(saleForPrint)} />)
+                : (saleForPrint && <ReceiptTemplate {...normalizeReceiptForPrint(saleForPrint)} />)}
+
+            <Dialog open={!!lastSale} onOpenChange={(open: boolean) => { if (!open) closePrintFormatDialog(); }}>
+                <DialogContent
+                    className="max-w-2xl"
+                    onPointerDownOutside={(event) => {
+                        if ((event.target as HTMLElement).closest('[data-toast-viewport]')) event.preventDefault();
+                    }}
+                >
+                    <DialogHeader>
+                        <DialogTitle>{lastSaleIsFresh ? 'Seleccionar formato de impresión' : 'Imprimir Factura / Ticket'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex items-center justify-center gap-2 py-2">
+                        <Button
+                            size="sm"
+                            variant={printFormat === 'ticket' ? 'default' : 'outline'}
+                            onClick={() => setPrintFormat('ticket')}
+                        >
+                            🧾 Imprimir Ticket
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant={printFormat === 'invoice' ? 'default' : 'outline'}
+                            onClick={() => setPrintFormat('invoice')}
+                        >
+                            📄 Imprimir Factura (Hoja Completa)
+                        </Button>
+                    </div>
+                    <div className="flex justify-center p-4 max-h-[60vh] overflow-y-auto">
+                        {lastSale ? (printFormat === 'invoice'
+                            ? <FullPageInvoiceTemplate {...normalizeReceiptForPrint(lastSale)} previewMode />
+                            : <ReceiptTemplate {...normalizeReceiptForPrint(lastSale)} previewMode />) : null}
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => {
+                            savePreferredPrintFormat(printFormat);
+                            setSaleForPrint(normalizeReceiptForPrint(lastSale));
+                            setLastSale(null);
+                            setLastSaleIsFresh(false);
+                        }}>Imprimir</Button>
+                        <Button variant="outline" onClick={closePrintFormatDialog}>Cerrar</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
@@ -1577,6 +1705,7 @@ import { HelpDialog } from '@/components/pos/help-dialog';
 import { HelpCircle, FolderOpen, Printer } from 'lucide-react';
 import { OpenDrawerTemplate } from '@/components/pos/open-drawer-template';
 import { createOutflowAction } from '@/lib/actions/cash-register';
+import { getActiveEmployees } from '@/lib/actions/employees';
 import { RetiroDialog } from '@/components/pos/retiro-dialog';
 import { RetiroReceiptTemplate } from '@/components/pos/retiro-receipt-template';
 
@@ -1638,9 +1767,11 @@ const CashierOnlyPOS = ({ products, inventory }: POSComponentProps) => {
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const [lastSale, setLastSale] = useState<any>(null);
+    const [lastSaleIsFresh, setLastSaleIsFresh] = useState(false);
     const [saleForPrint, setSaleForPrint] = useState<any>(null);
     // Retiro / Salida de Efectivo
 const [isRetiroOpen, setIsRetiroOpen] = useState(false);
+    const [activeEmployees, setActiveEmployees] = useState<{ id: string; fullName: string }[]>([]);
     const [isRetiroSaving, setIsRetiroSaving] = useState(false);
     const [lastRetiro, setLastRetiro] = useState<any>(null);
 
@@ -1670,6 +1801,10 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
                 }
                 setActiveSale({ ...held, lockedBy: user?.id || (held.lockedBy as any) });
                 if (held.customerName) setCustomerName(held.customerName);
+                setSelectedClient(null);
+                resolveSelectedClientForSale(held).then((client) => {
+                    if (client) setSelectedClient((prev) => prev ?? client);
+                });
             });
         } catch { /* ignore */ }
     }, [activeSale]);
@@ -1680,6 +1815,26 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
     // venta (carrito, modal de resumen, cliente y panel = productos) SOLO después
     // de que la vista previa de impresión termine/cierre.
     const saleResetAfterPrintRef = useRef(false);
+    const closePrintFormatDialog = () => {
+        if (lastSaleIsFresh) {
+            // La venta ya quedó registrada aunque el usuario cierre el selector.
+            // Limpiar el estado para evitar que el cajero vuelva a cobrarla.
+            saleResetAfterPrintRef.current = false;
+            setIsPaymentSummaryOpen(false);
+            setViewMode('products');
+            setCart([]);
+            setPaymentData(null);
+            if (activeSale) {
+                removePendingSale(activeSale.id);
+                setActiveSale(null);
+            }
+            setCustomerName('');
+            setSelectedClient(null);
+            focusSearchInput();
+        }
+        setLastSale(null);
+        setLastSaleIsFresh(false);
+    };
     // Tubería de impresión segura:
     // 1) NO imprime hasta que el portal del <ReceiptTemplate/> esté montado en
     //    document.body (#ticket-print-area). Evita la vista previa en blanco por
@@ -1689,6 +1844,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
     const printAreaId = printFormat === 'invoice' ? 'invoice-print' : 'ticket-print-area';
     useEffect(() => {
         if (!saleForPrint) return;
+        const printableSale = normalizeReceiptForPrint(saleForPrint);
 
         let cancelled = false;
         let pollTimer: number | undefined;
@@ -1726,7 +1882,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         // que el reinicio ocurre ANTES de abrirse el diálogo. El timer re-afirma cierre
         // + foco al cerrar la ventana para que el modal de resumen no quede visible.
         if (printFormat === 'ticket') {
-            printReceiptHtml(buildReceiptHtml(saleForPrint, receiptSettings));
+            printReceiptHtml(buildReceiptHtml(printableSale, receiptSettings));
             resetAfterPrint();
             setSaleForPrint(null);
             safetyTimer = window.setTimeout(() => {
@@ -1740,7 +1896,7 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
         // FACTURA HOJA COMPLETA (letter): tubería legacy window.print() sobre #invoice-print.
         const finishPrint = () => {
             if (cancelled) return;
-            printA4Html(buildA4ReceiptHtml(saleForPrint));
+            printA4Html(buildA4ReceiptHtml(printableSale));
             resetAfterPrint();
             setSaleForPrint(null);
             // window.print() bloquea en Chromium y puede dejar la capa del modal
@@ -1758,7 +1914,9 @@ const [isRetiroOpen, setIsRetiroOpen] = useState(false);
                 if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
                 fallbackTimer = undefined;
                 // Margen extra: garantiza que React terminó de pintar el contenido del portal.
-                window.setTimeout(finishPrint, 30);
+                // Dar tiempo a Radix para desmontar el selector de formato antes
+                // de abrir el diálogo nativo de impresión (que bloquea el hilo UI).
+                window.setTimeout(finishPrint, printFormat === 'invoice' ? 350 : 30);
                 return;
             }
             attempts += 1;
@@ -2031,12 +2189,18 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         // Persiste la relación del cliente en la factura SIEMPRE que haya un nombre real,
         // para que la reimpresión muestre el mismo nombre asignado al cobrar.
         if (hasRealName) {
-            try {
-                const customer = await searchOrCreateCustomer(customerName.trim());
-                customerId = customer.id;
-            } catch (e) {
-                toast({ title: 'Error', description: 'No se pudo crear/validar el cliente en la BD', variant: 'destructive' });
-                return;
+            // Preferir el ID único del cliente ya seleccionado en el POS; solo se
+            // busca/crea por nombre cuando no hay ficha seleccionada.
+            if (selectedClient?.id) {
+                customerId = selectedClient.id;
+            } else {
+                try {
+                    const customer = await searchOrCreateCustomer(customerName.trim());
+                    customerId = customer.id;
+                } catch (e) {
+                    toast({ title: 'Error', description: 'No se pudo crear/validar el cliente en la BD', variant: 'destructive' });
+                    return;
+                }
             }
         }
 
@@ -2101,10 +2265,11 @@ const [isFinancingOpen, setIsFinancingOpen] = useState(false);
         // montado. El reinicio de la venta (carrito/resumen/cliente/panel) se
         // ejecuta DESPUÉS de cerrar la vista previa, dentro de la tubería de impresión.
         saleResetAfterPrintRef.current = true;
-        setSaleForPrint(receiptData);
+        setLastSaleIsFresh(true);
+        setLastSale(receiptData);
 
         refreshSessions();
-        toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.' });
+        toast({ title: 'Venta Completada', description: 'La venta ha sido registrada exitosamente.', duration: 1000 });
     };
 
     const handlePrePaymentComplete = (amountPaid: number, change: number, method: string, deliveryDetails?: any) => {
@@ -2171,6 +2336,10 @@ const handleClearCart = () => {
         setCart(sale.items);
         setCustomerName(sale.customerName);
         setActiveSale(sale);
+        setSelectedClient(null);
+        resolveSelectedClientForSale(sale).then((client) => {
+            if (client) setSelectedClient((prev) => prev ?? client);
+        });
         toast({ title: 'Factura Recuperada', description: 'La factura se ha cargado al carrito.' });
         focusSearchInput();
     };
@@ -2202,21 +2371,21 @@ const handleClearCart = () => {
     };
 
     // Registra un "Retiro / Salida de Efectivo" en la caja activa e imprime el comprobante ESC/POS.
-    const handleRetiroConfirm = async (amount: number, reason: string) => {
+    const handleRetiroConfirm = async (amount: number, reason: string, employeeId?: string) => {
         if (!activeSession) {
             toast({ title: 'Error', description: 'No hay una caja activa para registrar el retiro.', variant: 'destructive' });
             return;
         }
         setIsRetiroSaving(true);
         try {
-            const result = await createOutflowAction(activeSession.id, amount, reason);
+            const result = await createOutflowAction(activeSession.id, amount, reason, employeeId);
             if (!result || !result.id) {
                 throw new Error('Sin respuesta del servidor');
             }
             const retiroData = prepareRetiroReceiptData(settings, user, activeSession, result, amount, reason);
             setLastRetiro(retiroData);
             setIsRetiroOpen(false);
-            toast({ title: 'Retiro Registrado', description: `Recibo #${result.receiptNumber}. Salida de C$${amount.toFixed(2)}.` });
+            toast({ title: employeeId ? 'Préstamo Registrado' : 'Retiro Registrado', description: `Recibo #${result.receiptNumber}. Salida de C$${amount.toFixed(2)}.` });
             setTimeout(() => {
                 printReceiptHtml(buildRetiroReceiptHtml(retiroData));
                 setLastRetiro(null);
@@ -2240,6 +2409,7 @@ const handleClearCart = () => {
                     ? `Factura ${formatTicketNumber(result.data.invoiceNumber)}`
                     : formatTicketNumber(result.data.invoiceNumber);
                 // Reutiliza la misma tubería de impresión del cobro directo (ReceiptTemplate).
+                setLastSaleIsFresh(false);
                 setLastSale(buildReceiptDataFromInvoice(result.data, settings, ticketLabel));
                 toast({ title: 'Último Ticket', description: `Ticket #${ticketLabel} listo para imprimir.` });
             } else {
@@ -2635,7 +2805,7 @@ const handleClearCart = () => {
                         {settings.enablePettyCashExpenses !== false && (
                         <Button
                             className="h-16 flex flex-col gap-1.5 bg-[#FF9800] hover:bg-[#F57C00] text-white font-black text-[10px] p-2 transition-all active:scale-95"
-                            onClick={() => setIsRetiroOpen(true)}
+                            onClick={async () => { const result = await getActiveEmployees(); if (result.success) setActiveEmployees(result.data || []); setIsRetiroOpen(true); }}
                             title="Retiro / Salida de Efectivo"
                         >
                             <Coins className="w-5 h-5" />
@@ -2701,6 +2871,7 @@ const handleClearCart = () => {
                             onCancel={() => { setViewMode('products'); focusSearchInput(); }}
                             onComplete={handlePrePaymentComplete}
                             customerName={customerName}
+                            customerHasCredit={selectedClient?.hasCredit === true}
                             customerPhone={selectedClient?.phone}
                             customerAddress={selectedClient?.address}
                         />
@@ -2778,18 +2949,24 @@ const handleClearCart = () => {
                 isOpen={isRetiroOpen}
                 onClose={() => setIsRetiroOpen(false)}
                 onConfirm={handleRetiroConfirm}
+                employees={activeEmployees}
                 isLoading={isRetiroSaving}
             />
             {lastRetiro && <RetiroReceiptTemplate {...lastRetiro} />}
 
             {printFormat === 'invoice'
-                ? (saleForPrint && <FullPageInvoiceTemplate {...saleForPrint} />)
-                : (saleForPrint && <ReceiptTemplate {...saleForPrint} />)}
+                ? (saleForPrint && <FullPageInvoiceTemplate {...normalizeReceiptForPrint(saleForPrint)} />)
+                : (saleForPrint && <ReceiptTemplate {...normalizeReceiptForPrint(saleForPrint)} />)}
 
-            <Dialog open={!!lastSale} onOpenChange={(open: boolean) => { if (!open) setLastSale(null); }}>
-                <DialogContent className="max-w-2xl">
+            <Dialog open={!!lastSale} onOpenChange={(open: boolean) => { if (!open) closePrintFormatDialog(); }}>
+                <DialogContent
+                    className="max-w-2xl"
+                    onPointerDownOutside={(event) => {
+                        if ((event.target as HTMLElement).closest('[data-toast-viewport]')) event.preventDefault();
+                    }}
+                >
                     <DialogHeader>
-                        <DialogTitle>Reimprimir Factura / Ticket</DialogTitle>
+                        <DialogTitle>{lastSaleIsFresh ? 'Seleccionar formato de impresión' : 'Reimprimir Factura / Ticket'}</DialogTitle>
                     </DialogHeader>
                     <div className="flex items-center justify-center gap-2 py-2">
                         <Button
@@ -2808,20 +2985,21 @@ const handleClearCart = () => {
                         </Button>
                     </div>
                     <div className="flex justify-center p-4 max-h-[60vh] overflow-y-auto">
-                        {lastSale && printFormat === 'invoice'
-                            ? <FullPageInvoiceTemplate {...lastSale} previewMode />
-                            : (lastSale && <ReceiptTemplate {...lastSale} previewMode />)}
+                        {lastSale ? (printFormat === 'invoice'
+                            ? <FullPageInvoiceTemplate {...normalizeReceiptForPrint(lastSale)} previewMode />
+                            : <ReceiptTemplate {...normalizeReceiptForPrint(lastSale)} previewMode />) : null}
                     </div>
                     <DialogFooter>
                         <Button onClick={() => {
                             savePreferredPrintFormat(printFormat);
                             const toPrint = lastSale;
-                            setSaleForPrint(toPrint);
+                            setSaleForPrint(normalizeReceiptForPrint(toPrint));
                             setLastSale(null);
+                            setLastSaleIsFresh(false);
                             // La impresión la dispara el useEffect que reacciona
                             // a saleForPrint una vez el template esté en el DOM.
                         }}>Imprimir</Button>
-                        <Button variant="outline" onClick={() => setLastSale(null)}>Cerrar</Button>
+                        <Button variant="outline" onClick={closePrintFormatDialog}>Cerrar</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -2879,12 +3057,12 @@ const handleClearCart = () => {
 };
 
 interface POSClientProps {
-    initialProducts: Product[];
-    initialInventory: InventoryItem[];
+    initialProducts?: Product[];
+    initialInventory?: InventoryItem[];
     initialJewelryPieces?: any[];
 }
 
-export default function POSClient({ initialProducts, initialInventory, initialJewelryPieces = [] }: POSClientProps) {
+export default function POSClient({ initialProducts = [], initialInventory = [], initialJewelryPieces = [] }: POSClientProps) {
     const { user } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
@@ -2950,8 +3128,30 @@ export default function POSClient({ initialProducts, initialInventory, initialJe
         }
     }, [user, isCashRegisterOpen, router, settingsLoading, isDispatcherCashierFlow]);
 
-    if (!user || settingsLoading || (user.role === 'cashier' && !isCashRegisterOpen)) {
-        return null;
+    // NUNCA devolver null: un render vacío = pantalla blanca en /pos. Mientras
+    // la sesión/ajustes resuelven (o la caja redirige) se pinta un estado claro.
+    if (!user || settingsLoading) {
+        return (
+            <div className="flex h-full min-h-[50vh] items-center justify-center bg-muted p-8">
+                <div className="text-center space-y-3">
+                    <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                    <p className="text-sm font-medium text-muted-foreground">Cargando Punto de Venta...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (user.role === 'cashier' && !isCashRegisterOpen) {
+        // El effect anterior ya redirige a /cash-register/open; este estado evita
+        // que la vista quede en blanco durante ese salto.
+        return (
+            <div className="flex h-full min-h-[50vh] items-center justify-center bg-muted p-8">
+                <div className="text-center space-y-3">
+                    <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                    <p className="text-sm font-medium text-muted-foreground">Revisando sesión de caja...</p>
+                </div>
+            </div>
+        );
     }
 
     if (productsQuery.isLoading || inventoryQuery.isLoading || !preloadReady) {
@@ -2979,21 +3179,29 @@ export default function POSClient({ initialProducts, initialInventory, initialJe
             return <JewelryPOS availablePieces={jewelryPieces} />;
         }
 
-        if (isDispatcherCashierFlow) {
-            if (user.role === 'cashier') return <CashierPOS products={products} inventory={inventory} />;
+        // Flujo "despachador-caja": el cajero opera la caja asistida...
+        if (isDispatcherCashierFlow && user.role === 'cashier') {
+            return <CashierPOS products={products} inventory={inventory} />;
         }
 
-        if (!isDispatcherCashierFlow && (user.role === 'cashier' || user.role === 'admin' || user.role === 'master-admin')) {
-            return <CashierOnlyPOS products={products} inventory={inventory} />;
-        }
-
-        return null;
+        // ...y cualquier otro rol con acceso a /pos (admin, master-admin, cajero
+        // en flujo clásico, rutero) recibe la vista completa del POS.
+        // REGISTRO DE RUTA: nunca se devuelve null aquí, porque eso dejaba la
+        // ruta /pos en pantalla blanca.
+        return <CashierOnlyPOS products={products} inventory={inventory} />;
     }
 
     return (
         <div className="flex h-screen w-full flex-col bg-muted p-0">
             <main className="flex-1 overflow-hidden p-0 h-full">
-                {renderContent()}
+                {/* Guard de errores de render: un fallo dentro del POS muestra un
+                    aviso recuperable en lugar de borrar toda la aplicación. */}
+                <ErrorBoundary
+                    fallbackTitle="Punto de Venta no disponible"
+                    fallbackMessage="Ocurrió un error al cargar la vista del Punto de Venta. Puedes reintentar sin recargar toda la aplicación."
+                >
+                    {renderContent()}
+                </ErrorBoundary>
             </main>
         </div>
     );

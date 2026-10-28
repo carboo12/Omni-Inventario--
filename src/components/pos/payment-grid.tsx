@@ -23,6 +23,8 @@ interface PaymentGridProps {
     onCancel: () => void;
     onComplete: (amountPaid: number, change: number, method: string, deliveryDetails?: PaymentDeliveryDetails) => void;
     customerName?: string;
+    /** El crédito solo se permite si la ficha del cliente está autorizada. */
+    customerHasCredit?: boolean;
     /** Datos de contacto del cliente asignado: prellenan el despacho a ruta. */
     customerPhone?: string;
     customerAddress?: string;
@@ -35,7 +37,7 @@ type Currency = 'NIO' | 'USD';
 const ROUTE_CONTACT_ERROR = 'La dirección y teléfono son obligatorios para despachos en ruta';
 const ROUTE_CUSTOMER_ERROR = 'Los pedidos para ruta requieren un cliente real, no se permite un cliente genérico o anónimo';
 
-export function PaymentGrid({ total, onCancel, onComplete, customerName, customerPhone, customerAddress }: PaymentGridProps) {
+export function PaymentGrid({ total, onCancel, onComplete, customerName, customerHasCredit = false, customerPhone, customerAddress }: PaymentGridProps) {
     const { settings } = useSettings();
     const [step, setStep] = useState<PaymentStep>('method-selection');
     const [paymentMethod, setPaymentMethod] = useState<string>('');
@@ -66,6 +68,7 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName, custome
 
     // Un cliente genérico o anónimo nunca puede generar un pedido para ruta.
     const hasRealCustomer = !isGenericCustomerName(customerName);
+    const canPayByCredit = hasRealCustomer && customerHasCredit;
     const missingContact = !deliveryAddress.trim() || !deliveryPhone.trim();
     const routeCustomerError = !hasRealCustomer ? ROUTE_CUSTOMER_ERROR : null;
     const routeBlockedReason = routeCustomerError || ((missingContact || hasMissingSavedContact) ? ROUTE_CONTACT_ERROR : null);
@@ -301,14 +304,16 @@ export function PaymentGrid({ total, onCancel, onComplete, customerName, custome
                         <div 
                             className={cn(
                                 "col-span-1 min-h-[100px] text-white rounded-lg p-4 transition-colors flex flex-col justify-center",
-                                hasRealCustomer
+                                canPayByCredit
                                     ? "bg-[#673AB7] hover:bg-[#5E35B1] cursor-pointer" 
                                     : "bg-gray-300 cursor-not-allowed opacity-50"
                             )}
-                            onClick={() => hasRealCustomer && handleMethodSelect('Credito')}
+                            aria-disabled={!canPayByCredit}
+                            title={!hasRealCustomer ? 'Seleccione un cliente con crédito habilitado' : !customerHasCredit ? 'Este cliente no tiene crédito habilitado' : 'Cargo a cuenta'}
+                            onClick={() => canPayByCredit && handleMethodSelect('Credito')}
                         >
                             <span className="font-bold text-lg block">CRÉDITO</span>
-                            <span className="text-xs opacity-80 block mt-1">{hasRealCustomer ? 'Cargo a cuenta' : 'Requiere Cliente'}</span>
+                            <span className="text-xs opacity-80 block mt-1">{canPayByCredit ? 'Cargo a cuenta' : !hasRealCustomer ? 'Requiere Cliente' : 'Cliente sin crédito autorizado'}</span>
                         </div>
                     )}
 

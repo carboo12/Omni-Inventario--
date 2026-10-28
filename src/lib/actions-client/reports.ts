@@ -6,6 +6,10 @@ export async function getSalesData(...args: any[]): Promise<any> {
   return callAction('reports', 'getSalesData', args);
 }
 
+export async function getTicketHistory(...args: any[]): Promise<any> {
+  return callAction('reports', 'getTicketHistory', args);
+}
+
 export async function getTopProducts(...args: any[]): Promise<any> {
   return callAction('reports', 'getTopProducts', args);
 }
@@ -64,6 +68,10 @@ export async function getReportDeadStock(...args: any[]): Promise<any> {
 
 export async function getReportProfitMargin(...args: any[]): Promise<any> {
   return callAction('reports', 'getReportProfitMargin', args);
+}
+
+export async function getReportProfitByPresentation(...args: any[]): Promise<any> {
+  return callAction('reports', 'getReportProfitByPresentation', args);
 }
 
 export async function getReportFilters(...args: any[]): Promise<any> {

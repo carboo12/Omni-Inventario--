@@ -15,6 +15,7 @@ import * as csv_sync from '../src/lib/actions/csv-sync';
 import * as customers from '../src/lib/actions/customers';
 import * as dashboard from '../src/lib/actions/dashboard';
 import * as delivery_routes from '../src/lib/actions/delivery-routes';
+import * as employees from '../src/lib/actions/employees';
 import * as export_module from '../src/lib/actions/export';
 import * as gold_purchase from '../src/lib/actions/gold-purchase';
 import * as gold from '../src/lib/actions/gold';
@@ -64,6 +65,7 @@ export const actionModules = {
   'customers': customers,
   'dashboard': dashboard,
   'delivery-routes': delivery_routes,
+  'employees': employees,
   'export': export_module,
   'gold-purchase': gold_purchase,
   'gold': gold,
